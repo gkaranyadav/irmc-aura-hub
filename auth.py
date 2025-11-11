@@ -28,7 +28,7 @@ def verify_token(token):
         return None
 
 def login_user(email, password):
-    """Login user and set session state"""
+    """Login user"""
     user_id = verify_user(email, password)
     if user_id:
         token = generate_token(user_id, email)
@@ -39,11 +39,6 @@ def login_user(email, password):
         st.session_state.email = email
         st.session_state.token = token
         
-        # Also store in persistent session state
-        st.session_state.persistent_login = True
-        st.session_state.persistent_email = email
-        st.session_state.persistent_token = token
-        
         return True
     return False
 
@@ -52,34 +47,14 @@ def signup_user(email, password):
     return create_user(email, password)
 
 def logout_user():
-    """Logout user and clear all storage"""
+    """Logout user"""
     # Clear all session state
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+    keys_to_clear = ['logged_in', 'user_id', 'email', 'token']
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
 
 def check_session():
     """Check if user is logged in"""
-    # Method 1: Check if already logged in this session
-    if st.session_state.get('logged_in'):
-        try:
-            jwt.decode(st.session_state.token, SECRET_KEY, algorithms=['HS256'])
-            return True
-        except:
-            pass
-    
-    # Method 2: Check persistent session (survives refreshes)
-    if st.session_state.get('persistent_login'):
-        token = st.session_state.get('persistent_token')
-        email = st.session_state.get('persistent_email')
-        
-        if token and email:
-            payload = verify_token(token)
-            if payload:
-                # Restore session
-                st.session_state.logged_in = True
-                st.session_state.user_id = payload['user_id']
-                st.session_state.email = payload['email']
-                st.session_state.token = token
-                return True
-    
-    return False
+    # Simple check - just see if logged_in exists and is True
+    return st.session_state.get('logged_in', False)
