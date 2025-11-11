@@ -43,10 +43,7 @@ st.markdown("""
         background: linear-gradient(135deg, #F8FAFF 0%, #FFFFFF 100%);
     }
 
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-    }
+   
 
     /* Buttons */
     .stButton button {
