@@ -7,13 +7,13 @@ init_database()
 
 # Page configuration
 st.set_page_config(
-    page_title="IRMC Aura - AI Apps Hub",
-    page_icon="⚡",
+    page_title="IRMC aura - AI Apps Hub",
+    page_icon="🔮",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Clean CSS - NO CONTAINERS
+# Clean CSS - FIXED ALIGNMENT
 st.markdown("""
 <style>
     /* Clean header */
@@ -87,6 +87,25 @@ st.markdown("""
         color: white;
     }
     
+    /* FIXED: App box alignment */
+    .app-box {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 15px;
+        border-left: 4px solid #175CFF;
+        box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1);
+        margin-bottom: 1rem;
+        height: 140px; /* Fixed height for equal boxes */
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    
+    /* Ensure columns have same spacing */
+    [data-testid="column"] {
+        padding: 0.5rem;
+    }
+    
     /* Hide header and footer */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -95,8 +114,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def login_page():
-    # CLEAN: Only the main header
-    st.markdown('<div class="main-header">⚡ IRMC Aura</div>', unsafe_allow_html=True)
+    # CLEAN: Only the main header - FIXED NAME
+    st.markdown('<div class="main-header">🔮 IRMC aura</div>', unsafe_allow_html=True)
     
     # DIRECT tabs and forms - NO CONTAINERS
     tab1, tab2 = st.tabs(["**🔐 Login**", "**✨ Sign Up**"])
@@ -143,13 +162,13 @@ def login_page():
                     st.warning("⚠️ Please fill all fields")
 
 def home_page():
-    # Homepage header
+    # Homepage header - FIXED NAME
     col1, col2 = st.columns([4, 1])
     
     with col1:
         st.markdown("""
         <div style='margin-bottom: 1rem;'>
-            <div class="main-header" style='font-size: 2.5rem; text-align: left; margin: 0;'>⚡ IRMC Aura</div>
+            <div class="main-header" style='font-size: 2.5rem; text-align: left; margin: 0;'>🔮 IRMC aura</div>
             <p style='color: #666; font-size: 1.1rem; margin: 0;'>
                 Welcome back, <strong style="color: #175CFF;">{}</strong>
             </p>
@@ -163,44 +182,56 @@ def home_page():
     
     st.markdown("---")
     
-    # App boxes
-    st.markdown('<h3 style="color: #175CFF; text-align: center;">Your AI Applications</h3>', unsafe_allow_html=True)
+    # App boxes - FIXED ALIGNMENT
+    st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Your AI Applications</h3>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
     with col1:
+        # App 1: Document RAG Chat
         st.markdown("""
-        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
-            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📚 Document RAG Chat</h4>
-            <p style='color: #555; margin: 0; font-size: 0.9rem;'>Chat with your documents using advanced AI technology.</p>
+        <div class="app-box">
+            <div>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📄 Doc RAG Chat</h4>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>Chat with your documents using advanced AI technology.</p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open RAG Chat", key="rag_btn", use_container_width=True):
+        if st.button("Launch RAG Chat", key="rag_btn", use_container_width=True):
             st.switch_page("pages/rag_chat.py")
         
+        # App 2: Graph RAG
         st.markdown("""
-        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
-            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🌐 GraphDB RAG</h4>
-            <p style='color: #555; margin: 0; font-size: 0.9rem;'>Advanced document analysis with knowledge graphs.</p>
+        <div class="app-box">
+            <div>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🌐 Graph RAG</h4>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>Advanced document analysis with knowledge graphs.</p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Graph RAG", key="graph_btn", use_container_width=True):
+        if st.button("Explore Graph RAG", key="graph_btn", use_container_width=True):
             st.info("🚧 Coming Soon!")
     
     with col2:
+        # App 3: SQL Generator
         st.markdown("""
-        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
-            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>💾 SQL Generator</h4>
-            <p style='color: #555; margin: 0; font-size: 0.9rem;'>Convert English to SQL queries instantly.</p>
+        <div class="app-box">
+            <div>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>💬 English to SQL</h4>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>Convert English to SQL queries instantly.</p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open SQL Generator", key="sql_btn", use_container_width=True):
+        if st.button("Generate SQL", key="sql_btn", use_container_width=True):
             st.info("🚧 Coming Soon!")
         
+        # App 4: Future Apps
         st.markdown("""
-        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
-            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🎯 Future Apps</h4>
-            <p style='color: #555; margin: 0; font-size: 0.9rem;'>New AI tools coming soon.</p>
+        <div class="app-box">
+            <div>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🚀 Future Apps</h4>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>New AI tools coming soon.</p>
+            </div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Explore", key="new_btn", use_container_width=True):
