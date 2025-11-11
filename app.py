@@ -74,7 +74,7 @@ st.markdown("""
     }
 
     .stTabs [data-baseweb="tab"] {
-        background-color: transparent;
+        background-color: black;
         border-radius: 8px;
         padding: 0.5rem 1rem;
         font-weight: 500;
@@ -92,7 +92,7 @@ st.markdown("""
 
     /* ✅ FIX for white box under header */
     div[data-testid="stTabs"] {
-        background: black;
+        background: transparent;
         box-shadow: none;
         margin-top: -1rem;
         padding-top: 0;
