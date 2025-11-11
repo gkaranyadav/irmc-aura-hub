@@ -23,9 +23,9 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         text-align: center;
         font-weight: 800;
-        margin: 0rem 0 0rem 0;
-        padding: 15;
-        line-height: 1.1;
+        margin: 1rem 0 2rem 0;
+        padding: 0;
+        line-height: 5.1;
     }
     /* Clean login container */
     .login-tabs-container {
