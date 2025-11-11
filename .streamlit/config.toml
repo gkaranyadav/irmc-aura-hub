@@ -1,8 +1,8 @@
 [theme]
-primaryColor = "#1e3a8a"  # Deep Sea Blue
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f8fafc"
-textColor = "#0f172a"
+primaryColor = "#175CFF"  # DeepSeek AI Blue
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8FAFF"
+textColor = "#1A1D29"
 font = "sans serif"
 
 [server]
