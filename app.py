@@ -31,7 +31,7 @@ st.markdown("""
     .login-tabs-container {
         background: rgba(255, 255, 255, 0.95);
         border-radius: 20px;
-        padding: 1.5rem;
+        padding: 0.5rem;
         margin: 0 auto;
         max-width: 500px;
         box-shadow: 0 10px 40px rgba(23, 92, 255, 0.15);
