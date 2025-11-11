@@ -30,12 +30,12 @@ st.markdown("""
     /* Clean login container */
     .login-tabs-container {
         background: rgba(255, 255, 255, 0.95);
-        border-radius: 40px;
+        border-radius: 20px;
         padding: 1.5rem;
         margin: 0 auto;
         max-width: 500px;
         box-shadow: 0 10px 40px rgba(23, 92, 255, 0.15);
-        border: 1px solid #E6F0FF;
+        border: 3px solid #E6F0FF;
     }
 
     /* App background */
