@@ -1,8 +1,8 @@
 [theme]
-primaryColor = "#1E3A8A"  # Royal Blue for IRMC
-backgroundColor = "#FFFFFF"  # Pure White
-secondaryBackgroundColor = "#F8FAFC"  # Light Grayish White
-textColor = "#1E293B"  # Dark Slate Gray
+primaryColor = "#1e3a8a"  # Deep Sea Blue
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"
+textColor = "#0f172a"
 font = "sans serif"
 
 [server]
