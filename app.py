@@ -25,7 +25,7 @@ st.markdown("""
         font-weight: 800;
         margin: 1rem 0 2rem 0;
         padding: 0;
-        line-height: 5.1;
+        line-height: 1.1;
     }
     /* Clean login container */
     .login-tabs-container {
@@ -92,10 +92,10 @@ st.markdown("""
 
     /* ✅ FIX for white box under header */
     div[data-testid="stTabs"] {
-        background: transparent !important;
-        box-shadow: none !important;
-        margin-top: -1rem !important;
-        padding-top: 0 !important;
+        background: transparent;
+        box-shadow: none;
+        margin-top: -1rem;
+        padding-top: 0;
     }
 
     /* Make sure container below header aligns properly */
