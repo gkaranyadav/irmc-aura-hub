@@ -168,7 +168,7 @@ def home_page():
     with col1:
         st.markdown("""
         <div style='margin-bottom: 1rem;'>
-            <div class="main-header" style='font-size: 2.5rem; text-align: left; margin: 0;'>🔮 IRMC aura</div>
+            <div class="main-header" style='font-size: 2.5rem; text-align: left; margin: 0;'>irmc Aura</div>
             <p style='color: #666; font-size: 1.1rem; margin: 0;'>
                 Welcome back, <strong style="color: #175CFF;">{}</strong>
             </p>
@@ -183,7 +183,7 @@ def home_page():
     st.markdown("---")
     
     # App boxes - FIXED ALIGNMENT
-    st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Your AI Applications</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">AI Applications</h3>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
