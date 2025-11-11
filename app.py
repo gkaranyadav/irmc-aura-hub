@@ -24,14 +24,14 @@ st.markdown("""
         text-align: center;
         font-weight: 800;
         margin: 1rem 0 2rem 0;
-        padding: 0;
+        padding: 1;
         line-height: 1.1;
     }
     /* Clean login container */
     .login-tabs-container {
         background: rgba(255, 255, 255, 0.95);
         border-radius: 20px;
-        padding: 0.5rem;
+        padding: 1.5rem;
         margin: 0 auto;
         max-width: 500px;
         box-shadow: 0 10px 40px rgba(23, 92, 255, 0.15);
