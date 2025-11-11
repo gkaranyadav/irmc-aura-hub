@@ -8,165 +8,185 @@ init_database()
 # Page configuration
 st.set_page_config(
     page_title="IRMC Aura - AI Apps Hub",
-    page_icon="🌊",  # Wave icon for sea theme
+    page_icon="⚡",  # Stylish bolt icon
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for deep sea blue theme
+# Custom CSS with DeepSeek blue theme
 st.markdown("""
 <style>
-    /* Remove white box and fix styling */
+    /* Remove all padding/margin issues */
     .main-header {
-        font-size: 3.5rem;
-        color: #1e3a8a;
-        text-align: center;
-        font-weight: 800;
-        margin-bottom: 1rem;
-        background: linear-gradient(135deg, #1e3a8a, #3730a3);
+        font-size: 4rem;
+        background: linear-gradient(135deg, #175CFF, #00A3FF);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        text-shadow: 0 2px 4px rgba(30, 58, 138, 0.1);
+        text-align: center;
+        font-weight: 800;
+        margin: 0;
+        padding: 0;
+        line-height: 1.2;
     }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #475569;
-        font-weight: 600;
-        margin-bottom: 1rem;
+    
+    .tagline {
+        font-size: 1.4rem;
+        color: #666;
+        text-align: center;
+        margin: 0.5rem 0 3rem 0;
+        font-weight: 500;
     }
-    .app-box {
-        background: linear-gradient(135deg, #ffffff, #f8fafc);
-        padding: 2rem;
-        border-radius: 16px;
-        border-left: 5px solid #1e3a8a;
-        box-shadow: 0 4px 12px rgba(30, 58, 138, 0.1);
-        margin-bottom: 1.5rem;
-        transition: all 0.3s ease;
-        border: 1px solid #e2e8f0;
+    
+    /* Main container without white box */
+    .main-container {
+        background: transparent;
+        padding: 0;
+        margin: 0;
     }
-    .app-box:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 12px 24px rgba(30, 58, 138, 0.15);
-        border-left: 5px solid #3730a3;
-    }
-    .login-container {
+    
+    .login-tabs-container {
         background: white;
         border-radius: 20px;
         padding: 3rem;
-        margin: 2rem auto;
+        margin: 0 auto;
         max-width: 500px;
-        box-shadow: 0 10px 30px rgba(30, 58, 138, 0.1);
-        border: 1px solid #e2e8f0;
+        box-shadow: 0 10px 40px rgba(23, 92, 255, 0.15);
+        border: 1px solid #E6F0FF;
     }
+    
+    .app-box {
+        background: white;
+        padding: 2rem;
+        border-radius: 16px;
+        border: 2px solid #F0F5FF;
+        box-shadow: 0 4px 20px rgba(23, 92, 255, 0.08);
+        margin-bottom: 2rem;
+        transition: all 0.3s ease;
+    }
+    
+    .app-box:hover {
+        transform: translateY(-5px);
+        border-color: #175CFF;
+        box-shadow: 0 8px 30px rgba(23, 92, 255, 0.15);
+    }
+    
     .stButton button {
-        background: linear-gradient(135deg, #1e3a8a, #3730a3);
+        background: linear-gradient(135deg, #175CFF, #00A3FF);
         color: white;
         border: none;
-        padding: 0.75rem 2rem;
+        padding: 0.8rem 2rem;
         border-radius: 12px;
         font-weight: 600;
-        font-size: 1rem;
         transition: all 0.3s ease;
-        width: 100%;
     }
+    
     .stButton button:hover {
-        background: linear-gradient(135deg, #3730a3, #1e3a8a);
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(30, 58, 138, 0.3);
+        box-shadow: 0 6px 20px rgba(23, 92, 255, 0.3);
     }
+    
+    /* Fix tab styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
-        background-color: #f8fafc;
-        padding: 0.5rem;
-        border-radius: 12px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        border-radius: 8px;
         gap: 1rem;
-        padding: 0 1rem;
+        background-color: #F8FAFF;
     }
+    
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent;
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #175CFF !important;
+        color: white !important;
+    }
+    
     /* Remove any extra white spaces */
     .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
-    /* Style the tabs better */
-    [data-testid="stHorizontalBlock"] {
-        background-color: transparent;
+    
+    div[data-testid="stVerticalBlock"] {
+        gap: 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
 def login_page():
-    # Main container without extra white box
+    # Clean header without white boxes
     st.markdown("""
-    <div style='text-align: center; margin-bottom: 3rem;'>
-        <div class="main-header">🌊 IRMC Aura</div>
-        <p style="color: #64748b; font-size: 1.3rem; font-weight: 500;">Your Gateway to Intelligent AI Applications</p>
+    <div class="main-container">
+        <div class="main-header">⚡ IRMC Aura</div>
+        <div class="tagline">Intelligent AI Applications Platform</div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Login/Signup container
-    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    # Login/Signup tabs
+    st.markdown('<div class="login-tabs-container">', unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["🚀 **Login to Dashboard**", "✨ **Create New Account**"])
+    tab1, tab2 = st.tabs(["🔐 **Login**", "✨ **Sign Up**"])
     
     with tab1:
-        st.markdown('<div class="sub-header">Welcome Back</div>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: #175CFF; margin-bottom: 1.5rem;">Welcome Back</h3>', unsafe_allow_html=True)
+        
         with st.form("login_form"):
-            email = st.text_input("📧 **Email Address**", placeholder="your.email@example.com")
-            password = st.text_input("🔒 **Password**", type="password", placeholder="Enter your password")
-            login_btn = st.form_submit_button("🌊 **Access IRMC Aura**")
+            email = st.text_input("**Email Address**", placeholder="Enter your email")
+            password = st.text_input("**Password**", type="password", placeholder="Enter your password")
+            login_btn = st.form_submit_button("🚀 **Login to Dashboard**")
             
             if login_btn:
                 if email and password:
                     if login_user(email, password):
-                        st.success("🎉 Welcome back! Redirecting to your dashboard...")
+                        st.success("✅ Login successful! Redirecting...")
                         st.rerun()
                     else:
-                        st.error("❌ Invalid email or password. Please try again.")
+                        st.error("❌ Invalid email or password")
                 else:
-                    st.warning("⚠️ Please fill in all fields")
+                    st.warning("⚠️ Please fill all fields")
     
     with tab2:
-        st.markdown('<div class="sub-header">Join IRMC Aura</div>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: #175CFF; margin-bottom: 1.5rem;">Join IRMC Aura</h3>', unsafe_allow_html=True)
+        
         with st.form("signup_form"):
-            new_email = st.text_input("📧 **Email Address**", placeholder="your.email@example.com")
-            new_password = st.text_input("🔒 **Create Password**", type="password", placeholder="Minimum 4 characters")
-            confirm_password = st.text_input("🔒 **Confirm Password**", type="password", placeholder="Re-enter your password")
-            signup_btn = st.form_submit_button("✨ **Start Your Journey**")
+            new_email = st.text_input("**Email Address**", placeholder="Enter your email")
+            new_password = st.text_input("**Password**", type="password", placeholder="Create a password")
+            confirm_password = st.text_input("**Confirm Password**", type="password", placeholder="Confirm your password")
+            signup_btn = st.form_submit_button("⭐ **Create Account**")
             
             if signup_btn:
                 if new_email and new_password and confirm_password:
                     if new_password != confirm_password:
-                        st.error("❌ Passwords don't match! Please try again.")
+                        st.error("❌ Passwords don't match!")
                     elif len(new_password) < 4:
-                        st.error("❌ Password must be at least 4 characters long.")
+                        st.error("❌ Password must be at least 4 characters")
                     else:
                         if signup_user(new_email, new_password):
-                            st.success("🎉 Account created successfully! Please login to continue.")
+                            st.success("🎉 Account created successfully! Please login.")
                         else:
-                            st.error("❌ This email is already registered. Please use a different email.")
+                            st.error("❌ Email already exists!")
                 else:
-                    st.warning("⚠️ Please fill in all fields")
+                    st.warning("⚠️ Please fill all fields")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
 def home_page():
-    # Header section
-    col1, col2, col3 = st.columns([2, 1, 1])
+    # Clean header section
+    col1, col2 = st.columns([4, 1])
+    
     with col1:
         st.markdown("""
-        <div style='text-align: left;'>
-            <div class="main-header" style='text-align: left; font-size: 2.5rem;'>🌊 IRMC Aura</div>
-            <p style="color: #64748b; font-size: 1.1rem; margin-top: -0.5rem;">Welcome back, <strong style="color: #1e3a8a;">{}</strong>! 👋</p>
+        <div style='margin-bottom: 2rem;'>
+            <div class="main-header" style='font-size: 3rem; text-align: left;'>⚡ IRMC Aura</div>
+            <p style='color: #666; font-size: 1.2rem; margin-top: -0.5rem;'>
+                Welcome back, <strong style="color: #175CFF;">{}</strong>! Ready to create?
+            </p>
         </div>
         """.format(st.session_state.email), unsafe_allow_html=True)
     
-    with col3:
-        st.markdown("<br>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         if st.button("🚪 **Logout**", use_container_width=True):
             logout_user()
             st.rerun()
@@ -175,56 +195,56 @@ def home_page():
     
     # Dashboard title
     st.markdown("""
-    <div style='text-align: center; margin: 2rem 0;'>
-        <h2 style='color: #1e3a8a; font-size: 2rem; font-weight: 700;'>Your AI Applications Dashboard</h2>
-        <p style='color: #64748b; font-size: 1.1rem;'>Choose from our suite of intelligent AI tools</p>
+    <div style='text-align: center; margin: 2rem 0 3rem 0;'>
+        <h2 style='color: #175CFF; font-size: 2.2rem; font-weight: 700;'>Your AI Workspace</h2>
+        <p style='color: #666; font-size: 1.1rem;'>Choose your intelligent AI tool</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # App boxes in 2 columns
+    # App boxes
     col1, col2 = st.columns(2)
     
     with col1:
-        # App 1: Document RAG Chat
+        # App 1
         st.markdown("""
         <div class="app-box">
-            <h3 style='color: #1e3a8a; margin-bottom: 1rem;'>📄 Document RAG Chat</h3>
-            <p style='color: #475569; line-height: 1.6;'>Chat with your documents using advanced AI and Retrieval-Augmented Generation technology. Ask questions and get intelligent answers from your documents.</p>
+            <h3 style='color: #175CFF; margin-bottom: 1rem;'>📚 Document RAG Chat</h3>
+            <p style='color: #555; line-height: 1.6;'>Chat with your documents using advanced AI. Ask questions and get intelligent answers instantly.</p>
         </div>
         """, unsafe_allow_html=True)
         if st.button("🚀 Launch RAG Chat", key="rag_btn", use_container_width=True):
             st.switch_page("pages/rag_chat.py")
         
-        # App 2: GraphDB RAG
+        # App 2
         st.markdown("""
         <div class="app-box">
-            <h3 style='color: #1e3a8a; margin-bottom: 1rem;'>🕸️ GraphDB RAG</h3>
-            <p style='color: #475569; line-height: 1.6;'>Advanced document analysis with knowledge graphs and semantic relationships. Discover connections and insights in your data.</p>
+            <h3 style='color: #175CFF; margin-bottom: 1rem;'>🌐 GraphDB RAG</h3>
+            <p style='color: #555; line-height: 1.6;'>Advanced document analysis with knowledge graphs and semantic relationships.</p>
         </div>
         """, unsafe_allow_html=True)
         if st.button("🔍 Explore Graph RAG", key="graph_btn", use_container_width=True):
-            st.info("🚧 Feature coming soon! Stay tuned.")
+            st.info("🚧 Coming Soon!")
     
     with col2:
-        # App 3: SQL Query Generator
+        # App 3
         st.markdown("""
         <div class="app-box">
-            <h3 style='color: #1e3a8a; margin-bottom: 1rem;'>🗃️ SQL Query Generator</h3>
-            <p style='color: #475569; line-height: 1.6;'>Convert natural English language to optimized SQL queries instantly. No SQL knowledge required - just ask what you need!</p>
+            <h3 style='color: #175CFF; margin-bottom: 1rem;'>💾 SQL Query Generator</h3>
+            <p style='color: #555; line-height: 1.6;'>Convert natural English to optimized SQL queries. No coding knowledge required.</p>
         </div>
         """, unsafe_allow_html=True)
         if st.button("⚡ Generate SQL", key="sql_btn", use_container_width=True):
-            st.info("🚧 Feature coming soon! We're working on it.")
+            st.info("🚧 Coming Soon!")
         
-        # App 4: New App
+        # App 4
         st.markdown("""
         <div class="app-box">
-            <h3 style='color: #1e3a8a; margin-bottom: 1rem;'>🔮 Future Innovations</h3>
-            <p style='color: #475569; line-height: 1.6;'>We're constantly developing new AI tools. Stay connected for the latest innovations and updates to the IRMC Aura platform.</p>
+            <h3 style='color: #175CFF; margin-bottom: 1rem;'>🎯 Future Innovations</h3>
+            <p style='color: #555; line-height: 1.6;'>We're constantly developing new AI tools to enhance your productivity.</p>
         </div>
         """, unsafe_allow_html=True)
         if st.button("🌟 Coming Soon", key="new_btn", use_container_width=True):
-            st.info("🎯 Exciting new features are on the way!")
+            st.info("🎯 New features launching soon!")
 
 def main():
     if not check_session():
