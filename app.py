@@ -92,7 +92,7 @@ st.markdown("""
 
     /* ✅ FIX for white box under header */
     div[data-testid="stTabs"] {
-        background: transparent;
+        background: black;
         box-shadow: none;
         margin-top: -1rem;
         padding-top: 0;
