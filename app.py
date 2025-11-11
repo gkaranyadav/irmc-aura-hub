@@ -1,5 +1,5 @@
 import streamlit as st
-from auth import login_user, signup_user, logout_user, check_session, handle_auth_message
+from auth import login_user, signup_user, logout_user, check_session
 from database import init_database
 
 # Initialize database
@@ -89,78 +89,6 @@ st.markdown("""
     header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
-
-# JavaScript message handler component
-def setup_javascript_listener():
-    """Set up JavaScript to listen for auth messages"""
-    js_code = """
-    <script>
-        // Listen for messages from the iframe (local storage check)
-        window.addEventListener('message', function(event) {
-            // Forward AUTH_TOKEN_DATA messages to Streamlit
-            if (event.data.type === 'AUTH_TOKEN_DATA') {
-                const data = event.data;
-                // Send to Streamlit via window.location (hack for communication)
-                window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
-                    value: data
-                }, '*');
-            }
-        });
-        
-        // Also listen for direct posts to parent window
-        window.addEventListener('message', function(event) {
-            if (event.data.type === 'AUTH_TOKEN_DATA') {
-                // Store in a global variable that Streamlit can access
-                window.authTokenData = event.data;
-            }
-        });
-    </script>
-    """
-    st.components.v1.html(js_code, height=0)
-
-def handle_javascript_messages():
-    """Check for and handle messages from JavaScript"""
-    # Create a custom component to receive JavaScript messages
-    with st.container():
-        st.markdown("""<div id="auth-handler" style="display: none;"></div>""", unsafe_allow_html=True)
-    
-    # JavaScript to send local storage data to Streamlit
-    js_check_storage = """
-    <script>
-        function checkLocalStorageAndNotify() {
-            const token = localStorage.getItem('auth_token');
-            const email = localStorage.getItem('user_email');
-            if (token && email) {
-                // Send to Streamlit
-                window.parent.postMessage({
-                    type: 'AUTH_TOKEN_DATA',
-                    token: token,
-                    email: email
-                }, '*');
-                
-                // Also try to store in window for direct access
-                window.authTokenData = {token: token, email: email};
-                return true;
-            }
-            return false;
-        }
-        
-        // Check on page load
-        setTimeout(checkLocalStorageAndNotify, 100);
-    </script>
-    """
-    st.components.v1.html(js_check_storage, height=0)
-    
-    # Try to get data from JavaScript (simplified approach)
-    # We'll use query params as a bridge since Streamlit-JS communication is limited
-    if 'auth_processed' not in st.session_state:
-        st.session_state.auth_processed = True
-        
-        # Create a button that when clicked will trigger the auth check
-        # This is a workaround for the JS-Streamlit communication limitation
-        if st.button("Check Authentication", key="auth_check", help="Click if page was refreshed"):
-            st.rerun()
 
 def login_page():
     st.markdown('<div class="main-header">🔮 IRMC aura</div>', unsafe_allow_html=True)
@@ -281,16 +209,11 @@ def home_page():
             st.info("🎯 New features launching soon!")
 
 def main():
-    # Set up JavaScript communication
-    setup_javascript_listener()
-    handle_javascript_messages()
+    # Initialize persistent session state if not exists
+    if 'persistent_login' not in st.session_state:
+        st.session_state.persistent_login = False
     
-    # Initialize session state for auth processing
-    if 'auth_initialized' not in st.session_state:
-        st.session_state.auth_initialized = True
-        st.session_state.local_storage_checked = False
-    
-    # Check if user is logged in (this now includes local storage check)
+    # Check if user is logged in
     if not check_session():
         login_page()
     else:
