@@ -1,17 +1,9 @@
 import streamlit as st
-import extra_streamlit_components as stx
 from auth import login_user, signup_user, logout_user, check_session
 from database import init_database
 
 # Initialize database
 init_database()
-
-# Initialize cookie manager
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
 
 # Page configuration
 st.set_page_config(
@@ -59,6 +51,31 @@ st.markdown("""
         margin-top: 1rem;
     }
     
+    .stButton button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(23, 92, 255, 0.3);
+    }
+    
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1rem;
+        background-color: #F8FAFF;
+        border-radius: 12px;
+        padding: 0.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-weight: 500;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #175CFF;
+        color: white;
+    }
+    
     div[data-testid="stForm"] {
         background: white;
         padding: 2rem;
@@ -82,8 +99,8 @@ def login_page():
         st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Welcome Back</h3>', unsafe_allow_html=True)
         
         with st.form("login_form"):
-            email = st.text_input("**Email Address**", placeholder="test@test.com")
-            password = st.text_input("**Password**", type="password", placeholder="1234")
+            email = st.text_input("**Email Address**", placeholder="your.email@example.com")
+            password = st.text_input("**Password**", type="password", placeholder="Enter your password")
             login_btn = st.form_submit_button("**🚀 Login to Dashboard**")
             
             if login_btn:
@@ -101,7 +118,7 @@ def login_page():
         
         with st.form("signup_form"):
             new_email = st.text_input("**Email Address**", placeholder="your.email@example.com")
-            new_password = st.text_input("**Password**", type="password", placeholder="Create a password")
+            new_password = st.text_input("**Password**", type="password", placeholder="Create a password (min 4 chars)")
             confirm_password = st.text_input("**Confirm Password**", type="password", placeholder="Re-enter your password")
             signup_btn = st.form_submit_button("**⭐ Create Account**")
             
@@ -192,11 +209,7 @@ def home_page():
             st.info("🎯 New features launching soon!")
 
 def main():
-    # Initialize session state
-    if 'logged_in' not in st.session_state:
-        st.session_state.logged_in = False
-    
-    # Check authentication (session OR cookie)
+    # Check if user is logged in
     if not check_session():
         login_page()
     else:
