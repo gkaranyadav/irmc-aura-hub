@@ -1,80 +1,103 @@
 import streamlit as st
-from auth import login_user, signup_user, logout_user, check_session
-from database import init_database
+import jwt
+import datetime
 
-# Initialize database
-init_database()
+# Secret key for JWT - we'll move this to secrets later
+SECRET_KEY = "irmc-aura-secret-key-2024"
 
-# Page configuration
-st.set_page_config(
-    page_title="IRMC aura - AI Apps Hub",
-    page_icon="🔮",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
-
-# Simple CSS
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 3.5rem;
-        background: linear-gradient(135deg, #175CFF, #00A3FF);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        font-weight: 800;
-        margin: 2rem 0 3rem 0;
+def generate_token(user_id, email):
+    """Generate JWT token for user"""
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=5),
+        'iat': datetime.datetime.utcnow()
     }
-</style>
-""", unsafe_allow_html=True)
+    token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    return token
 
-def login_page():
-    st.markdown('<div class="main-header">🔮 IRMC aura</div>', unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["**🔐 Login**", "**✨ Sign Up**"])
-    
-    with tab1:
-        st.markdown('<h3 style="color: #175CFF; text-align: center;">Welcome Back</h3>', unsafe_allow_html=True)
+def verify_token(token):
+    """Verify JWT token and return user data if valid"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None  # Token expired
+    except jwt.InvalidTokenError:
+        return None  # Invalid token
+
+def login_user(email, password):
+    """Login user and set session + local storage"""
+    from database import verify_user  # Import here to avoid circular imports
+    user_id = verify_user(email, password)
+    if user_id:
+        # Generate token
+        token = generate_token(user_id, email)
         
-        with st.form("login_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            if st.form_submit_button("Login"):
-                if login_user(email, password):
-                    st.success("✅ Login successful!")
-                    st.rerun()
-                else:
-                    st.error("❌ Login failed")
-    
-    with tab2:
-        st.markdown('<h3 style="color: #175CFF; text-align: center;">Create Account</h3>', unsafe_allow_html=True)
+        # Store in session state
+        st.session_state.logged_in = True
+        st.session_state.user_id = user_id
+        st.session_state.email = email
+        st.session_state.token = token
         
-        with st.form("signup_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            confirm = st.text_input("Confirm Password", type="password")
-            if st.form_submit_button("Sign Up"):
-                if password == confirm:
-                    if signup_user(email, password):
-                        st.success("✅ Account created!")
-                    else:
-                        st.error("❌ Email exists")
-                else:
-                    st.error("❌ Passwords don't match")
+        # Store in local storage via JavaScript
+        store_token_in_local_storage(token, email)
+        return True
+    return False
 
-def home_page():
-    st.markdown('<div class="main-header">🔮 IRMC aura</div>', unsafe_allow_html=True)
-    st.write(f"Welcome, {st.session_state.email}!")
+def signup_user(email, password):
+    """Create new user account"""
+    from database import create_user  # Import here to avoid circular imports
+    return create_user(email, password)
+
+def logout_user():
+    """Logout user and clear all storage"""
+    # Clear session state
+    for key in ['logged_in', 'user_id', 'email', 'token']:
+        if key in st.session_state:
+            del st.session_state[key]
     
-    if st.button("Logout"):
-        logout_user()
-        st.rerun()
+    # Clear local storage via JavaScript
+    clear_local_storage()
 
-def main():
-    if not check_session():
-        login_page()
-    else:
-        home_page()
+def check_session():
+    """Check if user is logged in (session + local storage)"""
+    # First check session state
+    if 'logged_in' in st.session_state and st.session_state.logged_in:
+        try:
+            # Verify token is still valid
+            jwt.decode(st.session_state.token, SECRET_KEY, algorithms=['HS256'])
+            return True
+        except jwt.ExpiredSignatureError:
+            logout_user()
+    
+    # If no session, check local storage
+    return check_local_storage_token()
 
-if __name__ == "__main__":
-    main()
+def store_token_in_local_storage(token, email):
+    """Store token in browser local storage using JavaScript"""
+    js_code = f"""
+    <script>
+        localStorage.setItem('auth_token', '{token}');
+        localStorage.setItem('user_email', '{email}');
+        localStorage.setItem('login_time', '{datetime.datetime.now().isoformat()}');
+    </script>
+    """
+    st.components.v1.html(js_code, height=0)
+
+def clear_local_storage():
+    """Clear tokens from browser local storage"""
+    js_code = """
+    <script>
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user_email');
+        localStorage.removeItem('login_time');
+    </script>
+    """
+    st.components.v1.html(js_code, height=0)
+
+def check_local_storage_token():
+    """Check if valid token exists in local storage"""
+    # For now, return False - we'll implement this properly later
+    # This is a placeholder function
+    return False
