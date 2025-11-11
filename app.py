@@ -74,7 +74,7 @@ st.markdown("""
     }
 
     .stTabs [data-baseweb="tab"] {
-        background-color: black;
+        background-color: transparent;
         border-radius: 8px;
         padding: 0.5rem 1rem;
         font-weight: 500;
@@ -82,7 +82,7 @@ st.markdown("""
 
     .stTabs [aria-selected="true"] {
         background-color: #175CFF;
-        color: white;
+        color: black;
     }
 
     /* Hide Streamlit header/footer */
