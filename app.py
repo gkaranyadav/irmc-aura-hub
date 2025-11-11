@@ -5,96 +5,114 @@ from database import init_database
 # Initialize database
 init_database()
 
-# Page configuration
+# Page configuration - FIXED for full display
 st.set_page_config(
     page_title="IRMC Aura - AI Apps Hub",
-    page_icon="⚡",  # Stylish bolt icon
-    layout="wide",
+    page_icon="⚡",
+    layout="centered",  # Changed from "wide" to prevent cutting
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS with DeepSeek blue theme
+# Custom CSS - COMPLETELY FIXED
 st.markdown("""
 <style>
-    /* Remove all padding/margin issues */
+    /* FIX: Remove all default padding and margins */
     .main-header {
-        font-size: 4rem;
+        font-size: 3.5rem;
         background: linear-gradient(135deg, #175CFF, #00A3FF);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         text-align: center;
         font-weight: 800;
-        margin: 0;
+        margin: 0 0 0.5rem 0;
         padding: 0;
-        line-height: 1.2;
+        line-height: 1.1;
     }
     
     .tagline {
-        font-size: 1.4rem;
+        font-size: 1.3rem;
         color: #666;
         text-align: center;
-        margin: 0.5rem 0 3rem 0;
-        font-weight: 500;
-    }
-    
-    /* Main container without white box */
-    .main-container {
-        background: transparent;
+        margin: 0 0 2rem 0;
         padding: 0;
-        margin: 0;
+        font-weight: 400;
     }
     
+    /* FIX: Remove white background from main container */
+    .main-container {
+        background: transparent !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    /* FIX: Make login container transparent background */
     .login-tabs-container {
-        background: white;
+        background: rgba(255, 255, 255, 0.95) !important;
         border-radius: 20px;
-        padding: 3rem;
+        padding: 2.5rem;
         margin: 0 auto;
         max-width: 500px;
         box-shadow: 0 10px 40px rgba(23, 92, 255, 0.15);
         border: 1px solid #E6F0FF;
+        backdrop-filter: blur(10px);
     }
     
-    .app-box {
-        background: white;
-        padding: 2rem;
-        border-radius: 16px;
-        border: 2px solid #F0F5FF;
-        box-shadow: 0 4px 20px rgba(23, 92, 255, 0.08);
-        margin-bottom: 2rem;
-        transition: all 0.3s ease;
+    /* FIX: Remove Streamlit default padding */
+    .stApp {
+        background: linear-gradient(135deg, #F8FAFF 0%, #FFFFFF 100%) !important;
     }
     
-    .app-box:hover {
-        transform: translateY(-5px);
-        border-color: #175CFF;
-        box-shadow: 0 8px 30px rgba(23, 92, 255, 0.15);
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
     }
     
+    /* FIX: Style form elements properly */
+    .stTextInput input, .stTextInput input:focus {
+        border: 2px solid #E6F0FF !important;
+        border-radius: 12px !important;
+        padding: 0.75rem !important;
+        background: #FFFFFF !important;
+    }
+    
+    .stTextInput input:focus {
+        border-color: #175CFF !important;
+        box-shadow: 0 0 0 1px #175CFF !important;
+    }
+    
+    /* Button styling */
     .stButton button {
-        background: linear-gradient(135deg, #175CFF, #00A3FF);
-        color: white;
-        border: none;
-        padding: 0.8rem 2rem;
-        border-radius: 12px;
-        font-weight: 600;
-        transition: all 0.3s ease;
+        background: linear-gradient(135deg, #175CFF, #00A3FF) !important;
+        color: white !important;
+        border: none !important;
+        padding: 0.75rem 2rem !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        font-size: 1rem !important;
+        width: 100% !important;
+        margin-top: 1rem !important;
     }
     
     .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(23, 92, 255, 0.3);
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(23, 92, 255, 0.3) !important;
     }
     
-    /* Fix tab styling */
+    /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 1rem;
         background-color: #F8FAFF;
+        border-radius: 12px;
+        padding: 0.5rem;
     }
     
     .stTabs [data-baseweb="tab"] {
         background-color: transparent;
-        border-radius: 10px;
+        border-radius: 8px;
         padding: 0.5rem 1rem;
+        font-weight: 500;
     }
     
     .stTabs [aria-selected="true"] {
@@ -102,20 +120,20 @@ st.markdown("""
         color: white !important;
     }
     
-    /* Remove any extra white spaces */
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
+    /* Remove extra spaces */
+    div[data-testid="stVerticalBlock"] {
+        gap: 0.5rem !important;
     }
     
-    div[data-testid="stVerticalBlock"] {
-        gap: 0;
-    }
+    /* Hide header and footer */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
 def login_page():
-    # Clean header without white boxes
+    # FIXED: Clean header without getting cut
     st.markdown("""
     <div class="main-container">
         <div class="main-header">⚡ IRMC Aura</div>
@@ -123,18 +141,18 @@ def login_page():
     </div>
     """, unsafe_allow_html=True)
     
-    # Login/Signup tabs
+    # FIXED: Login container with semi-transparent background
     st.markdown('<div class="login-tabs-container">', unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["🔐 **Login**", "✨ **Sign Up**"])
+    tab1, tab2 = st.tabs(["**🔐 Login**", "**✨ Sign Up**"])
     
     with tab1:
-        st.markdown('<h3 style="color: #175CFF; margin-bottom: 1.5rem;">Welcome Back</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 1.5rem;">Welcome Back</h3>', unsafe_allow_html=True)
         
         with st.form("login_form"):
-            email = st.text_input("**Email Address**", placeholder="Enter your email")
+            email = st.text_input("**Email Address**", placeholder="your.email@example.com")
             password = st.text_input("**Password**", type="password", placeholder="Enter your password")
-            login_btn = st.form_submit_button("🚀 **Login to Dashboard**")
+            login_btn = st.form_submit_button("**🚀 Login to Dashboard**")
             
             if login_btn:
                 if email and password:
@@ -147,13 +165,13 @@ def login_page():
                     st.warning("⚠️ Please fill all fields")
     
     with tab2:
-        st.markdown('<h3 style="color: #175CFF; margin-bottom: 1.5rem;">Join IRMC Aura</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 1.5rem;">Create Account</h3>', unsafe_allow_html=True)
         
         with st.form("signup_form"):
-            new_email = st.text_input("**Email Address**", placeholder="Enter your email")
-            new_password = st.text_input("**Password**", type="password", placeholder="Create a password")
-            confirm_password = st.text_input("**Confirm Password**", type="password", placeholder="Confirm your password")
-            signup_btn = st.form_submit_button("⭐ **Create Account**")
+            new_email = st.text_input("**Email Address**", placeholder="your.email@example.com")
+            new_password = st.text_input("**Password**", type="password", placeholder="Create a password (min 4 chars)")
+            confirm_password = st.text_input("**Confirm Password**", type="password", placeholder="Re-enter your password")
+            signup_btn = st.form_submit_button("**⭐ Create Account**")
             
             if signup_btn:
                 if new_email and new_password and confirm_password:
@@ -172,78 +190,67 @@ def login_page():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def home_page():
-    # Clean header section
+    # FIXED: Homepage header
     col1, col2 = st.columns([4, 1])
     
     with col1:
         st.markdown("""
-        <div style='margin-bottom: 2rem;'>
-            <div class="main-header" style='font-size: 3rem; text-align: left;'>⚡ IRMC Aura</div>
-            <p style='color: #666; font-size: 1.2rem; margin-top: -0.5rem;'>
-                Welcome back, <strong style="color: #175CFF;">{}</strong>! Ready to create?
+        <div style='margin-bottom: 1rem;'>
+            <div class="main-header" style='font-size: 2.5rem; text-align: left; margin: 0;'>⚡ IRMC Aura</div>
+            <p style='color: #666; font-size: 1.1rem; margin: 0;'>
+                Welcome back, <strong style="color: #175CFF;">{}</strong>
             </p>
         </div>
         """.format(st.session_state.email), unsafe_allow_html=True)
     
     with col2:
-        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-        if st.button("🚪 **Logout**", use_container_width=True):
+        if st.button("**🚪 Logout**", use_container_width=True):
             logout_user()
             st.rerun()
     
     st.markdown("---")
     
-    # Dashboard title
-    st.markdown("""
-    <div style='text-align: center; margin: 2rem 0 3rem 0;'>
-        <h2 style='color: #175CFF; font-size: 2.2rem; font-weight: 700;'>Your AI Workspace</h2>
-        <p style='color: #666; font-size: 1.1rem;'>Choose your intelligent AI tool</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
     # App boxes
+    st.markdown('<h3 style="color: #175CFF; text-align: center;">Your AI Applications</h3>', unsafe_allow_html=True)
+    
     col1, col2 = st.columns(2)
     
     with col1:
-        # App 1
         st.markdown("""
-        <div class="app-box">
-            <h3 style='color: #175CFF; margin-bottom: 1rem;'>📚 Document RAG Chat</h3>
-            <p style='color: #555; line-height: 1.6;'>Chat with your documents using advanced AI. Ask questions and get intelligent answers instantly.</p>
+        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
+            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📚 Document RAG Chat</h4>
+            <p style='color: #555; margin: 0; font-size: 0.9rem;'>Chat with your documents using advanced AI technology.</p>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("🚀 Launch RAG Chat", key="rag_btn", use_container_width=True):
+        if st.button("Open RAG Chat", key="rag_btn", use_container_width=True):
             st.switch_page("pages/rag_chat.py")
         
-        # App 2
         st.markdown("""
-        <div class="app-box">
-            <h3 style='color: #175CFF; margin-bottom: 1rem;'>🌐 GraphDB RAG</h3>
-            <p style='color: #555; line-height: 1.6;'>Advanced document analysis with knowledge graphs and semantic relationships.</p>
+        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
+            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🌐 GraphDB RAG</h4>
+            <p style='color: #555; margin: 0; font-size: 0.9rem;'>Advanced document analysis with knowledge graphs.</p>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("🔍 Explore Graph RAG", key="graph_btn", use_container_width=True):
+        if st.button("Open Graph RAG", key="graph_btn", use_container_width=True):
             st.info("🚧 Coming Soon!")
     
     with col2:
-        # App 3
         st.markdown("""
-        <div class="app-box">
-            <h3 style='color: #175CFF; margin-bottom: 1rem;'>💾 SQL Query Generator</h3>
-            <p style='color: #555; line-height: 1.6;'>Convert natural English to optimized SQL queries. No coding knowledge required.</p>
+        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
+            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>💾 SQL Generator</h4>
+            <p style='color: #555; margin: 0; font-size: 0.9rem;'>Convert English to SQL queries instantly.</p>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("⚡ Generate SQL", key="sql_btn", use_container_width=True):
+        if st.button("Open SQL Generator", key="sql_btn", use_container_width=True):
             st.info("🚧 Coming Soon!")
         
-        # App 4
         st.markdown("""
-        <div class="app-box">
-            <h3 style='color: #175CFF; margin-bottom: 1rem;'>🎯 Future Innovations</h3>
-            <p style='color: #555; line-height: 1.6;'>We're constantly developing new AI tools to enhance your productivity.</p>
+        <div style='background: white; padding: 1.5rem; border-radius: 15px; border-left: 4px solid #175CFF; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1); margin-bottom: 1rem;'>
+            <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🎯 Future Apps</h4>
+            <p style='color: #555; margin: 0; font-size: 0.9rem;'>New AI tools coming soon.</p>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("🌟 Coming Soon", key="new_btn", use_container_width=True):
+        if st.button("Explore", key="new_btn", use_container_width=True):
             st.info("🎯 New features launching soon!")
 
 def main():
