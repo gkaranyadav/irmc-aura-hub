@@ -91,6 +91,11 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+
+    /* ✅ Fix: Remove white empty box under header */
+    div[data-testid="stTabs"] {
+        margin-top: -2rem !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
