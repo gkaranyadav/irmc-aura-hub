@@ -115,7 +115,7 @@ st.markdown("""
 
 def login_page():
     # CLEAN: Only the main header - FIXED NAME
-    st.markdown('<div class="main-header">🔮 IRMC aura</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header"> IRMC aura</div>', unsafe_allow_html=True)
     
     # DIRECT tabs and forms - NO CONTAINERS
     tab1, tab2 = st.tabs(["**🔐 Login**", "**✨ Sign Up**"])
@@ -192,7 +192,7 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📄 Doc RAG Chat</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📄 Document RAG Chat</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>Chat with your documents using advanced AI technology.</p>
             </div>
         </div>
@@ -204,7 +204,7 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🌐 Graph RAG</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🌐 GraphDB RAG</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>Advanced document analysis with knowledge graphs.</p>
             </div>
         </div>
