@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#1E3A8A"  # Royal Blue for IRMC
+backgroundColor = "#FFFFFF"  # Pure White
+secondaryBackgroundColor = "#F8FAFC"  # Light Grayish White
+textColor = "#1E293B"  # Dark Slate Gray
+font = "sans serif"
+
+[server]
+headless = true
