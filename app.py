@@ -30,7 +30,7 @@ st.markdown("""
     /* Clean login container */
     .login-tabs-container {
         background: rgba(255, 255, 255, 0.95);
-        border-radius: 20px;
+        border-radius: 40px;
         padding: 1.5rem;
         margin: 0 auto;
         max-width: 500px;
