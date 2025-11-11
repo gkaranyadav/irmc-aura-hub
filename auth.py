@@ -94,52 +94,65 @@ def clear_local_storage():
 
 def check_local_storage_token():
     """Check if valid token exists in local storage and auto-login"""
-    # Create a unique key for this check to avoid infinite loops
-    if 'local_storage_checked' not in st.session_state:
-        st.session_state.local_storage_checked = True
+    # Use a more reliable approach - check query parameters
+    query_params = st.experimental_get_query_params()
+    
+    # Check if we have token data from a previous successful login
+    if 'auth_token' in st.session_state and 'user_email' in st.session_state:
+        token = st.session_state.auth_token
+        email = st.session_state.user_email
         
-        # JavaScript to read from local storage and send to Streamlit
+        # Verify the token
+        payload = verify_token(token)
+        if payload:
+            # Token is valid - auto-login the user
+            st.session_state.logged_in = True
+            st.session_state.user_id = payload['user_id']
+            st.session_state.email = payload['email']
+            st.session_state.token = token
+            return True
+    
+    # Simple approach: Try to read from localStorage via JavaScript and set in session
+    if 'local_storage_check_done' not in st.session_state:
+        st.session_state.local_storage_check_done = True
+        
+        # JavaScript to check localStorage and set a flag
         js_code = """
         <script>
-            function getAuthData() {
-                const token = localStorage.getItem('auth_token');
-                const email = localStorage.getItem('user_email');
-                if (token && email) {
-                    // Send data back to Streamlit
-                    window.parent.postMessage({
-                        type: 'AUTH_TOKEN_DATA',
-                        token: token,
-                        email: email
-                    }, '*');
-                    return true;
-                }
-                return false;
+            const token = localStorage.getItem('auth_token');
+            const email = localStorage.getItem('user_email');
+            if (token && email) {
+                // Set a URL parameter that Streamlit can read
+                window.location.href = window.location.pathname + '?auth_token=' + encodeURIComponent(token) + '&auth_email=' + encodeURIComponent(email);
             }
-            getAuthData();
         </script>
         """
         st.components.v1.html(js_code, height=0)
+    
+    # Check URL parameters for auth data (set by JavaScript above)
+    if 'auth_token' in query_params and 'auth_email' in query_params:
+        token = query_params['auth_token'][0]
+        email = query_params['auth_email'][0]
         
-        # Check if we have token data from JavaScript
-        if 'auth_token_data' in st.session_state:
-            token = st.session_state.auth_token_data['token']
-            email = st.session_state.auth_token_data['email']
+        # Verify the token
+        payload = verify_token(token)
+        if payload:
+            # Token is valid - auto-login the user
+            st.session_state.logged_in = True
+            st.session_state.user_id = payload['user_id']
+            st.session_state.email = payload['email']
+            st.session_state.token = token
+            st.session_state.auth_token = token
+            st.session_state.user_email = email
             
-            # Verify the token
-            payload = verify_token(token)
-            if payload:
-                # Token is valid - auto-login the user
-                st.session_state.logged_in = True
-                st.session_state.user_id = payload['user_id']
-                st.session_state.email = payload['email']
-                st.session_state.token = token
-                return True
-            else:
-                # Token is invalid - clear local storage
-                clear_local_storage()
+            # Clear the URL parameters
+            st.experimental_set_query_params()
+            return True
+        else:
+            # Token is invalid - clear local storage
+            clear_local_storage()
     
     return False
-
 # Function to handle messages from JavaScript
 def handle_auth_message(data):
     """Store auth data from JavaScript for processing"""
