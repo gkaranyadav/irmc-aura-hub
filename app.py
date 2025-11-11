@@ -12,7 +12,6 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
-
 # ✅ Custom CSS - Cleaned and Fixed White Box Issue
 st.markdown("""
 <style>
