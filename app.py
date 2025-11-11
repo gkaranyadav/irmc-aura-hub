@@ -24,7 +24,7 @@ st.markdown("""
         text-align: center;
         font-weight: 800;
         margin: 1rem 0 2rem 0;
-        padding: 3;
+        padding: 6;
         line-height: 1.1;
     }
     /* Clean login container */
