@@ -5,18 +5,18 @@ from database import init_database
 # Initialize database
 init_database()
 
-# Page configuration - FIXED for full display
+# Page configuration
 st.set_page_config(
     page_title="IRMC Aura - AI Apps Hub",
     page_icon="⚡",
-    layout="centered",  # Changed from "wide" to prevent cutting
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS - COMPLETELY FIXED
+# Custom CSS - CLEANED
 st.markdown("""
 <style>
-    /* FIX: Remove all default padding and margins */
+    /* Clean header without tagline */
     .main-header {
         font-size: 3.5rem;
         background: linear-gradient(135deg, #175CFF, #00A3FF);
@@ -24,80 +24,47 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         text-align: center;
         font-weight: 800;
-        margin: 0 0 0.5rem 0;
+        margin: 1rem 0 2rem 0;
         padding: 0;
         line-height: 1.1;
     }
     
-    .tagline {
-        font-size: 1.3rem;
-        color: #666;
-        text-align: center;
-        margin: 0 0 2rem 0;
-        padding: 0;
-        font-weight: 400;
-    }
-    
-    /* FIX: Remove white background from main container */
-    .main-container {
-        background: transparent !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-    
-    /* FIX: Make login container transparent background */
+    /* Clean login container */
     .login-tabs-container {
-        background: rgba(255, 255, 255, 0.95) !important;
+        background: rgba(255, 255, 255, 0.95);
         border-radius: 20px;
         padding: 2.5rem;
         margin: 0 auto;
         max-width: 500px;
         box-shadow: 0 10px 40px rgba(23, 92, 255, 0.15);
         border: 1px solid #E6F0FF;
-        backdrop-filter: blur(10px);
     }
     
-    /* FIX: Remove Streamlit default padding */
+    /* Remove Streamlit default padding */
     .stApp {
-        background: linear-gradient(135deg, #F8FAFF 0%, #FFFFFF 100%) !important;
+        background: linear-gradient(135deg, #F8FAFF 0%, #FFFFFF 100%);
     }
     
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
-    }
-    
-    /* FIX: Style form elements properly */
-    .stTextInput input, .stTextInput input:focus {
-        border: 2px solid #E6F0FF !important;
-        border-radius: 12px !important;
-        padding: 0.75rem !important;
-        background: #FFFFFF !important;
-    }
-    
-    .stTextInput input:focus {
-        border-color: #175CFF !important;
-        box-shadow: 0 0 0 1px #175CFF !important;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
     
     /* Button styling */
     .stButton button {
-        background: linear-gradient(135deg, #175CFF, #00A3FF) !important;
-        color: white !important;
-        border: none !important;
-        padding: 0.75rem 2rem !important;
-        border-radius: 12px !important;
-        font-weight: 600 !important;
-        font-size: 1rem !important;
-        width: 100% !important;
-        margin-top: 1rem !important;
+        background: linear-gradient(135deg, #175CFF, #00A3FF);
+        color: white;
+        border: none;
+        padding: 0.75rem 2rem;
+        border-radius: 12px;
+        font-weight: 600;
+        width: 100%;
+        margin-top: 1rem;
     }
     
     .stButton button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 20px rgba(23, 92, 255, 0.3) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(23, 92, 255, 0.3);
     }
     
     /* Tab styling */
@@ -116,13 +83,8 @@ st.markdown("""
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: #175CFF !important;
-        color: white !important;
-    }
-    
-    /* Remove extra spaces */
-    div[data-testid="stVerticalBlock"] {
-        gap: 0.5rem !important;
+        background-color: #175CFF;
+        color: white;
     }
     
     /* Hide header and footer */
@@ -133,15 +95,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def login_page():
-    # FIXED: Clean header without getting cut
-    st.markdown("""
-    <div class="main-container">
-        <div class="main-header">⚡ IRMC Aura</div>
-        <div class="tagline">Intelligent AI Applications Platform</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # CLEAN: Only the main header, no tagline
+    st.markdown('<div class="main-header">⚡ IRMC Aura</div>', unsafe_allow_html=True)
     
-    # FIXED: Login container with semi-transparent background
+    # Login container
     st.markdown('<div class="login-tabs-container">', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["**🔐 Login**", "**✨ Sign Up**"])
@@ -190,7 +147,7 @@ def login_page():
     st.markdown('</div>', unsafe_allow_html=True)
 
 def home_page():
-    # FIXED: Homepage header
+    # Homepage header
     col1, col2 = st.columns([4, 1])
     
     with col1:
