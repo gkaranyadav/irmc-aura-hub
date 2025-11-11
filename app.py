@@ -1,5 +1,4 @@
 import streamlit as st
-from auth import login_user, signup_user, logout_user, check_session
 from database import init_database
 
 # Initialize database
@@ -51,31 +50,6 @@ st.markdown("""
         margin-top: 1rem;
     }
     
-    .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(23, 92, 255, 0.3);
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 1rem;
-        background-color: #F8FAFF;
-        border-radius: 12px;
-        padding: 0.5rem;
-        margin-bottom: 2rem;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background-color: transparent;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        font-weight: 500;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background-color: #175CFF;
-        color: white;
-    }
-    
     div[data-testid="stForm"] {
         background: white;
         padding: 2rem;
@@ -90,7 +64,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def login_page():
+# --- Initialize login state ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "email" not in st.session_state:
+    st.session_state.email = ""
+
+# Simple login check function
+def check_login(email, password):
+    # For testing, use simple credentials
+    if email == "test@test.com" and password == "1234":
+        return True
+    return False
+
+# Simple user creation
+def create_user(email, password):
+    # For now, just return True
+    return True
+
+# --- Login Page ---
+if not st.session_state.logged_in:
     st.markdown('<div class="main-header">🔮 IRMC aura</div>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["**🔐 Login**", "**✨ Sign Up**"])
@@ -99,13 +92,15 @@ def login_page():
         st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Welcome Back</h3>', unsafe_allow_html=True)
         
         with st.form("login_form"):
-            email = st.text_input("**Email Address**", placeholder="your.email@example.com")
-            password = st.text_input("**Password**", type="password", placeholder="Enter your password")
+            email = st.text_input("**Email Address**", placeholder="test@test.com")
+            password = st.text_input("**Password**", type="password", placeholder="1234")
             login_btn = st.form_submit_button("**🚀 Login to Dashboard**")
             
             if login_btn:
                 if email and password:
-                    if login_user(email, password):
+                    if check_login(email, password):
+                        st.session_state.logged_in = True
+                        st.session_state.email = email
                         st.success("✅ Login successful! Redirecting...")
                         st.rerun()
                     else:
@@ -118,7 +113,7 @@ def login_page():
         
         with st.form("signup_form"):
             new_email = st.text_input("**Email Address**", placeholder="your.email@example.com")
-            new_password = st.text_input("**Password**", type="password", placeholder="Create a password (min 4 chars)")
+            new_password = st.text_input("**Password**", type="password", placeholder="Create a password")
             confirm_password = st.text_input("**Confirm Password**", type="password", placeholder="Re-enter your password")
             signup_btn = st.form_submit_button("**⭐ Create Account**")
             
@@ -129,13 +124,16 @@ def login_page():
                     elif len(new_password) < 4:
                         st.error("❌ Password must be at least 4 characters")
                     else:
-                        if signup_user(new_email, new_password):
+                        if create_user(new_email, new_password):
                             st.success("🎉 Account created successfully! Please login.")
                         else:
                             st.error("❌ Email already exists!")
                 else:
                     st.warning("⚠️ Please fill all fields")
+    
+    st.stop()  # Stop here until logged in
 
+# --- Main App (Only shows when logged in) ---
 def home_page():
     # Homepage header
     col1, col2 = st.columns([4, 1])
@@ -152,7 +150,8 @@ def home_page():
     
     with col2:
         if st.button("**🚪 Logout**", use_container_width=True):
-            logout_user()
+            st.session_state.logged_in = False
+            st.session_state.email = ""
             st.rerun()
     
     st.markdown("---")
@@ -208,16 +207,5 @@ def home_page():
         if st.button("Explore", key="new_btn", use_container_width=True):
             st.info("🎯 New features launching soon!")
 
-def main():
-    # Initialize persistent session state if not exists
-    if 'persistent_login' not in st.session_state:
-        st.session_state.persistent_login = False
-    
-    # Check if user is logged in
-    if not check_session():
-        login_page()
-    else:
-        home_page()
-
-if __name__ == "__main__":
-    main()
+# Run the home page
+home_page()
