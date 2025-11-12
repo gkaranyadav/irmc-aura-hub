@@ -172,7 +172,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch RAG Chat", key="rag_btn", use_container_width=True):
-            st.info("🚧 Coming Soon - RAG Chat integration in progress!")
+            st.switch_page("pages/rag_chat.py")
         
         st.markdown("""
         <div class="app-box">
