@@ -287,7 +287,7 @@ class VoiceService:
 def main():
     # page configuration for rag chat
     st.set_page_config(
-        page_title="doc rag chat - irmc aura",
+        page_title="irmc Aura",
         page_icon="📄",
         layout="wide"
     )
@@ -389,9 +389,9 @@ def main():
                 st.session_state.pdf_name = uploaded_file.name
     
     if st.session_state.pdf_processed:
-        st.sidebar.success("✅ document ready")
+        st.sidebar.success("✅ document is uploaded")
     
-    enable_voice = st.sidebar.checkbox("enable voice output", True)
+    enable_voice = st.sidebar.checkbox("Enable voice", True)
     
     # main chat interface
     if not st.session_state.pdf_processed:
@@ -415,7 +415,7 @@ def main():
             
             st.markdown(f"""
             <div class="chat-message assistant-message">
-                <strong>aura:</strong> {msg["content"]} {confidence_html} {pages_html}
+                <strong>Aura:</strong> {msg["content"]} {confidence_html} {pages_html}
             </div>
             """, unsafe_allow_html=True)
     
@@ -430,7 +430,7 @@ def main():
         st.subheader("💡 get started with suggested questions")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("💡 let aura suggest questions based on your document", 
+            if st.button("💡 let Aura suggest questions based on your document", 
                         key="big_suggest_btn", 
                         use_container_width=True,
                         type="primary"):
@@ -505,7 +505,7 @@ def main():
             
             st.markdown(f"""
             <div class="chat-message assistant-message">
-                <strong>aura:</strong> {answer} {confidence_html} {pages_html}
+                <strong>Aura:</strong> {answer} {confidence_html} {pages_html}
             </div>
             """, unsafe_allow_html=True)
             
@@ -549,7 +549,7 @@ def main():
             
             st.markdown(f"""
             <div class="chat-message assistant-message">
-                <strong>aura:</strong> {answer} {confidence_html} {pages_html}
+                <strong>Aura:</strong> {answer} {confidence_html} {pages_html}
             </div>
             """, unsafe_allow_html=True)
             
