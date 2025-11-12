@@ -137,7 +137,19 @@ class LLMService:
     def generate_answer(self, question, chunks):
         if not chunks:
             return f"❌ no relevant info found for '{question}'", 0.0, []
-        avg_conf = sum(c["similarity"] for c in chunks)/len(chunks)
+        
+        # IMPROVED CONFIDENCE SCORE CALCULATION
+        # Give more weight to higher similarity scores
+        similarities = [c["similarity"] for c in chunks]
+        avg_conf = sum(similarities) / len(similarities)
+        
+        # Boost confidence for high-quality matches
+        max_sim = max(similarities)
+        if max_sim > 0.8:  # Very good match
+            avg_conf = min(1.0, avg_conf * 1.2)
+        elif max_sim > 0.6:  # Good match
+            avg_conf = min(1.0, avg_conf * 1.1)
+        
         if self.client:
             return self._generate_llm_answer(question, chunks, avg_conf)
         else:
@@ -145,10 +157,12 @@ class LLMService:
 
     def _generate_llm_answer(self, question, chunks, avg_conf):
         try:
-            context = "\n\n".join([f"page {c['metadata']['page']}: {c['content']}" for c in chunks])
+            context = "\n\n".join([f"{c['content']}" for c in chunks])  # REMOVED PAGE NUMBERS FROM CONTEXT
+            
+            # IMPROVED PROMPT - NO PAGE NUMBERS IN ANSWER
             messages = [
-                {"role": "system", "content": "you are an expert document analyst. only use the provided context. always mention the page numbers where you found the information."},
-                {"role": "user", "content": f"context:\n{context}\n\nquestion: {question}"}
+                {"role": "system", "content": "you are an expert document analyst. provide clear, concise answers based only on the provided context. do not mention page numbers or sources in your answer - they will be displayed separately. if the context doesn't contain the answer, say so clearly."},
+                {"role": "user", "content": f"context:\n{context}\n\nquestion: {question}\n\nprovide a direct answer without mentioning page numbers or sources."}
             ]
             response = self.client.chat.completions.create(
                 model=Config.GROQ_MODEL,
@@ -246,7 +260,7 @@ def main():
         layout="wide"
     )
     
-    # custom css for better chat display and bigger button
+    # custom css for better chat display
     st.markdown("""
     <style>
         .chat-message {
@@ -296,24 +310,6 @@ def main():
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(23, 92, 255, 0.4);
         }
-        .question-chip {
-            background-color: #e3f2fd;
-            color: #1565c0;
-            padding: 0.8rem 1.2rem;
-            border-radius: 25px;
-            margin: 0.3rem;
-            cursor: pointer;
-            border: 1px solid #90caf9;
-            display: inline-block;
-            transition: all 0.2s ease;
-            font-size: 14px;
-            text-align: center;
-        }
-        .question-chip:hover {
-            background-color: #bbdefb;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -341,6 +337,8 @@ def main():
         st.session_state.show_suggestions = False
     if 'generating_questions' not in st.session_state:
         st.session_state.generating_questions = False
+    if 'suggest_button_used' not in st.session_state:  # NEW: Track if button was used
+        st.session_state.suggest_button_used = False
     
     # initialize services
     llm_service = LLMService()
@@ -389,9 +387,15 @@ def main():
             </div>
             """, unsafe_allow_html=True)
     
-    # BIG SUGGEST BUTTON - centered and larger
-    if st.session_state.pdf_processed and not st.session_state.show_suggestions and not st.session_state.generating_questions:
+    # BIG SUGGEST BUTTON - Show only once at the beginning if no messages yet
+    if (st.session_state.pdf_processed and 
+        not st.session_state.show_suggestions and 
+        not st.session_state.generating_questions and
+        not st.session_state.suggest_button_used and  # Only show if not used before
+        len(st.session_state.messages) == 0):  # Only show at the beginning
+        
         st.markdown("---")
+        st.subheader("💡 get started with suggested questions")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             if st.button("💡 let aura suggest questions based on your document", 
@@ -399,6 +403,7 @@ def main():
                         use_container_width=True,
                         type="primary"):
                 st.session_state.generating_questions = True
+                st.session_state.suggest_button_used = True  # Mark as used
                 st.rerun()
     
     # Generate questions when button is clicked
@@ -420,7 +425,7 @@ def main():
         st.subheader("💡 suggested questions based on your document")
         st.write("click on any question to ask it:")
         
-        # display questions as larger clickable chips
+        # display questions as clickable buttons
         for i, question in enumerate(st.session_state.suggested_questions):
             col1, col2, col1 = st.columns([1, 3, 1])
             with col2:
