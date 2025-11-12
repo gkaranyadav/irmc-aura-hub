@@ -3,3 +3,14 @@ bcrypt
 pyjwt
 PyJWT
 extra-streamlit-components
+PyPDF2
+sentence-transformers
+faiss-cpu
+pytesseract
+pdf2image
+Pillow
+gtts
+groq
+SpeechRecognition
+pydub
+soundfile
