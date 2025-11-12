@@ -17,7 +17,7 @@ class Config:
     GROQ_MODEL = "llama-3.3-70b-versatile"
     CHUNK_SIZE = 500
     MIN_PARAGRAPH_LENGTH = 20
-    TOP_K = 5
+    TOP_K = 3
 
 # =============================================================================
 # DOCUMENT PROCESSOR
@@ -111,8 +111,30 @@ class DocumentProcessor:
         results = []
         for i, idx in enumerate(indices[0]):
             if idx < len(self.chunks):
-                sim = 1 / (1 + distances[0][i])
-                results.append({"content": self.chunks[idx], "metadata": self.chunk_metadata[idx], "similarity": round(sim, 3)})
+                # FIXED CONFIDENCE CALCULATION - PROPER SIMILARITY SCORE
+                distance = distances[0][i]
+                
+                # Convert L2 distance to similarity score (0-1)
+                # For normalized embeddings, distance range is typically 0-2
+                # We use exponential decay for better confidence representation
+                similarity = np.exp(-distance * 2)  # Multiply by 2 for better scaling
+                
+                # Additional boosting for very close matches
+                if distance < 0.3:  # Excellent match
+                    similarity = min(1.0, similarity * 1.4)
+                elif distance < 0.6:  # Very good match
+                    similarity = min(1.0, similarity * 1.2)
+                elif distance < 1.0:  # Good match
+                    similarity = min(1.0, similarity * 1.1)
+                    
+                # Ensure score is between 0.1 and 1.0
+                similarity = max(0.1, min(1.0, similarity))
+                
+                results.append({
+                    "content": self.chunks[idx], 
+                    "metadata": self.chunk_metadata[idx], 
+                    "similarity": round(similarity, 3)
+                })
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results
 
@@ -139,16 +161,27 @@ class LLMService:
             return f"❌ no relevant info found for '{question}'", 0.0, []
         
         # IMPROVED CONFIDENCE SCORE CALCULATION
-        # Give more weight to higher similarity scores
         similarities = [c["similarity"] for c in chunks]
-        avg_conf = sum(similarities) / len(similarities)
         
-        # Boost confidence for high-quality matches
+        # Weighted average giving more importance to top matches
+        if len(similarities) == 1:
+            avg_conf = similarities[0]
+        elif len(similarities) == 2:
+            avg_conf = (similarities[0] * 0.7 + similarities[1] * 0.3)
+        else:
+            avg_conf = (similarities[0] * 0.5 + similarities[1] * 0.3 + similarities[2] * 0.2)
+        
+        # Additional confidence boosting based on match quality
         max_sim = max(similarities)
-        if max_sim > 0.8:  # Very good match
+        if max_sim > 0.9:  # Excellent match
+            avg_conf = min(1.0, avg_conf * 1.3)
+        elif max_sim > 0.7:  # Very good match
             avg_conf = min(1.0, avg_conf * 1.2)
-        elif max_sim > 0.6:  # Good match
+        elif max_sim > 0.5:  # Good match
             avg_conf = min(1.0, avg_conf * 1.1)
+            
+        # Ensure confidence is reasonable
+        avg_conf = max(0.3, min(1.0, avg_conf))
         
         if self.client:
             return self._generate_llm_answer(question, chunks, avg_conf)
@@ -157,12 +190,12 @@ class LLMService:
 
     def _generate_llm_answer(self, question, chunks, avg_conf):
         try:
-            context = "\n\n".join([f"{c['content']}" for c in chunks])  # REMOVED PAGE NUMBERS FROM CONTEXT
+            context = "\n\n".join([f"{c['content']}" for c in chunks])
             
             # IMPROVED PROMPT - NO PAGE NUMBERS IN ANSWER
             messages = [
-                {"role": "system", "content": "you are an expert document analyst. provide clear, concise answers based only on the provided context. do not mention page numbers or sources in your answer - they will be displayed separately. if the context doesn't contain the answer, say so clearly."},
-                {"role": "user", "content": f"context:\n{context}\n\nquestion: {question}\n\nprovide a direct answer without mentioning page numbers or sources."}
+                {"role": "system", "content": "You are an expert document analyst. Provide clear, concise answers based only on the provided context. Do not mention page numbers, sources, or say 'based on the context' in your answer. Just provide the direct answer. If the context doesn't contain the answer, say 'I cannot find this information in the document.'"},
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}\n\nProvide a direct answer without mentioning sources."}
             ]
             response = self.client.chat.completions.create(
                 model=Config.GROQ_MODEL,
@@ -190,8 +223,8 @@ class LLMService:
             
         try:
             messages = [
-                {"role": "system", "content": "you are an expert at analyzing documents and generating relevant questions. generate 5-6 specific questions that would help someone understand the key points of this specific document. make the questions directly relevant to the content provided."},
-                {"role": "user", "content": f"based on this document content, suggest 5-6 specific relevant questions:\n\n{document_sample}\n\nprovide the questions as a simple list, one per line."}
+                {"role": "system", "content": "You are an expert at analyzing documents and generating relevant questions. Generate 5-6 specific questions that would help someone understand the key points of this specific document. Make the questions directly relevant to the content provided."},
+                {"role": "user", "content": f"Based on this document content, suggest 5-6 specific relevant questions:\n\n{document_sample}\n\nProvide the questions as a simple list, one per line."}
             ]
             response = self.client.chat.completions.create(
                 model=Config.GROQ_MODEL,
@@ -218,12 +251,12 @@ class LLMService:
     def _get_fallback_questions(self):
         """Fallback questions if LLM fails"""
         return [
-            "what is the main purpose of this document?",
-            "what are the key findings or conclusions?",
-            "who is the intended audience for this content?",
-            "what methodology or approach was used?",
-            "what are the main recommendations?",
-            "what problems or challenges does this address?"
+            "What is the main purpose of this document?",
+            "What are the key findings or conclusions?",
+            "Who is the intended audience for this content?",
+            "What methodology or approach was used?",
+            "What are the main recommendations?",
+            "What problems or challenges does this address?"
         ]
 
 # =============================================================================
@@ -337,7 +370,7 @@ def main():
         st.session_state.show_suggestions = False
     if 'generating_questions' not in st.session_state:
         st.session_state.generating_questions = False
-    if 'suggest_button_used' not in st.session_state:  # NEW: Track if button was used
+    if 'suggest_button_used' not in st.session_state:
         st.session_state.suggest_button_used = False
     
     # initialize services
@@ -391,8 +424,8 @@ def main():
     if (st.session_state.pdf_processed and 
         not st.session_state.show_suggestions and 
         not st.session_state.generating_questions and
-        not st.session_state.suggest_button_used and  # Only show if not used before
-        len(st.session_state.messages) == 0):  # Only show at the beginning
+        not st.session_state.suggest_button_used and
+        len(st.session_state.messages) == 0):
         
         st.markdown("---")
         st.subheader("💡 get started with suggested questions")
@@ -403,7 +436,7 @@ def main():
                         use_container_width=True,
                         type="primary"):
                 st.session_state.generating_questions = True
-                st.session_state.suggest_button_used = True  # Mark as used
+                st.session_state.suggest_button_used = True
                 st.rerun()
     
     # Generate questions when button is clicked
