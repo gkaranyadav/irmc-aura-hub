@@ -265,11 +265,13 @@ def main():
             font-size: 0.8rem;
             margin-left: 0.5rem;
         }
-        .floating-suggest-btn {
+        .suggest-btn-container {
             position: fixed;
             bottom: 100px;
             right: 20px;
             z-index: 1000;
+        }
+        .suggest-btn {
             background: linear-gradient(135deg, #175CFF, #00A3FF);
             color: white;
             border: none;
@@ -278,8 +280,9 @@ def main():
             font-weight: 600;
             box-shadow: 0 4px 12px rgba(23, 92, 255, 0.3);
             cursor: pointer;
+            transition: all 0.3s ease;
         }
-        .floating-suggest-btn:hover {
+        .suggest-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(23, 92, 255, 0.4);
         }
@@ -292,6 +295,7 @@ def main():
             cursor: pointer;
             border: 1px solid #90caf9;
             display: inline-block;
+            transition: all 0.2s ease;
         }
         .question-chip:hover {
             background-color: #bbdefb;
@@ -340,8 +344,11 @@ def main():
                 st.session_state.pdf_name = uploaded_file.name
                 
                 # generate suggested questions based on document content
-                sample_content = " ".join([chunk["content"] for chunk in st.session_state.doc_processor.chunks[:5]])
-                st.session_state.suggested_questions = llm_service.generate_suggested_questions(sample_content)
+                if hasattr(st.session_state.doc_processor, 'chunks') and st.session_state.doc_processor.chunks:
+                    sample_content = " ".join([chunk["content"] for chunk in st.session_state.doc_processor.chunks[:3]])
+                    st.session_state.suggested_questions = llm_service.generate_suggested_questions(sample_content)
+                else:
+                    st.session_state.suggested_questions = llm_service._get_fallback_questions()
     
     if st.session_state.pdf_processed:
         st.sidebar.success("✅ document ready")
@@ -390,21 +397,20 @@ def main():
                     st.session_state.show_suggestions = False
                     st.rerun()
     
-    # floating suggest button
-    if st.session_state.pdf_processed:
+    # SINGLE floating suggest button (no duplicate)
+    if st.session_state.pdf_processed and not st.session_state.show_suggestions:
         st.markdown("""
-        <div style="position: fixed; bottom: 100px; right: 20px; z-index: 1000;">
-            <button onclick="window.parent.postMessage({type: 'streamlit:setComponentValue', value: 'suggest_clicked'}, '*')" 
-                    style="background: linear-gradient(135deg, #175CFF, #00A3FF); color: white; border: none; border-radius: 25px; padding: 12px 20px; font-weight: 600; box-shadow: 0 4px 12px rgba(23, 92, 255, 0.3); cursor: pointer;">
+        <div class="suggest-btn-container">
+            <button class="suggest-btn" onclick="window.parent.postMessage({type: 'streamlit:setComponentValue', value: 'suggest_clicked'}, '*')">
                 💡 let aura suggest questions
             </button>
         </div>
         """, unsafe_allow_html=True)
-    
-    # handle floating button click
-    if st.button("💡 let aura suggest questions", key="floating_btn"):
-        st.session_state.show_suggestions = True
-        st.rerun()
+        
+        # handle the button click
+        if st.button("💡 let aura suggest questions", key="floating_suggest_btn"):
+            st.session_state.show_suggestions = True
+            st.rerun()
     
     # handle selected question from suggestions
     if 'selected_question' in st.session_state:
