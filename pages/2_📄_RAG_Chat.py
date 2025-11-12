@@ -116,6 +116,13 @@ class DocumentProcessor:
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results
 
+    def get_document_sample(self, num_chunks=5):
+        """Get sample content from document for question generation"""
+        if not self.chunks:
+            return ""
+        sample_chunks = self.chunks[:num_chunks]
+        return " ".join(sample_chunks)
+
 # =============================================================================
 # LLM SERVICE
 # =============================================================================
@@ -162,8 +169,40 @@ class LLMService:
         summary = ' '.join(key_sentences[:6])
         return summary, avg_conf, chunks
 
-    def generate_suggested_questions(self):
-        """Generate generic suggested questions"""
+    def generate_suggested_questions_from_pdf(self, document_sample):
+        """Generate relevant questions based on actual PDF content using LLM"""
+        if not self.client:
+            return self._get_fallback_questions()
+            
+        try:
+            messages = [
+                {"role": "system", "content": "you are an expert at analyzing documents and generating relevant questions. generate 5-6 specific questions that would help someone understand the key points of this specific document. make the questions directly relevant to the content provided."},
+                {"role": "user", "content": f"based on this document content, suggest 5-6 specific relevant questions:\n\n{document_sample}\n\nprovide the questions as a simple list, one per line."}
+            ]
+            response = self.client.chat.completions.create(
+                model=Config.GROQ_MODEL,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=500
+            )
+            questions_text = response.choices[0].message.content
+            
+            # Extract questions from the response
+            questions = []
+            for line in questions_text.split('\n'):
+                line = line.strip()
+                # Remove numbering and bullets
+                clean_line = re.sub(r'^[\d\-•\.\s]+', '', line).strip()
+                if clean_line and len(clean_line) > 10 and '?' in clean_line:
+                    questions.append(clean_line)
+                    
+            return questions[:6] if questions else self._get_fallback_questions()
+        except Exception as e:
+            st.error(f"❌ failed to generate questions: {e}")
+            return self._get_fallback_questions()
+
+    def _get_fallback_questions(self):
+        """Fallback questions if LLM fails"""
         return [
             "what is the main purpose of this document?",
             "what are the key findings or conclusions?",
@@ -207,7 +246,7 @@ def main():
         layout="wide"
     )
     
-    # custom css for better chat display and floating button
+    # custom css for better chat display and bigger button
     st.markdown("""
     <style>
         .chat-message {
@@ -239,41 +278,41 @@ def main():
             font-size: 0.8rem;
             margin-left: 0.5rem;
         }
-        .suggest-btn-container {
-            position: fixed;
-            bottom: 100px;
-            right: 20px;
-            z-index: 1000;
-        }
-        .suggest-btn {
+        .big-suggest-btn {
             background: linear-gradient(135deg, #175CFF, #00A3FF);
             color: white;
             border: none;
             border-radius: 25px;
-            padding: 12px 20px;
+            padding: 15px 25px;
             font-weight: 600;
+            font-size: 16px;
             box-shadow: 0 4px 12px rgba(23, 92, 255, 0.3);
             cursor: pointer;
             transition: all 0.3s ease;
+            width: 100%;
+            margin: 10px 0;
         }
-        .suggest-btn:hover {
+        .big-suggest-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(23, 92, 255, 0.4);
         }
         .question-chip {
             background-color: #e3f2fd;
             color: #1565c0;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            margin: 0.2rem;
+            padding: 0.8rem 1.2rem;
+            border-radius: 25px;
+            margin: 0.3rem;
             cursor: pointer;
             border: 1px solid #90caf9;
             display: inline-block;
             transition: all 0.2s ease;
+            font-size: 14px;
+            text-align: center;
         }
         .question-chip:hover {
             background-color: #bbdefb;
-            transform: translateY(-1px);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
     </style>
     """, unsafe_allow_html=True)
@@ -300,6 +339,8 @@ def main():
         st.session_state.suggested_questions = []
     if 'show_suggestions' not in st.session_state:
         st.session_state.show_suggestions = False
+    if 'generating_questions' not in st.session_state:
+        st.session_state.generating_questions = False
     
     # initialize services
     llm_service = LLMService()
@@ -316,8 +357,6 @@ def main():
             if count > 0:
                 st.session_state.pdf_processed = True
                 st.session_state.pdf_name = uploaded_file.name
-                # use generic suggested questions instead of document analysis
-                st.session_state.suggested_questions = llm_service.generate_suggested_questions()
     
     if st.session_state.pdf_processed:
         st.sidebar.success("✅ document ready")
@@ -350,30 +389,46 @@ def main():
             </div>
             """, unsafe_allow_html=True)
     
-    # show suggested questions if button was clicked
+    # BIG SUGGEST BUTTON - centered and larger
+    if st.session_state.pdf_processed and not st.session_state.show_suggestions and not st.session_state.generating_questions:
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("💡 let aura suggest questions based on your document", 
+                        key="big_suggest_btn", 
+                        use_container_width=True,
+                        type="primary"):
+                st.session_state.generating_questions = True
+                st.rerun()
+    
+    # Generate questions when button is clicked
+    if st.session_state.generating_questions:
+        with st.spinner("🤔 analyzing your document and generating relevant questions..."):
+            # Get sample content from the processed document
+            document_sample = st.session_state.doc_processor.get_document_sample()
+            
+            # Generate questions based on actual PDF content
+            st.session_state.suggested_questions = llm_service.generate_suggested_questions_from_pdf(document_sample)
+            
+            st.session_state.generating_questions = False
+            st.session_state.show_suggestions = True
+            st.rerun()
+    
+    # show suggested questions if generated
     if st.session_state.show_suggestions and st.session_state.suggested_questions:
         st.markdown("---")
-        st.subheader("💡 suggested questions")
+        st.subheader("💡 suggested questions based on your document")
         st.write("click on any question to ask it:")
         
-        # display questions as clickable chips
-        cols = st.columns(2)
+        # display questions as larger clickable chips
         for i, question in enumerate(st.session_state.suggested_questions):
-            with cols[i % 2]:
+            col1, col2, col1 = st.columns([1, 3, 1])
+            with col2:
                 if st.button(question, key=f"suggested_{i}", use_container_width=True):
                     # set the question in session state to be processed
                     st.session_state.selected_question = question
                     st.session_state.show_suggestions = False
                     st.rerun()
-    
-    # SINGLE floating suggest button (no duplicate)
-    if st.session_state.pdf_processed and not st.session_state.show_suggestions:
-        # Use a proper Streamlit button instead of HTML for reliability
-        col1, col2, col3 = st.columns([2, 1, 2])
-        with col2:
-            if st.button("💡 let aura suggest questions", key="suggest_btn", use_container_width=True):
-                st.session_state.show_suggestions = True
-                st.rerun()
     
     # handle selected question from suggestions
     if 'selected_question' in st.session_state:
