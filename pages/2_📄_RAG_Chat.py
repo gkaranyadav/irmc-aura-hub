@@ -348,7 +348,7 @@ def main():
     # add back to home button
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("📄 doc rag chat")
+        st.title("📄 irmc aura")
         st.markdown("### chat with your documents using ai")
     with col2:
         if st.button("🏠 back to home"):
@@ -377,8 +377,8 @@ def main():
     voice_service = VoiceService()
     
     # sidebar - simplified
-    st.sidebar.title("📁 document controls")
-    uploaded_file = st.sidebar.file_uploader("upload pdf", type="pdf", key="pdf_uploader")
+    st.sidebar.title("📁 Document controls")
+    uploaded_file = st.sidebar.file_uploader("   upload pdf", type="pdf", key="pdf_uploader")
     
     # auto-process when file is uploaded
     if uploaded_file and not st.session_state.pdf_processed:
