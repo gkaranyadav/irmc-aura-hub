@@ -162,34 +162,8 @@ class LLMService:
         summary = ' '.join(key_sentences[:6])
         return summary, avg_conf, chunks
 
-    def generate_suggested_questions(self, document_content_sample):
-        """Generate relevant questions based on document content"""
-        try:
-            messages = [
-                {"role": "system", "content": "you are an expert at analyzing documents and generating relevant questions. generate 5-6 specific questions that would help someone understand the key points of this document."},
-                {"role": "user", "content": f"based on this document content, suggest relevant questions:\n\n{document_content_sample}\n\nprovide 5-6 specific questions as a python list format."}
-            ]
-            response = self.client.chat.completions.create(
-                model=Config.GROQ_MODEL,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=500
-            )
-            questions_text = response.choices[0].message.content
-            # Extract questions from the response
-            questions = []
-            for line in questions_text.split('\n'):
-                line = line.strip()
-                if line and (line.startswith('-') or line.startswith('•') or line[0].isdigit()):
-                    question = re.sub(r'^[-\d•\.\s]+', '', line).strip()
-                    if question and len(question) > 10:
-                        questions.append(question)
-            return questions[:6] if questions else self._get_fallback_questions()
-        except:
-            return self._get_fallback_questions()
-
-    def _get_fallback_questions(self):
-        """Fallback questions if LLM fails"""
+    def generate_suggested_questions(self):
+        """Generate generic suggested questions"""
         return [
             "what is the main purpose of this document?",
             "what are the key findings or conclusions?",
@@ -342,13 +316,8 @@ def main():
             if count > 0:
                 st.session_state.pdf_processed = True
                 st.session_state.pdf_name = uploaded_file.name
-                
-                # generate suggested questions based on document content
-                if hasattr(st.session_state.doc_processor, 'chunks') and st.session_state.doc_processor.chunks:
-                    sample_content = " ".join([chunk["content"] for chunk in st.session_state.doc_processor.chunks[:3]])
-                    st.session_state.suggested_questions = llm_service.generate_suggested_questions(sample_content)
-                else:
-                    st.session_state.suggested_questions = llm_service._get_fallback_questions()
+                # use generic suggested questions instead of document analysis
+                st.session_state.suggested_questions = llm_service.generate_suggested_questions()
     
     if st.session_state.pdf_processed:
         st.sidebar.success("✅ document ready")
@@ -399,18 +368,12 @@ def main():
     
     # SINGLE floating suggest button (no duplicate)
     if st.session_state.pdf_processed and not st.session_state.show_suggestions:
-        st.markdown("""
-        <div class="suggest-btn-container">
-            <button class="suggest-btn" onclick="window.parent.postMessage({type: 'streamlit:setComponentValue', value: 'suggest_clicked'}, '*')">
-                💡 let aura suggest questions
-            </button>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # handle the button click
-        if st.button("💡 let aura suggest questions", key="floating_suggest_btn"):
-            st.session_state.show_suggestions = True
-            st.rerun()
+        # Use a proper Streamlit button instead of HTML for reliability
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            if st.button("💡 let aura suggest questions", key="suggest_btn", use_container_width=True):
+                st.session_state.show_suggestions = True
+                st.rerun()
     
     # handle selected question from suggestions
     if 'selected_question' in st.session_state:
