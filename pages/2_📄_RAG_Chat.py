@@ -17,7 +17,7 @@ class Config:
     GROQ_MODEL = "llama-3.3-70b-versatile"
     CHUNK_SIZE = 500
     MIN_PARAGRAPH_LENGTH = 20
-    TOP_K = 3
+    TOP_K = 5
 
 # =============================================================================
 # DOCUMENT PROCESSOR
