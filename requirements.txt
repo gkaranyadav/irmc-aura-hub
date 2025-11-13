@@ -18,3 +18,4 @@ networkx
 matplotlib
 plotly
 pyvis
+neo4j 
