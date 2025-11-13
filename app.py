@@ -183,7 +183,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Explore Graph RAG", key="graph_btn", use_container_width=True):
-            st.info("🚧 Coming Soon!")
+            st.switch_page("pages/3_🌐_Graph_RAG.py")
     
     with col2:
         st.markdown("""
