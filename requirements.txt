@@ -14,3 +14,7 @@ groq
 SpeechRecognition
 pydub
 soundfile
+networkx
+matplotlib
+plotly
+pyvis
