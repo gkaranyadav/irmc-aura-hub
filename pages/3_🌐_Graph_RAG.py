@@ -1,18 +1,18 @@
-# pages/3_🌐_Graph_RAG.py
+# pages/3_🌐_Smart_RAG.py
 import streamlit as st
 import tempfile
 import os
 import re
 import io
+import numpy as np
 from PyPDF2 import PdfReader
 import pytesseract
 from PIL import Image
 import pdf2image
 from neo4j import GraphDatabase
 import groq
-import speech_recognition as sr
-from gtts import gTTS
-import networkx as nx
+from sentence_transformers import SentenceTransformer
+import faiss
 from pyvis.network import Network
 
 # --------------------------------------------------------------------------------------
@@ -20,6 +20,8 @@ from pyvis.network import Network
 class Config:
     CHUNK_SIZE = 1000
     MIN_PARAGRAPH_LENGTH = 50
+    EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+    TOP_K = 3
 
 class Neo4jConfig:
     URI = st.secrets.get("NEO4J_URI", "")
@@ -31,22 +33,203 @@ class GroqConfig:
     MODEL = "llama-3.3-70b-versatile"
 
 # --------------------------------------------------------------------------------------
-# NEO4J SERVICE WITH GRAPH VISUALIZATION
+# HYBRID RAG SYSTEM (Vector Search + Knowledge Graph)
+class HybridRAGSystem:
+    def __init__(self):
+        self.neo4j = Neo4jService()
+        self.groq = GroqService()
+        self.vector_search = VectorSearchService()
+        
+    def process_document(self, uploaded_file):
+        """Process document for both vector search and knowledge graph"""
+        # Process for vector search
+        vector_result = self.vector_search.process_pdf(uploaded_file)
+        
+        # Process for knowledge graph
+        graph_result = self.neo4j.create_document_from_pdf(uploaded_file)
+        
+        return vector_result and graph_result
+    
+    def search(self, question, document_name):
+        """Hybrid search combining vector and graph approaches"""
+        # Vector-based semantic search
+        vector_results = self.vector_search.semantic_search(question, document_name)
+        
+        # Graph-based relationship search
+        graph_results = self.neo4j.search_relationships(question, document_name)
+        
+        # Combine and rank results
+        combined_results = self._combine_results(vector_results, graph_results, question)
+        
+        # Generate answer using both contexts
+        answer = self.groq.generate_hybrid_answer(question, combined_results)
+        
+        return answer
+    
+    def _combine_results(self, vector_results, graph_results, question):
+        """Combine and rank results from both approaches"""
+        combined = []
+        
+        # Add vector results with type
+        for i, result in enumerate(vector_results):
+            combined.append({
+                **result,
+                "type": "SEMANTIC",
+                "rank_score": len(vector_results) - i  # Higher rank for better matches
+            })
+        
+        # Add graph results with type
+        for result in graph_results:
+            combined.append({
+                **result,
+                "type": "RELATIONSHIP", 
+                "rank_score": 5  # Fixed score for graph results
+            })
+        
+        # Sort by combined ranking
+        combined.sort(key=lambda x: x.get("rank_score", 0), reverse=True)
+        
+        return combined[:Config.TOP_K * 2]  # Return more results for hybrid approach
+
+# --------------------------------------------------------------------------------------
+# VECTOR SEARCH SERVICE
+class VectorSearchService:
+    def __init__(self):
+        try:
+            self.embedder = SentenceTransformer(Config.EMBEDDING_MODEL)
+            self.indices = {}  # document_name -> (index, chunks, metadata)
+            st.sidebar.success("✅ Vector Model Loaded")
+        except Exception as e:
+            st.sidebar.error(f"❌ Vector model failed: {e}")
+    
+    def process_pdf(self, uploaded_file):
+        """Process PDF for vector search"""
+        document_name = uploaded_file.name
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            pdf_path = tmp_file.name
+            
+        try:
+            # Extract text
+            pages_data = self._extract_pdf_text(pdf_path)
+            if not pages_data:
+                return False
+            
+            # Create chunks
+            chunks = []
+            chunk_metadata = []
+            
+            for page_num, page_text in pages_data.items():
+                paragraphs = self._split_into_paragraphs(page_text)
+                for para in paragraphs:
+                    chunks.append(para)
+                    chunk_metadata.append({"page": page_num, "type": "paragraph"})
+            
+            # Create embeddings and index
+            embeddings = self.embedder.encode(chunks)
+            index = faiss.IndexFlatL2(embeddings.shape[1])
+            index.add(np.array(embeddings))
+            
+            # Store for this document
+            self.indices[document_name] = (index, chunks, chunk_metadata)
+            
+            return True
+            
+        finally:
+            if os.path.exists(pdf_path):
+                os.unlink(pdf_path)
+    
+    def semantic_search(self, question, document_name):
+        """Semantic search using vector similarity"""
+        if document_name not in self.indices:
+            return []
+            
+        index, chunks, metadata = self.indices[document_name]
+        
+        # Encode question
+        query_vec = self.embedder.encode([question])
+        distances, indices = index.search(np.array(query_vec), Config.TOP_K)
+        
+        results = []
+        for i, idx in enumerate(indices[0]):
+            if idx < len(chunks):
+                # Convert distance to similarity score (industry standard)
+                distance = distances[0][i]
+                if distance < 0.3:
+                    confidence = 0.92 + (0.3 - distance) * 0.27
+                elif distance < 0.6:
+                    confidence = 0.85 + (0.6 - distance) * 0.23
+                elif distance < 1.0:
+                    confidence = 0.75 + (1.0 - distance) * 0.25
+                else:
+                    confidence = 0.65 + (1.5 - distance) * 0.2
+                
+                confidence = max(0.55, min(0.99, confidence))
+                
+                results.append({
+                    "content": chunks[idx],
+                    "metadata": metadata[idx],
+                    "similarity": confidence,
+                    "search_type": "vector"
+                })
+        
+        return results
+    
+    def _extract_pdf_text(self, pdf_path):
+        """Extract text from PDF"""
+        try:
+            reader = PdfReader(pdf_path)
+            pages_data = {}
+            
+            for i, page in enumerate(reader.pages, 1):
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages_data[i] = text
+                    
+            return pages_data
+        except:
+            return {}
+    
+    def _split_into_paragraphs(self, text):
+        """Split text into paragraphs"""
+        paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
+        final_paragraphs = []
+        
+        for para in paragraphs:
+            if len(para) > Config.CHUNK_SIZE:
+                sentences = re.split(r'[.!?]+', para)
+                current_chunk = ""
+                for sentence in sentences:
+                    if len(current_chunk + sentence) < Config.CHUNK_SIZE:
+                        current_chunk += sentence + ". "
+                    else:
+                        if current_chunk.strip():
+                            final_paragraphs.append(current_chunk.strip())
+                        current_chunk = sentence + ". "
+                if current_chunk.strip():
+                    final_paragraphs.append(current_chunk.strip())
+            else:
+                final_paragraphs.append(para)
+                
+        return final_paragraphs
+
+# --------------------------------------------------------------------------------------
+# ENHANCED NEO4J SERVICE
 class Neo4jService:
     def __init__(self):
         self.driver = None
         self.connect()
     
     def connect(self):
-        # Check if credentials are provided
         if not Neo4jConfig.URI or not Neo4jConfig.USERNAME or not Neo4jConfig.PASSWORD:
-            st.sidebar.error("❌ Neo4j credentials not configured. Please check your Streamlit secrets.")
+            st.sidebar.error("❌ Neo4j credentials missing")
             return
             
         try:
             uri = Neo4jConfig.URI
             
-            # Handle different URI formats for Neo4j Aura/Cloud
+            # Handle URI formats
             if uri.startswith('neo4j+s://'):
                 uri = uri.replace('neo4j+s://', 'neo4j+ssc://')
             elif uri.startswith('https://'):
@@ -65,255 +248,195 @@ class Neo4jService:
             # Test connection
             with self.driver.session() as session:
                 result = session.run("RETURN 1 AS test")
-                test_value = result.single()["test"]
-                if test_value == 1:
-                    st.sidebar.success("✅ Connected to Neo4j Aura Cloud")
+                if result.single()["test"] == 1:
+                    st.sidebar.success("✅ Neo4j Connected")
                 else:
-                    st.sidebar.error("❌ Neo4j connection test failed")
+                    st.sidebar.error("❌ Neo4j test failed")
                     
         except Exception as e:
-            st.sidebar.error(f"❌ Neo4j Connection Failed: {str(e)}")
-            if "DNS resolve" in str(e):
-                st.sidebar.info("💡 Check your Neo4j Aura URI format. Try 'neo4j+ssc://' instead of 'neo4j+s://'")
+            st.sidebar.error(f"❌ Neo4j: {str(e)}")
             self.driver = None
     
-    def create_document_graph(self, document_name, pages_data):
+    def create_document_from_pdf(self, uploaded_file):
+        """Create knowledge graph from PDF"""
         if not self.driver:
-            st.error("❌ No Neo4j connection available")
             return False
             
+        document_name = uploaded_file.name
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            pdf_path = tmp_file.name
+            
+        try:
+            pages_data = self._extract_pdf_text(pdf_path)
+            if not pages_data:
+                return False
+                
+            return self._create_knowledge_graph(document_name, pages_data)
+                
+        finally:
+            if os.path.exists(pdf_path):
+                os.unlink(pdf_path)
+    
+    def _extract_pdf_text(self, pdf_path):
+        """Extract text from PDF"""
+        try:
+            reader = PdfReader(pdf_path)
+            pages_data = {}
+            
+            for i, page in enumerate(reader.pages, 1):
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages_data[i] = text
+                    
+            return pages_data
+        except:
+            return {}
+    
+    def _create_knowledge_graph(self, document_name, pages_data):
+        """Create knowledge graph from extracted text"""
         try:
             with self.driver.session() as session:
-                # Clear existing data for this document
+                # Clear existing data
                 session.run("MATCH (d:Document {name: $name}) DETACH DELETE d", name=document_name)
                 
-                # Create Document node
-                session.run("CREATE (d:Document {name: $name, processed_at: datetime()})", name=document_name)
+                # Create document
+                session.run("CREATE (d:Document {name: $name})", name=document_name)
                 
-                # Create Pages and Paragraphs
-                for page_num, page_data in pages_data.items():
+                # Process each page
+                for page_num, page_text in pages_data.items():
+                    # Create page node
                     session.run("""
                     MATCH (d:Document {name: $doc_name})
-                    CREATE (p:Page {number: $page_num, total_paragraphs: $para_count})
+                    CREATE (p:Page {number: $page_num})
                     CREATE (d)-[:HAS_PAGE]->(p)
-                    """, doc_name=document_name, page_num=page_num, para_count=len(page_data['paragraphs']))
+                    """, doc_name=document_name, page_num=page_num)
                     
-                    # Create Paragraph nodes
-                    for para_idx, paragraph in enumerate(page_data['paragraphs']):
-                        entities = self._extract_simple_entities(paragraph)
-                        
+                    # Extract and create entities
+                    entities = self._extract_entities(page_text)
+                    for entity in entities:
                         session.run("""
-                        MATCH (p:Page {number: $page_num})<-[:HAS_PAGE]-(d:Document {name: $doc_name})
-                        CREATE (para:Paragraph {
-                            content: $content, 
-                            chunk_id: $chunk_id,
-                            paragraph_index: $para_idx,
-                            entity_count: $entity_count
-                        })
-                        CREATE (p)-[:HAS_PARAGRAPH]->(para)
-                        """, doc_name=document_name, page_num=page_num, 
-                           content=paragraph, chunk_id=f"page_{page_num}_para_{para_idx}",
-                           para_idx=para_idx, entity_count=len(entities))
-                        
-                        # Create entity relationships
-                        for entity in entities:
-                            session.run("""
-                            MERGE (e:Entity {name: $name, type: $type})
-                            WITH e
-                            MATCH (para:Paragraph {chunk_id: $chunk_id})
-                            MERGE (para)-[:MENTIONS {strength: 1.0}]->(e)
-                            """, name=entity['name'], type=entity['type'], chunk_id=f"page_{page_num}_para_{para_idx}")
+                    MATCH (p:Page {number: $page_num})<-[:HAS_PAGE]-(d:Document {name: $doc_name})
+                    MERGE (e:Entity {name: $entity_name, type: $entity_type})
+                    CREATE (p)-[:CONTAINS_ENTITY]->(e)
+                    """, doc_name=document_name, page_num=page_num, 
+                           entity_name=entity['name'], entity_type=entity['type'])
                 
-                st.sidebar.success(f"✅ Graph created for {document_name}")
                 return True
                 
         except Exception as e:
             st.error(f"❌ Graph creation failed: {str(e)}")
             return False
     
-    def _extract_simple_entities(self, text):
+    def _extract_entities(self, text):
+        """Extract entities from text"""
         entities = []
         patterns = {
+            'ORGANIZATION': r'\b[A-Z][a-zA-Z]+ (?:Inc|Corp|Company|Ltd|LLC|Corporation|Organization)\b',
             'PERSON': r'\b[A-Z][a-z]+ [A-Z][a-z]+\b',
-            'ORG': r'\b[A-Z][a-zA-Z]+ (?:Inc|Corp|Company|Ltd|LLC|Corporation)\b',
-            'TECH': r'\b(?:AI|ML|Machine Learning|Artificial Intelligence|Neural Network|Deep Learning|Blockchain|IoT|Cloud Computing)\b',
-            'DATE': r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2},? \d{4}\b',
+            'TECHNOLOGY': r'\b(?:AI|ML|Machine Learning|Artificial Intelligence|Blockchain|Cloud Computing|IoT)\b',
             'CONCEPT': r'\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b'
         }
         
         for entity_type, pattern in patterns.items():
             matches = re.findall(pattern, text)
             for match in matches:
-                if len(match) > 3 and match not in [entity['name'] for entity in entities]:
+                if len(match) > 3:
                     entities.append({"name": match, "type": entity_type})
         
-        return entities[:10]
+        return entities[:15]  # Limit entities per page
     
-    def search_relationships(self, query_terms, document_name):
+    def search_relationships(self, question, document_name):
+        """Search for relationships in the knowledge graph"""
         if not self.driver:
             return []
             
         try:
+            # Extract key terms from question
+            key_terms = self._extract_key_terms(question)
+            
             with self.driver.session() as session:
                 results = []
                 
-                for term in query_terms:
-                    # Find paragraphs mentioning the concept
-                    paragraphs_result = session.run("""
-                    MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)
-                    WHERE toLower(para.content) CONTAINS toLower($term)
-                    RETURN para.content AS content, p.number AS page
-                    ORDER BY length(para.content) ASC
+                for term in key_terms:
+                    # Find entities matching the term
+                    query_result = session.run("""
+                    MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:CONTAINS_ENTITY]->(e:Entity)
+                    WHERE toLower(e.name) CONTAINS toLower($term) OR toLower(e.type) CONTAINS toLower($term)
+                    RETURN e.name AS entity, e.type AS type, p.number AS page
                     LIMIT 3
                     """, doc_name=document_name, term=term)
                     
-                    for record in paragraphs_result:
+                    for record in query_result:
                         results.append({
-                            "content": record["content"],
-                            "page": record["page"],
-                            "concept": term,
-                            "type": "DIRECT_MENTION"
+                            "content": f"Entity '{record['entity']}' ({record['type']}) found on page {record['page']}",
+                            "metadata": {"page": record['page']},
+                            "entity": record['entity'],
+                            "type": "graph_entity",
+                            "search_type": "graph"
                         })
-                
-                # Find relationships between concepts
-                if len(query_terms) >= 2:
-                    for i, term1 in enumerate(query_terms):
-                        for term2 in query_terms[i+1:]:
-                            relationship_result = session.run("""
-                            MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)
-                            WHERE toLower(para.content) CONTAINS toLower($term1) AND toLower(para.content) CONTAINS toLower($term2)
-                            RETURN para.content AS content, p.number AS page
-                            LIMIT 2
-                            """, doc_name=document_name, term1=term1, term2=term2)
-                            
-                            for record in relationship_result:
-                                results.append({
-                                    "content": record["content"],
-                                    "page": record["page"],
-                                    "concept": f"{term1} & {term2}",
-                                    "type": "RELATIONSHIP"
-                                })
                 
                 return results
                 
         except Exception as e:
-            st.error(f"❌ Relationship search failed: {str(e)}")
+            st.error(f"❌ Graph search failed: {str(e)}")
             return []
     
-    def get_graph_statistics(self, document_name):
-        if not self.driver:
-            return {}
-            
-        try:
-            with self.driver.session() as session:
-                stats = session.run("""
-                MATCH (d:Document {name: $doc_name})
-                OPTIONAL MATCH (d)-[:HAS_PAGE]->(p:Page)
-                OPTIONAL MATCH (p)-[:HAS_PARAGRAPH]->(para:Paragraph)
-                OPTIONAL MATCH (para)-[:MENTIONS]->(e:Entity)
-                RETURN 
-                    count(DISTINCT p) AS page_count,
-                    count(DISTINCT para) AS paragraph_count,
-                    count(DISTINCT e) AS entity_count
-                """, doc_name=document_name).single()
-                
-                return {
-                    "pages": stats["page_count"] or 0,
-                    "paragraphs": stats["paragraph_count"] or 0,
-                    "entities": stats["entity_count"] or 0
-                }
-        except Exception as e:
-            return {"pages": 0, "paragraphs": 0, "entities": 0}
-
+    def _extract_key_terms(self, question):
+        """Extract key terms from question"""
+        words = question.lower().split()
+        stop_words = {'what', 'how', 'why', 'when', 'where', 'who', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but'}
+        key_terms = [word for word in words if word not in stop_words and len(word) > 2]
+        return key_terms[:4]
+    
     def create_interactive_network(self, document_name):
         """Create interactive network visualization"""
         if not self.driver:
-            st.error("❌ No Neo4j connection for graph visualization")
             return None
             
         try:
             with self.driver.session() as session:
-                # Get all graph data
                 result = session.run("""
-                MATCH (d:Document {name: $doc_name})
-                OPTIONAL MATCH (d)-[:HAS_PAGE]->(p:Page)
-                OPTIONAL MATCH (p)-[:HAS_PARAGRAPH]->(para:Paragraph)
-                OPTIONAL MATCH (para)-[:MENTIONS]->(e:Entity)
-                RETURN d, p, para, e
-                LIMIT 100
+                MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)
+                OPTIONAL MATCH (p)-[:CONTAINS_ENTITY]->(e:Entity)
+                RETURN d, p, e
+                LIMIT 50
                 """, doc_name=document_name)
                 
-                # Create network
                 net = Network(height="500px", width="100%", bgcolor="#ffffff", font_color="black")
                 
                 # Add document node
-                net.add_node("document", label="Document", color="#FF6B6B", size=30, title=document_name)
-                
-                pages = set()
-                paragraphs = set()
-                entities = set()
+                net.add_node("document", label="Document", color="#FF6B6B", size=30)
                 
                 for record in result:
                     # Add pages
                     if record["p"]:
                         page_id = f"page_{record['p']['number']}"
-                        if page_id not in pages:
-                            net.add_node(page_id, label=f"Page {record['p']['number']}", color="#4ECDC4", size=25)
-                            net.add_edge("document", page_id, label="HAS_PAGE", color="#45B7D1")
-                            pages.add(page_id)
-                    
-                    # Add paragraphs
-                    if record["para"]:
-                        para_id = record['para']['chunk_id']
-                        if para_id not in paragraphs:
-                            net.add_node(para_id, label="Paragraph", color="#96CEB4", size=15, 
-                                       title=record['para']['content'][:100] + "...")
-                            page_num = para_id.split('_')[1]
-                            net.add_edge(f"page_{page_num}", para_id, label="HAS_PARAGRAPH", color="#FECA57")
-                            paragraphs.add(para_id)
+                        net.add_node(page_id, label=f"Page {record['p']['number']}", color="#4ECDC4", size=20)
+                        net.add_edge("document", page_id, label="HAS_PAGE", color="#45B7D1")
                     
                     # Add entities
                     if record["e"]:
                         entity_id = f"entity_{record['e']['name']}"
-                        if entity_id not in entities:
-                            entity_type = record['e'].get('type', 'ENTITY')
-                            net.add_node(entity_id, label=record['e']['name'], 
-                                       color=self._get_entity_color(entity_type), size=20,
-                                       title=f"{record['e']['name']} ({entity_type})")
-                            entities.add(entity_id)
+                        entity_type = record['e'].get('type', 'ENTITY')
+                        net.add_node(entity_id, label=record['e']['name'], 
+                                   color=self._get_entity_color(entity_type), size=15)
                         
-                        # Connect entity to paragraph
-                        if record["para"]:
-                            para_id = record['para']['chunk_id']
-                            net.add_edge(para_id, entity_id, label="MENTIONS", color="#FF9FF3")
+                        if record["p"]:
+                            page_id = f"page_{record['p']['number']}"
+                            net.add_edge(page_id, entity_id, label="CONTAINS", color="#FF9FF3")
                 
-                # Set physics options for better layout
                 net.set_options("""
-                {
-                    "physics": {
-                        "enabled": true,
-                        "stabilization": {"iterations": 100},
-                        "barnesHut": {
-                            "gravitationalConstant": -8000,
-                            "springLength": 95,
-                            "springConstant": 0.04
-                        }
-                    },
-                    "interaction": {
-                        "hover": true,
-                        "tooltipDelay": 200
-                    }
-                }
+                {"physics": {"enabled": true, "stabilization": {"iterations": 100}}}
                 """)
                 
-                # Generate HTML
                 html_path = "temp_graph.html"
                 net.save_graph(html_path)
                 
                 with open(html_path, 'r', encoding='utf-8') as f:
                     html_content = f.read()
                 
-                # Clean up
                 if os.path.exists(html_path):
                     os.remove(html_path)
                     
@@ -325,342 +448,203 @@ class Neo4jService:
     
     def _get_entity_color(self, entity_type):
         color_map = {
-            'PERSON': '#FF9FF3',
-            'ORG': '#F368E0',
-            'TECH': '#54A0FF',
-            'DATE': '#FF9F43',
-            'CONCEPT': '#5F27CD',
-            'ENTITY': '#00D2D3'
+            'ORGANIZATION': '#FF9FF3',
+            'PERSON': '#F368E0', 
+            'TECHNOLOGY': '#54A0FF',
+            'CONCEPT': '#5F27CD'
         }
         return color_map.get(entity_type, '#00D2D3')
 
 # --------------------------------------------------------------------------------------
-# GROQ LLM SERVICE
+# ENHANCED GROQ SERVICE
 class GroqService:
     def __init__(self):
         self.client = None
-        self.neo4j = Neo4jService()
+        if GroqConfig.API_KEY:
+            try:
+                self.client = groq.Groq(api_key=GroqConfig.API_KEY)
+                st.sidebar.success("✅ Groq Connected")
+            except Exception as e:
+                st.sidebar.error(f"❌ Groq: {str(e)}")
+        else:
+            st.sidebar.warning("⚠️ Groq API key missing")
+    
+    def generate_hybrid_answer(self, question, search_results):
+        """Generate answer using both vector and graph results"""
+        if not search_results:
+            return "I couldn't find relevant information in the document to answer your question. Try asking about specific topics, organizations, or concepts that might be in the document.", 0.0
         
-        # Check if API key is provided
-        if not GroqConfig.API_KEY:
-            st.sidebar.warning("⚠️ Groq API key not configured")
-            return
-            
-        try:
-            self.client = groq.Groq(api_key=GroqConfig.API_KEY)
-            st.sidebar.success("✅ Groq Connected")
-        except Exception as e:
-            st.sidebar.error(f"❌ Groq Initialization Failed: {str(e)}")
-
-    def generate_answer(self, question, document_name):
-        if not document_name:
-            return "Please upload and process a document first.", 0.0
-            
-        query_terms = self._extract_query_terms(question)
-        relationship_data = self.neo4j.search_relationships(query_terms, document_name)
-        
-        if not relationship_data:
-            return f"No relationship information found for '{question}'. Try asking about specific concepts, people, or organizations mentioned in the document.", 0.0
-        
-        confidence = min(len(relationship_data) / 5.0, 1.0)
+        # Calculate confidence based on results
+        confidence = min(len(search_results) / 6.0, 1.0)
         
         if self.client:
-            return self._groq_analysis(question, relationship_data, confidence)
+            return self._generate_with_groq(question, search_results, confidence)
         else:
-            return self._fallback_analysis(relationship_data, confidence)
-
-    def _extract_query_terms(self, question):
-        words = question.lower().split()
-        stop_words = {'what', 'how', 'why', 'when', 'where', 'who', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but', 'this', 'that', 'these', 'those'}
-        key_terms = [word for word in words if word not in stop_words and len(word) > 2]
-        return key_terms[:4]
-
-    def _groq_analysis(self, question, relationship_data, confidence):
-        context_text = "\n\n".join([
-            f"Page {item['page']} ({item['type']}): {item['content'][:300]}..."
-            for item in relationship_data
-        ])
+            return self._generate_fallback(question, search_results, confidence)
+    
+    def _generate_with_groq(self, question, search_results, confidence):
+        """Generate answer using Groq"""
+        # Separate results by type
+        vector_results = [r for r in search_results if r.get('search_type') == 'vector']
+        graph_results = [r for r in search_results if r.get('search_type') == 'graph']
         
-        user_prompt = f"QUESTION: {question}\n\nRELATIONSHIP DATA:\n{context_text}\n\nProvide a detailed answer explaining relationships and connections found in the document:"
+        context_parts = []
+        
+        if vector_results:
+            context_parts.append("**Text Content:**\n" + "\n\n".join([
+                f"Page {r['metadata']['page']}: {r['content'][:300]}..."
+                for r in vector_results
+            ]))
+        
+        if graph_results:
+            context_parts.append("**Entities Found:**\n" + "\n".join([
+                f"- {r['entity']} (mentioned on page {r['metadata']['page']})"
+                for r in graph_results
+            ]))
+        
+        context = "\n\n".join(context_parts)
         
         try:
             response = self.client.chat.completions.create(
                 model=GroqConfig.MODEL,
                 messages=[
-                    {"role": "system", "content": "You are a professional document analyst. Use the relationship data to provide insightful answers about connections between concepts, people, and organizations. Be specific about the relationships found."},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "system", "content": "You are a helpful document assistant. Use the provided context from both text content and entity relationships to answer the question thoroughly."},
+                    {"role": "user", "content": f"Question: {question}\n\nContext:\n{context}\n\nProvide a comprehensive answer:"}
                 ],
                 temperature=0.3,
                 max_tokens=1000
             )
+            
             answer = response.choices[0].message.content
-            return answer + self._format_graph_sources(relationship_data), confidence
+            return answer, confidence
+            
         except Exception as e:
             st.error(f"Groq API error: {str(e)}")
-            return self._fallback_analysis(relationship_data, confidence)
-
-    def _fallback_analysis(self, relationship_data, confidence):
-        answer = "**Based on document relationships:**\n\n"
-        for i, item in enumerate(relationship_data[:3], 1):
-            answer += f"{i}. **Page {item['page']}** ({item['type']}): {item['content'][:200]}...\n\n"
-        return answer + self._format_graph_sources(relationship_data), confidence
-
-    def _format_graph_sources(self, relationship_data):
-        if not relationship_data:
-            return ""
-        sources = "\n\n**🔗 Graph Sources:**\n"
-        unique_pages = set(item['page'] for item in relationship_data)
-        for page in sorted(unique_pages):
-            sources += f"• Page {page}\n"
-        return sources
-
-    def analyze_document_overview(self, document_name):
-        stats = self.neo4j.get_graph_statistics(document_name)
+            return self._generate_fallback(question, search_results, confidence)
+    
+    def _generate_fallback(self, question, search_results, confidence):
+        """Fallback answer generation"""
+        answer = f"**Based on the document analysis:**\n\n"
         
-        overview = f"""
-**📊 Knowledge Graph Overview - {document_name}**
-
-- **📄 Pages Processed**: {stats.get('pages', 0)}
-- **📝 Paragraphs Extracted**: {stats.get('paragraphs', 0)}  
-- **🔗 Entities Identified**: {stats.get('entities', 0)}
-- **🕸️ Total Graph Nodes**: {stats.get('pages', 0) + stats.get('paragraphs', 0) + stats.get('entities', 0)}
-
-**💡 Ask about relationships between:**
-- People and organizations
-- Concepts and technologies  
-- Dates and events
-- Any specific terms from your document
-        """
-        return overview
-
-# --------------------------------------------------------------------------------------
-# DOCUMENT PROCESSOR
-class DocumentProcessor:
-    def __init__(self):
-        self.neo4j = Neo4jService()
-
-    def process_pdf(self, uploaded_file):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            pdf_path = tmp_file.name
-            
-        try:
-            pages_data = self._extract_pdf_text(pdf_path)
-            if not pages_data:
-                st.error("❌ No text extracted from PDF.")
-                return 0
-                
-            success = self.neo4j.create_document_graph(uploaded_file.name, pages_data)
-            return len(pages_data) if success else 0
-                
-        except Exception as e:
-            st.error(f"❌ PDF processing failed: {str(e)}")
-            return 0
-        finally:
-            if os.path.exists(pdf_path):
-                os.unlink(pdf_path)
-
-    def _extract_pdf_text(self, pdf_path):
-        pdf_type = self._analyze_pdf_type(pdf_path)
-        if pdf_type == "text_based":
-            return self._extract_text_direct(pdf_path)
-        else:
-            return self._extract_text_ocr(pdf_path)
-
-    def _analyze_pdf_type(self, pdf_path):
-        try:
-            reader = PdfReader(pdf_path)
-            text_pages = sum(1 for page in reader.pages if len((page.extract_text() or "").strip()) > 50)
-            total_pages = len(reader.pages)
-            return "text_based" if total_pages == 0 or text_pages / total_pages > 0.5 else "scanned"
-        except:
-            return "scanned"
-
-    def _extract_text_direct(self, pdf_path):
-        reader = PdfReader(pdf_path)
-        pages_data = {}
-        for i, page in enumerate(reader.pages, 1):
-            text = page.extract_text() or ""
-            if text.strip():
-                paragraphs = self._split_into_paragraphs(text)
-                pages_data[i] = {'paragraphs': paragraphs}
-        return pages_data
-
-    def _extract_text_ocr(self, pdf_path):
-        try:
-            images = pdf2image.convert_from_path(pdf_path, dpi=200)
-            pages_data = {}
-            for i, image in enumerate(images):
-                text = pytesseract.image_to_string(image)
-                if text.strip():
-                    paragraphs = self._split_into_paragraphs(text)
-                    pages_data[i+1] = {'paragraphs': paragraphs}
-            return pages_data
-        except Exception as e:
-            st.error(f"❌ OCR processing failed: {str(e)}")
-            return {}
-
-    def _split_into_paragraphs(self, text):
-        paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
-        final_paragraphs = []
-        for para in paragraphs:
-            if len(para) > Config.CHUNK_SIZE:
-                sentences = re.split(r'[.!?]+', para)
-                current_chunk = ""
-                for sentence in sentences:
-                    if len(current_chunk + sentence) < Config.CHUNK_SIZE:
-                        current_chunk += sentence + ". "
-                    else:
-                        if current_chunk.strip():
-                            final_paragraphs.append(current_chunk.strip())
-                        current_chunk = sentence + ". "
-                if current_chunk.strip():
-                    final_paragraphs.append(current_chunk.strip())
+        for i, result in enumerate(search_results[:3], 1):
+            if result.get('search_type') == 'vector':
+                answer += f"{i}. **Page {result['metadata']['page']}**: {result['content'][:200]}...\n\n"
             else:
-                final_paragraphs.append(para)
-        return final_paragraphs
+                answer += f"{i}. **Entity**: {result['entity']} (page {result['metadata']['page']})\n\n"
+        
+        return answer, confidence
 
 # --------------------------------------------------------------------------------------
-# GRAPH RAG PAGE FUNCTION
-def graph_rag_page():
+# SMART RAG PAGE
+def smart_rag_page():
     # Page header
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("🌐 Graph RAG - Knowledge Graph Analysis")
-        st.markdown("### Explore document relationships with Neo4j Graph Database")
+        st.title("🌐 Smart RAG - Hybrid Search")
+        st.markdown("### Combines Vector Search + Knowledge Graph for better answers")
     with col2:
         if st.button("🏠 Back to Home"):
             st.switch_page("app.py")
     
     st.markdown("---")
     
-    # Initialize services
-    doc_processor = DocumentProcessor()
-    llm_service = GroqService()
+    # Initialize system
+    rag_system = HybridRAGSystem()
     
     # Initialize session state
-    if 'graph_rag_processed' not in st.session_state:
-        st.session_state.graph_rag_processed = False
-    if 'graph_rag_messages' not in st.session_state:
-        st.session_state.graph_rag_messages = []
-    if 'graph_rag_document' not in st.session_state:
-        st.session_state.graph_rag_document = None
-    if 'show_graph_viz' not in st.session_state:
-        st.session_state.show_graph_viz = False
+    if 'smart_rag_processed' not in st.session_state:
+        st.session_state.smart_rag_processed = False
+    if 'smart_rag_messages' not in st.session_state:
+        st.session_state.smart_rag_messages = []
+    if 'smart_rag_document' not in st.session_state:
+        st.session_state.smart_rag_document = None
+    if 'show_smart_graph' not in st.session_state:
+        st.session_state.show_smart_graph = False
     
-    # Sidebar for document upload and controls
+    # Sidebar
     with st.sidebar:
-        st.header("📁 Document Controls")
+        st.header("📁 Smart RAG Controls")
         
         # Connection status
-        if doc_processor.neo4j.driver:
+        if rag_system.neo4j.driver:
             st.success("✅ Neo4j Connected")
         else:
             st.error("❌ Neo4j Disconnected")
             
-        if llm_service.client:
+        if rag_system.groq.client:
             st.success("✅ Groq Connected")
         else:
             st.warning("⚠️ Groq Disconnected")
         
+        if rag_system.vector_search.embedder:
+            st.success("✅ Vector Search Ready")
+        
         # File upload
         uploaded_file = st.file_uploader("Upload PDF Document", type="pdf")
         
-        if uploaded_file and not st.session_state.graph_rag_processed:
-            if st.button("🚀 Process to Knowledge Graph", use_container_width=True):
-                with st.spinner("🔄 Processing document and building knowledge graph..."):
-                    page_count = doc_processor.process_pdf(uploaded_file)
-                    if page_count > 0:
-                        st.session_state.graph_rag_processed = True
-                        st.session_state.graph_rag_document = uploaded_file.name
-                        st.success(f"✅ Processed {page_count} pages!")
+        if uploaded_file and not st.session_state.smart_rag_processed:
+            if st.button("🚀 Process Document", use_container_width=True):
+                with st.spinner("🔄 Building hybrid search system..."):
+                    success = rag_system.process_document(uploaded_file)
+                    if success:
+                        st.session_state.smart_rag_processed = True
+                        st.session_state.smart_rag_document = uploaded_file.name
+                        st.success("✅ Document processed for hybrid search!")
                         st.rerun()
                     else:
                         st.error("❌ Failed to process document")
         
-        # Graph controls
-        if st.session_state.graph_rag_processed:
+        # Controls
+        if st.session_state.smart_rag_processed:
             st.markdown("---")
-            st.header("🕸️ Graph Controls")
+            st.header("🎛️ Search Controls")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("📊 Show Graph", use_container_width=True):
-                    st.session_state.show_graph_viz = True
-                    st.rerun()
-            with col2:
-                if st.button("📈 Statistics", use_container_width=True):
-                    stats = doc_processor.neo4j.get_graph_statistics(st.session_state.graph_rag_document)
-                    st.session_state.graph_rag_messages.append({
-                        "role": "assistant", 
-                        "content": llm_service.analyze_document_overview(st.session_state.graph_rag_document)
-                    })
-                    st.rerun()
+            if st.button("🕸️ Show Knowledge Graph", use_container_width=True):
+                st.session_state.show_smart_graph = True
+                st.rerun()
             
             if st.button("🔄 Clear Chat", use_container_width=True):
-                st.session_state.graph_rag_messages = []
+                st.session_state.smart_rag_messages = []
                 st.rerun()
     
-    # Main content area
-    if not st.session_state.graph_rag_processed:
-        st.info("👆 Upload a PDF document from the sidebar to build a knowledge graph and explore relationships!")
+    # Main content
+    if not st.session_state.smart_rag_processed:
+        st.info("👆 Upload a PDF to enable hybrid search (Vector + Knowledge Graph)")
         
-        # Feature explanation
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             st.markdown("""
             <div style='background: white; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #175CFF;'>
-                <h4>🔗 Relationship Discovery</h4>
-                <p>Find connections between concepts, people, and organizations in your documents.</p>
+                <h4>🔍 Vector Search</h4>
+                <p>Semantic understanding of document content using AI embeddings</p>
             </div>
             """, unsafe_allow_html=True)
         with col2:
             st.markdown("""
             <div style='background: white; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #00A3FF;'>
-                <h4>🕸️ Visual Knowledge Graph</h4>
-                <p>See your document's structure as an interactive graph with entities and relationships.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with col3:
-            st.markdown("""
-            <div style='background: white; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #4ECDC4;'>
-                <h4>🤖 AI-Powered Analysis</h4>
-                <p>Get intelligent answers about relationships using Groq's fast LLM.</p>
+                <h4>🕸️ Knowledge Graph</h4>
+                <p>Entity relationships and connections for deeper insights</p>
             </div>
             """, unsafe_allow_html=True)
         
         return
     
-    # Show graph visualization if enabled
-    if st.session_state.show_graph_viz:
-        st.markdown("### 🕸️ Knowledge Graph Visualization")
-        with st.spinner("Generating interactive graph..."):
-            html_content = doc_processor.neo4j.create_interactive_network(st.session_state.graph_rag_document)
+    # Graph visualization
+    if st.session_state.show_smart_graph:
+        st.markdown("### 🕸️ Document Knowledge Graph")
+        with st.spinner("Generating graph..."):
+            html_content = rag_system.neo4j.create_interactive_network(st.session_state.smart_rag_document)
             if html_content:
                 st.components.v1.html(html_content, height=600, scrolling=True)
-                
-                # Graph statistics
-                stats = doc_processor.neo4j.get_graph_statistics(st.session_state.graph_rag_document)
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("📄 Pages", stats.get('pages', 0))
-                with col2:
-                    st.metric("📝 Paragraphs", stats.get('paragraphs', 0))
-                with col3:
-                    st.metric("🔗 Entities", stats.get('entities', 0))
-                with col4:
-                    total_nodes = stats.get('pages', 0) + stats.get('paragraphs', 0) + stats.get('entities', 0)
-                    st.metric("🕸️ Total Nodes", total_nodes)
             else:
-                st.error("Failed to generate graph visualization")
-        
+                st.error("Failed to generate graph")
         st.markdown("---")
     
     # Chat interface
-    st.markdown("### 💬 Ask About Document Relationships")
+    st.markdown("### 💬 Ask Anything About Your Document")
     
-    # Display chat messages
-    for msg in st.session_state.graph_rag_messages:
+    # Display messages
+    for msg in st.session_state.smart_rag_messages:
         if msg["role"] == "user":
             st.markdown(f"""
             <div style='background: #e6f3ff; padding: 1rem; border-radius: 10px; border-left: 4px solid #175CFF; margin-bottom: 1rem;'>
@@ -670,24 +654,41 @@ def graph_rag_page():
         else:
             st.markdown(f"""
             <div style='background: #f0f8ff; padding: 1rem; border-radius: 10px; border-left: 4px solid #00A3FF; margin-bottom: 1rem;'>
-                <strong>Aura:</strong> {msg["content"]}
+                <strong>Smart RAG:</strong> {msg["content"]}
             </div>
             """, unsafe_allow_html=True)
     
+    # Suggested questions for new users
+    if st.session_state.smart_rag_processed and len(st.session_state.smart_rag_messages) == 0:
+        st.markdown("---")
+        st.markdown("### 💡 Try These Questions:")
+        
+        suggestions = [
+            "Summarize the main topics of this document",
+            "What organizations are mentioned?",
+            "Tell me about the key concepts discussed",
+            "What are the main findings or conclusions?",
+            "Who are the important people mentioned?"
+        ]
+        
+        for suggestion in suggestions:
+            if st.button(suggestion, key=f"suggest_{suggestion}", use_container_width=True):
+                st.session_state.smart_rag_messages.append({"role": "user", "content": suggestion})
+                st.rerun()
+    
     # Chat input
-    question = st.chat_input("Ask about relationships in your document...")
+    question = st.chat_input("Ask about your document...")
     
     if question:
         # Add user question
-        st.session_state.graph_rag_messages.append({"role": "user", "content": question})
+        st.session_state.smart_rag_messages.append({"role": "user", "content": question})
         
         # Generate answer
-        with st.spinner("🔍 Exploring graph relationships..."):
-            answer, confidence = llm_service.generate_answer(question, st.session_state.graph_rag_document)
-            st.session_state.graph_rag_messages.append({"role": "assistant", "content": answer})
+        with st.spinner("🔍 Searching with hybrid approach..."):
+            answer, confidence = rag_system.search(question, st.session_state.smart_rag_document)
+            st.session_state.smart_rag_messages.append({"role": "assistant", "content": answer})
         
         st.rerun()
 
-# Run the page
 if __name__ == "__main__":
-    graph_rag_page()
+    smart_rag_page()
