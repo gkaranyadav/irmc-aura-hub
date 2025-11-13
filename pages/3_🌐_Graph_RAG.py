@@ -1,4 +1,4 @@
-# pages/3_🌐_Smart_RAG.py
+# pages/3_🌐_Smart_RAG.py - DEBUG VERSION
 import streamlit as st
 import tempfile
 import os
@@ -19,7 +19,7 @@ from pyvis.network import Network
 # CONFIG
 class Config:
     CHUNK_SIZE = 1000
-    MIN_PARAGRAPH_LENGTH = 50
+    MIN_PARAGRAPH_LENGTH = 10  # Reduced to catch more text
     EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
     TOP_K = 3
 
@@ -33,98 +33,66 @@ class GroqConfig:
     MODEL = "llama-3.3-70b-versatile"
 
 # --------------------------------------------------------------------------------------
-# HYBRID RAG SYSTEM (Vector Search + Knowledge Graph)
-class HybridRAGSystem:
-    def __init__(self):
-        self.neo4j = Neo4jService()
-        self.groq = GroqService()
-        self.vector_search = VectorSearchService()
-        
-    def process_document(self, uploaded_file):
-        """Process document for both vector search and knowledge graph"""
-        # Process for vector search
-        vector_result = self.vector_search.process_pdf(uploaded_file)
-        
-        # Process for knowledge graph
-        graph_result = self.neo4j.create_document_from_pdf(uploaded_file)
-        
-        return vector_result and graph_result
-    
-    def search(self, question, document_name):
-        """Hybrid search combining vector and graph approaches"""
-        # Vector-based semantic search
-        vector_results = self.vector_search.semantic_search(question, document_name)
-        
-        # Graph-based relationship search
-        graph_results = self.neo4j.search_relationships(question, document_name)
-        
-        # Combine and rank results
-        combined_results = self._combine_results(vector_results, graph_results, question)
-        
-        # Generate answer using both contexts
-        answer = self.groq.generate_hybrid_answer(question, combined_results)
-        
-        return answer
-    
-    def _combine_results(self, vector_results, graph_results, question):
-        """Combine and rank results from both approaches"""
-        combined = []
-        
-        # Add vector results with type
-        for i, result in enumerate(vector_results):
-            combined.append({
-                **result,
-                "type": "SEMANTIC",
-                "rank_score": len(vector_results) - i  # Higher rank for better matches
-            })
-        
-        # Add graph results with type
-        for result in graph_results:
-            combined.append({
-                **result,
-                "type": "RELATIONSHIP", 
-                "rank_score": 5  # Fixed score for graph results
-            })
-        
-        # Sort by combined ranking
-        combined.sort(key=lambda x: x.get("rank_score", 0), reverse=True)
-        
-        return combined[:Config.TOP_K * 2]  # Return more results for hybrid approach
-
-# --------------------------------------------------------------------------------------
-# VECTOR SEARCH SERVICE
+# DEBUG VECTOR SEARCH SERVICE
 class VectorSearchService:
     def __init__(self):
         try:
             self.embedder = SentenceTransformer(Config.EMBEDDING_MODEL)
-            self.indices = {}  # document_name -> (index, chunks, metadata)
+            self.indices = {}
             st.sidebar.success("✅ Vector Model Loaded")
         except Exception as e:
             st.sidebar.error(f"❌ Vector model failed: {e}")
     
     def process_pdf(self, uploaded_file):
-        """Process PDF for vector search"""
+        """Process PDF for vector search - DEBUG VERSION"""
         document_name = uploaded_file.name
+        
+        st.info(f"📄 Processing: {document_name}")
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             pdf_path = tmp_file.name
             
         try:
-            # Extract text
-            pages_data = self._extract_pdf_text(pdf_path)
+            # DEBUG: Show file info
+            file_size = len(uploaded_file.getvalue())
+            st.sidebar.info(f"📁 File size: {file_size} bytes")
+            
+            # Extract text with detailed debugging
+            pages_data = self._extract_pdf_text_debug(pdf_path)
+            
             if not pages_data:
+                st.error("❌ CRITICAL: No text extracted from PDF at all!")
+                st.info("💡 The PDF might be: 1) Empty 2) Image-only 3) Password protected 4) Corrupted")
                 return False
             
             # Create chunks
             chunks = []
             chunk_metadata = []
             
-            for page_num, page_text in pages_data.items():
-                paragraphs = self._split_into_paragraphs(page_text)
-                for para in paragraphs:
-                    chunks.append(para)
-                    chunk_metadata.append({"page": page_num, "type": "paragraph"})
+            for page_num, page_data in pages_data.items():
+                st.sidebar.info(f"📝 Page {page_num}: {len(page_data['paragraphs'])} paragraphs")
+                for paragraph in page_data['paragraphs']:
+                    chunks.append(paragraph)
+                    chunk_metadata.append({
+                        "page": page_num, 
+                        "type": "paragraph",
+                        "method": page_data['method']
+                    })
+            
+            if not chunks:
+                st.error("❌ No text chunks created from extracted text")
+                # Show sample of what WAS extracted
+                for page_num, page_data in pages_data.items():
+                    st.write(f"Page {page_num} sample: {str(page_data)[:500]}...")
+                return False
+            
+            st.success(f"✅ Created {len(chunks)} text chunks from {len(pages_data)} pages")
+            
+            # Show sample chunks
+            with st.expander("🔍 View Sample Text Chunks"):
+                for i, chunk in enumerate(chunks[:3]):
+                    st.write(f"Chunk {i+1}: {chunk[:200]}...")
             
             # Create embeddings and index
             embeddings = self.embedder.encode(chunks)
@@ -136,16 +104,141 @@ class VectorSearchService:
             
             return True
             
+        except Exception as e:
+            st.error(f"❌ PDF processing failed: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+            return False
         finally:
             if os.path.exists(pdf_path):
                 os.unlink(pdf_path)
     
+    def _extract_pdf_text_debug(self, pdf_path):
+        """DEBUG PDF text extraction"""
+        pages_data = {}
+        
+        st.sidebar.info("🔄 Starting text extraction...")
+        
+        # METHOD 1: Direct text extraction
+        st.sidebar.info("🔧 Trying direct text extraction...")
+        direct_data = self._extract_text_direct_debug(pdf_path)
+        if direct_data:
+            st.sidebar.success(f"✅ Direct extraction: {len(direct_data)} pages")
+            for page_num, text in direct_data.items():
+                paragraphs = self._split_into_paragraphs(text)
+                if paragraphs:
+                    pages_data[page_num] = {
+                        'paragraphs': paragraphs,
+                        'method': 'direct',
+                        'raw_text_sample': text[:100] + "..." if text else "EMPTY"
+                    }
+                    st.sidebar.info(f"   Page {page_num}: {len(paragraphs)} paragraphs")
+        else:
+            st.sidebar.warning("❌ Direct extraction got NO text")
+        
+        # METHOD 2: OCR as fallback
+        if not pages_data:
+            st.sidebar.info("🔧 Trying OCR extraction...")
+            ocr_data = self._extract_text_ocr_debug(pdf_path)
+            if ocr_data:
+                st.sidebar.success(f"✅ OCR extraction: {len(ocr_data)} pages")
+                for page_num, text in ocr_data.items():
+                    paragraphs = self._split_into_paragraphs(text)
+                    if paragraphs:
+                        pages_data[page_num] = {
+                            'paragraphs': paragraphs,
+                            'method': 'ocr',
+                            'raw_text_sample': text[:100] + "..." if text else "EMPTY"
+                        }
+                        st.sidebar.info(f"   Page {page_num}: {len(paragraphs)} paragraphs")
+            else:
+                st.sidebar.error("❌ OCR extraction also failed")
+        
+        # DEBUG: Show what we got
+        if pages_data:
+            with st.expander("🔍 Extraction Debug Info"):
+                for page_num, data in pages_data.items():
+                    st.write(f"Page {page_num} ({data['method']}): {len(data['paragraphs'])} paragraphs")
+                    st.write(f"Sample: {data['raw_text_sample']}")
+        else:
+            st.error("❌ ALL extraction methods failed!")
+            
+            # Try to at least read PDF metadata
+            try:
+                reader = PdfReader(pdf_path)
+                st.info(f"PDF has {len(reader.pages)} pages")
+                for i, page in enumerate(reader.pages[:3]):
+                    raw_text = page.extract_text() or "NO TEXT"
+                    st.write(f"Page {i+1} raw: '{raw_text[:100]}'")
+            except Exception as e:
+                st.error(f"Even PDF metadata reading failed: {e}")
+        
+        return pages_data
+    
+    def _extract_text_direct_debug(self, pdf_path):
+        """Debug version of direct text extraction"""
+        try:
+            reader = PdfReader(pdf_path)
+            pages_data = {}
+            total_pages = len(reader.pages)
+            
+            st.sidebar.info(f"📖 PDF has {total_pages} pages")
+            
+            for i, page in enumerate(reader.pages, 1):
+                try:
+                    text = page.extract_text() or ""
+                    if text.strip():
+                        pages_data[i] = text
+                        st.sidebar.success(f"   Page {i}: {len(text)} characters")
+                    else:
+                        st.sidebar.warning(f"   Page {i}: NO TEXT")
+                except Exception as e:
+                    st.sidebar.error(f"   Page {i} error: {e}")
+                    
+            return pages_data
+        except Exception as e:
+            st.sidebar.error(f"❌ Direct extraction crashed: {e}")
+            return {}
+    
+    def _extract_text_ocr_debug(self, pdf_path):
+        """Debug version of OCR extraction"""
+        try:
+            st.sidebar.info("🖼️ Converting PDF to images...")
+            images = pdf2image.convert_from_path(pdf_path, dpi=150)  # Lower DPI for speed
+            pages_data = {}
+            
+            st.sidebar.info(f"🖼️ Converted to {len(images)} images")
+            
+            for i, image in enumerate(images):
+                try:
+                    st.sidebar.info(f"   OCR page {i+1}...")
+                    text = pytesseract.image_to_string(image)
+                    if text.strip():
+                        pages_data[i+1] = text
+                        st.sidebar.success(f"   Page {i+1}: {len(text)} characters")
+                    else:
+                        st.sidebar.warning(f"   Page {i+1}: NO TEXT from OCR")
+                except Exception as e:
+                    st.sidebar.error(f"   Page {i+1} OCR error: {e}")
+                    
+            return pages_data
+        except Exception as e:
+            st.sidebar.error(f"❌ OCR extraction crashed: {e}")
+            return {}
+    
     def semantic_search(self, question, document_name):
         """Semantic search using vector similarity"""
         if document_name not in self.indices:
+            st.error(f"❌ No vector index found for {document_name}")
             return []
             
         index, chunks, metadata = self.indices[document_name]
+        
+        st.sidebar.info(f"🔍 Searching {len(chunks)} chunks for: '{question}'")
+        
+        if not chunks:
+            st.error("❌ No text chunks available for search")
+            return []
         
         # Encode question
         query_vec = self.embedder.encode([question])
@@ -154,7 +247,6 @@ class VectorSearchService:
         results = []
         for i, idx in enumerate(indices[0]):
             if idx < len(chunks):
-                # Convert distance to similarity score (industry standard)
                 distance = distances[0][i]
                 if distance < 0.3:
                     confidence = 0.92 + (0.3 - distance) * 0.27
@@ -173,79 +265,60 @@ class VectorSearchService:
                     "similarity": confidence,
                     "search_type": "vector"
                 })
+                
+                st.sidebar.success(f"✅ Found match: {confidence:.2f} confidence")
+        
+        if not results:
+            st.sidebar.warning("❌ No vector matches found")
         
         return results
     
-    def _extract_pdf_text(self, pdf_path):
-        """Extract text from PDF"""
-        try:
-            reader = PdfReader(pdf_path)
-            pages_data = {}
-            
-            for i, page in enumerate(reader.pages, 1):
-                text = page.extract_text() or ""
-                if text.strip():
-                    pages_data[i] = text
-                    
-            return pages_data
-        except:
-            return {}
-    
     def _split_into_paragraphs(self, text):
-        """Split text into paragraphs"""
-        paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
-        final_paragraphs = []
+        """Split text into paragraphs - ULTRA PERMISSIVE VERSION"""
+        # Try multiple splitting strategies
         
-        for para in paragraphs:
-            if len(para) > Config.CHUNK_SIZE:
-                sentences = re.split(r'[.!?]+', para)
-                current_chunk = ""
-                for sentence in sentences:
-                    if len(current_chunk + sentence) < Config.CHUNK_SIZE:
-                        current_chunk += sentence + ". "
-                    else:
-                        if current_chunk.strip():
-                            final_paragraphs.append(current_chunk.strip())
-                        current_chunk = sentence + ". "
-                if current_chunk.strip():
-                    final_paragraphs.append(current_chunk.strip())
-            else:
-                final_paragraphs.append(para)
-                
-        return final_paragraphs
+        # Strategy 1: Double newlines
+        paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
+        
+        # Strategy 2: Single newlines (for poorly formatted PDFs)
+        if len(paragraphs) < 2:
+            paragraphs = [p.strip() for p in text.split("\n") if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
+        
+        # Strategy 3: Sentences (as last resort)
+        if len(paragraphs) < 2:
+            sentences = re.split(r'[.!?]+', text)
+            paragraphs = [s.strip() for s in sentences if len(s.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
+        
+        # Strategy 4: Just split by length if nothing else works
+        if len(paragraphs) < 2 and len(text) > 50:
+            # Split into chunks of ~500 characters
+            chunk_size = 500
+            paragraphs = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+            paragraphs = [p.strip() for p in paragraphs if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
+        
+        return paragraphs
 
 # --------------------------------------------------------------------------------------
-# ENHANCED NEO4J SERVICE
+# SIMPLIFIED NEO4J SERVICE (Focus on vector search first)
 class Neo4jService:
     def __init__(self):
         self.driver = None
-        self.connect()
+        # Don't auto-connect - let it be optional
+        if Neo4jConfig.URI and Neo4jConfig.USERNAME and Neo4jConfig.PASSWORD:
+            self.connect()
     
     def connect(self):
-        if not Neo4jConfig.URI or not Neo4jConfig.USERNAME or not Neo4jConfig.PASSWORD:
-            st.sidebar.error("❌ Neo4j credentials missing")
-            return
-            
         try:
             uri = Neo4jConfig.URI
-            
-            # Handle URI formats
             if uri.startswith('neo4j+s://'):
                 uri = uri.replace('neo4j+s://', 'neo4j+ssc://')
-            elif uri.startswith('https://'):
-                uri = uri.replace('https://', 'bolt://')
-            elif uri.startswith('http://'):
-                uri = uri.replace('http://', 'bolt://')
             
             self.driver = GraphDatabase.driver(
                 uri,
                 auth=(Neo4jConfig.USERNAME, Neo4jConfig.PASSWORD),
-                connection_timeout=30,
-                max_connection_lifetime=3600,
-                keep_alive=True
+                connection_timeout=15
             )
             
-            # Test connection
             with self.driver.session() as session:
                 result = session.run("RETURN 1 AS test")
                 if result.single()["test"] == 1:
@@ -254,209 +327,59 @@ class Neo4jService:
                     st.sidebar.error("❌ Neo4j test failed")
                     
         except Exception as e:
-            st.sidebar.error(f"❌ Neo4j: {str(e)}")
+            st.sidebar.warning(f"⚠️ Neo4j: {str(e)}")
             self.driver = None
-    
-    def create_document_from_pdf(self, uploaded_file):
-        """Create knowledge graph from PDF"""
-        if not self.driver:
-            return False
-            
-        document_name = uploaded_file.name
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            pdf_path = tmp_file.name
-            
-        try:
-            pages_data = self._extract_pdf_text(pdf_path)
-            if not pages_data:
-                return False
-                
-            return self._create_knowledge_graph(document_name, pages_data)
-                
-        finally:
-            if os.path.exists(pdf_path):
-                os.unlink(pdf_path)
-    
-    def _extract_pdf_text(self, pdf_path):
-        """Extract text from PDF"""
-        try:
-            reader = PdfReader(pdf_path)
-            pages_data = {}
-            
-            for i, page in enumerate(reader.pages, 1):
-                text = page.extract_text() or ""
-                if text.strip():
-                    pages_data[i] = text
-                    
-            return pages_data
-        except:
-            return {}
-    
-    def _create_knowledge_graph(self, document_name, pages_data):
-        """Create knowledge graph from extracted text"""
-        try:
-            with self.driver.session() as session:
-                # Clear existing data
-                session.run("MATCH (d:Document {name: $name}) DETACH DELETE d", name=document_name)
-                
-                # Create document
-                session.run("CREATE (d:Document {name: $name})", name=document_name)
-                
-                # Process each page
-                for page_num, page_text in pages_data.items():
-                    # Create page node
-                    session.run("""
-                    MATCH (d:Document {name: $doc_name})
-                    CREATE (p:Page {number: $page_num})
-                    CREATE (d)-[:HAS_PAGE]->(p)
-                    """, doc_name=document_name, page_num=page_num)
-                    
-                    # Extract and create entities
-                    entities = self._extract_entities(page_text)
-                    for entity in entities:
-                        session.run("""
-                    MATCH (p:Page {number: $page_num})<-[:HAS_PAGE]-(d:Document {name: $doc_name})
-                    MERGE (e:Entity {name: $entity_name, type: $entity_type})
-                    CREATE (p)-[:CONTAINS_ENTITY]->(e)
-                    """, doc_name=document_name, page_num=page_num, 
-                           entity_name=entity['name'], entity_type=entity['type'])
-                
-                return True
-                
-        except Exception as e:
-            st.error(f"❌ Graph creation failed: {str(e)}")
-            return False
-    
-    def _extract_entities(self, text):
-        """Extract entities from text"""
-        entities = []
-        patterns = {
-            'ORGANIZATION': r'\b[A-Z][a-zA-Z]+ (?:Inc|Corp|Company|Ltd|LLC|Corporation|Organization)\b',
-            'PERSON': r'\b[A-Z][a-z]+ [A-Z][a-z]+\b',
-            'TECHNOLOGY': r'\b(?:AI|ML|Machine Learning|Artificial Intelligence|Blockchain|Cloud Computing|IoT)\b',
-            'CONCEPT': r'\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b'
-        }
-        
-        for entity_type, pattern in patterns.items():
-            matches = re.findall(pattern, text)
-            for match in matches:
-                if len(match) > 3:
-                    entities.append({"name": match, "type": entity_type})
-        
-        return entities[:15]  # Limit entities per page
-    
-    def search_relationships(self, question, document_name):
-        """Search for relationships in the knowledge graph"""
-        if not self.driver:
-            return []
-            
-        try:
-            # Extract key terms from question
-            key_terms = self._extract_key_terms(question)
-            
-            with self.driver.session() as session:
-                results = []
-                
-                for term in key_terms:
-                    # Find entities matching the term
-                    query_result = session.run("""
-                    MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:CONTAINS_ENTITY]->(e:Entity)
-                    WHERE toLower(e.name) CONTAINS toLower($term) OR toLower(e.type) CONTAINS toLower($term)
-                    RETURN e.name AS entity, e.type AS type, p.number AS page
-                    LIMIT 3
-                    """, doc_name=document_name, term=term)
-                    
-                    for record in query_result:
-                        results.append({
-                            "content": f"Entity '{record['entity']}' ({record['type']}) found on page {record['page']}",
-                            "metadata": {"page": record['page']},
-                            "entity": record['entity'],
-                            "type": "graph_entity",
-                            "search_type": "graph"
-                        })
-                
-                return results
-                
-        except Exception as e:
-            st.error(f"❌ Graph search failed: {str(e)}")
-            return []
-    
-    def _extract_key_terms(self, question):
-        """Extract key terms from question"""
-        words = question.lower().split()
-        stop_words = {'what', 'how', 'why', 'when', 'where', 'who', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but'}
-        key_terms = [word for word in words if word not in stop_words and len(word) > 2]
-        return key_terms[:4]
-    
-    def create_interactive_network(self, document_name):
-        """Create interactive network visualization"""
-        if not self.driver:
-            return None
-            
-        try:
-            with self.driver.session() as session:
-                result = session.run("""
-                MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)
-                OPTIONAL MATCH (p)-[:CONTAINS_ENTITY]->(e:Entity)
-                RETURN d, p, e
-                LIMIT 50
-                """, doc_name=document_name)
-                
-                net = Network(height="500px", width="100%", bgcolor="#ffffff", font_color="black")
-                
-                # Add document node
-                net.add_node("document", label="Document", color="#FF6B6B", size=30)
-                
-                for record in result:
-                    # Add pages
-                    if record["p"]:
-                        page_id = f"page_{record['p']['number']}"
-                        net.add_node(page_id, label=f"Page {record['p']['number']}", color="#4ECDC4", size=20)
-                        net.add_edge("document", page_id, label="HAS_PAGE", color="#45B7D1")
-                    
-                    # Add entities
-                    if record["e"]:
-                        entity_id = f"entity_{record['e']['name']}"
-                        entity_type = record['e'].get('type', 'ENTITY')
-                        net.add_node(entity_id, label=record['e']['name'], 
-                                   color=self._get_entity_color(entity_type), size=15)
-                        
-                        if record["p"]:
-                            page_id = f"page_{record['p']['number']}"
-                            net.add_edge(page_id, entity_id, label="CONTAINS", color="#FF9FF3")
-                
-                net.set_options("""
-                {"physics": {"enabled": true, "stabilization": {"iterations": 100}}}
-                """)
-                
-                html_path = "temp_graph.html"
-                net.save_graph(html_path)
-                
-                with open(html_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                
-                if os.path.exists(html_path):
-                    os.remove(html_path)
-                    
-                return html_content
-                
-        except Exception as e:
-            st.error(f"❌ Graph visualization failed: {str(e)}")
-            return None
-    
-    def _get_entity_color(self, entity_type):
-        color_map = {
-            'ORGANIZATION': '#FF9FF3',
-            'PERSON': '#F368E0', 
-            'TECHNOLOGY': '#54A0FF',
-            'CONCEPT': '#5F27CD'
-        }
-        return color_map.get(entity_type, '#00D2D3')
 
 # --------------------------------------------------------------------------------------
-# ENHANCED GROQ SERVICE
+# SIMPLIFIED HYBRID RAG SYSTEM
+class HybridRAGSystem:
+    def __init__(self):
+        self.neo4j = Neo4jService()
+        self.groq = GroqService()
+        self.vector_search = VectorSearchService()
+        
+    def process_document(self, uploaded_file):
+        """Process document - FOCUS ON VECTOR SEARCH FIRST"""
+        st.info("🔄 Processing document for vector search...")
+        vector_result = self.vector_search.process_pdf(uploaded_file)
+        
+        # Neo4j is optional for now
+        neo4j_result = True
+        if self.neo4j.driver:
+            st.info("🔄 (Optional) Building knowledge graph...")
+            # We'll add Neo4j later once vector works
+        
+        return vector_result and neo4j_result
+    
+    def search(self, question, document_name):
+        """Search - FOCUS ON VECTOR SEARCH"""
+        # First try vector search
+        vector_results = self.vector_search.semantic_search(question, document_name)
+        
+        # If vector search fails completely, provide a helpful fallback
+        if not vector_results:
+            return self._generate_fallback_answer(question), 0.0
+        
+        # Generate answer using vector results
+        answer, confidence = self.groq.generate_answer(question, vector_results)
+        return answer, confidence
+    
+    def _generate_fallback_answer(self, question):
+        """Helpful fallback when no results found"""
+        fallbacks = [
+            "I apologize, but I couldn't extract any readable text from your PDF document. ",
+            "The document appears to be empty, image-based, or in a format I can't process. ",
+            "Please try uploading a different PDF file that contains selectable text.",
+            "\n\n💡 **Tips for better results:**",
+            "- Upload PDFs with selectable text (not scanned images)",
+            "- Try documents with clear English content",
+            "- Ensure the file isn't password protected",
+            "- For scanned documents, try OCR-enabled PDF processors first"
+        ]
+        return "".join(fallbacks)
+
+# --------------------------------------------------------------------------------------
+# SIMPLIFIED GROQ SERVICE
 class GroqService:
     def __init__(self):
         self.client = None
@@ -469,13 +392,12 @@ class GroqService:
         else:
             st.sidebar.warning("⚠️ Groq API key missing")
     
-    def generate_hybrid_answer(self, question, search_results):
-        """Generate answer using both vector and graph results"""
+    def generate_answer(self, question, search_results):
+        """Generate answer from search results"""
         if not search_results:
-            return "I couldn't find relevant information in the document to answer your question. Try asking about specific topics, organizations, or concepts that might be in the document.", 0.0
+            return "No relevant information found.", 0.0
         
-        # Calculate confidence based on results
-        confidence = min(len(search_results) / 6.0, 1.0)
+        confidence = min(len(search_results) / 3.0, 1.0)
         
         if self.client:
             return self._generate_with_groq(question, search_results, confidence)
@@ -484,35 +406,20 @@ class GroqService:
     
     def _generate_with_groq(self, question, search_results, confidence):
         """Generate answer using Groq"""
-        # Separate results by type
-        vector_results = [r for r in search_results if r.get('search_type') == 'vector']
-        graph_results = [r for r in search_results if r.get('search_type') == 'graph']
-        
-        context_parts = []
-        
-        if vector_results:
-            context_parts.append("**Text Content:**\n" + "\n\n".join([
-                f"Page {r['metadata']['page']}: {r['content'][:300]}..."
-                for r in vector_results
-            ]))
-        
-        if graph_results:
-            context_parts.append("**Entities Found:**\n" + "\n".join([
-                f"- {r['entity']} (mentioned on page {r['metadata']['page']})"
-                for r in graph_results
-            ]))
-        
-        context = "\n\n".join(context_parts)
+        context = "\n\n".join([
+            f"From page {r['metadata']['page']}: {r['content']}"
+            for r in search_results
+        ])
         
         try:
             response = self.client.chat.completions.create(
                 model=GroqConfig.MODEL,
                 messages=[
-                    {"role": "system", "content": "You are a helpful document assistant. Use the provided context from both text content and entity relationships to answer the question thoroughly."},
-                    {"role": "user", "content": f"Question: {question}\n\nContext:\n{context}\n\nProvide a comprehensive answer:"}
+                    {"role": "system", "content": "You are a helpful document assistant. Answer the question based ONLY on the provided context from the document."},
+                    {"role": "user", "content": f"Question: {question}\n\nDocument Context:\n{context}\n\nAnswer:"}
                 ],
                 temperature=0.3,
-                max_tokens=1000
+                max_tokens=800
             )
             
             answer = response.choices[0].message.content
@@ -523,30 +430,28 @@ class GroqService:
             return self._generate_fallback(question, search_results, confidence)
     
     def _generate_fallback(self, question, search_results, confidence):
-        """Fallback answer generation"""
-        answer = f"**Based on the document analysis:**\n\n"
-        
-        for i, result in enumerate(search_results[:3], 1):
-            if result.get('search_type') == 'vector':
-                answer += f"{i}. **Page {result['metadata']['page']}**: {result['content'][:200]}...\n\n"
-            else:
-                answer += f"{i}. **Entity**: {result['entity']} (page {result['metadata']['page']})\n\n"
-        
+        """Simple fallback answer"""
+        answer = f"**Based on the document:**\n\n"
+        for i, result in enumerate(search_results, 1):
+            answer += f"{i}. {result['content'][:300]}...\n\n"
         return answer, confidence
 
 # --------------------------------------------------------------------------------------
-# SMART RAG PAGE
+# DEBUG SMART RAG PAGE
 def smart_rag_page():
     # Page header
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("🌐 Smart RAG - Hybrid Search")
-        st.markdown("### Combines Vector Search + Knowledge Graph for better answers")
+        st.title("🔧 DEBUG: Smart RAG - Vector Search")
+        st.markdown("### **DEBUG MODE**: Testing PDF text extraction")
     with col2:
         if st.button("🏠 Back to Home"):
             st.switch_page("app.py")
     
     st.markdown("---")
+    
+    # Warning about debug mode
+    st.warning("🔧 **DEBUG MODE ACTIVE** - This version focuses on fixing text extraction")
     
     # Initialize system
     rag_system = HybridRAGSystem()
@@ -558,90 +463,52 @@ def smart_rag_page():
         st.session_state.smart_rag_messages = []
     if 'smart_rag_document' not in st.session_state:
         st.session_state.smart_rag_document = None
-    if 'show_smart_graph' not in st.session_state:
-        st.session_state.show_smart_graph = False
     
     # Sidebar
     with st.sidebar:
-        st.header("📁 Smart RAG Controls")
-        
-        # Connection status
-        if rag_system.neo4j.driver:
-            st.success("✅ Neo4j Connected")
-        else:
-            st.error("❌ Neo4j Disconnected")
-            
-        if rag_system.groq.client:
-            st.success("✅ Groq Connected")
-        else:
-            st.warning("⚠️ Groq Disconnected")
-        
-        if rag_system.vector_search.embedder:
-            st.success("✅ Vector Search Ready")
+        st.header("🔧 DEBUG Controls")
         
         # File upload
         uploaded_file = st.file_uploader("Upload PDF Document", type="pdf")
         
         if uploaded_file and not st.session_state.smart_rag_processed:
-            if st.button("🚀 Process Document", use_container_width=True):
-                with st.spinner("🔄 Building hybrid search system..."):
+            if st.button("🚀 DEBUG Process Document", use_container_width=True):
+                with st.spinner("🔄 DEBUG: Processing document..."):
                     success = rag_system.process_document(uploaded_file)
                     if success:
                         st.session_state.smart_rag_processed = True
                         st.session_state.smart_rag_document = uploaded_file.name
-                        st.success("✅ Document processed for hybrid search!")
+                        st.success("✅ Document processed!")
                         st.rerun()
                     else:
-                        st.error("❌ Failed to process document")
+                        st.error("❌ Processing failed - check debug info above")
         
-        # Controls
         if st.session_state.smart_rag_processed:
             st.markdown("---")
-            st.header("🎛️ Search Controls")
-            
-            if st.button("🕸️ Show Knowledge Graph", use_container_width=True):
-                st.session_state.show_smart_graph = True
-                st.rerun()
-            
             if st.button("🔄 Clear Chat", use_container_width=True):
                 st.session_state.smart_rag_messages = []
                 st.rerun()
     
     # Main content
     if not st.session_state.smart_rag_processed:
-        st.info("👆 Upload a PDF to enable hybrid search (Vector + Knowledge Graph)")
+        st.info("👆 Upload a PDF to test text extraction")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("""
-            <div style='background: white; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #175CFF;'>
-                <h4>🔍 Vector Search</h4>
-                <p>Semantic understanding of document content using AI embeddings</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with col2:
-            st.markdown("""
-            <div style='background: white; padding: 1.5rem; border-radius: 10px; border-left: 4px solid #00A3FF;'>
-                <h4>🕸️ Knowledge Graph</h4>
-                <p>Entity relationships and connections for deeper insights</p>
-            </div>
-            """, unsafe_allow_html=True)
+        # Test with sample questions
+        st.markdown("### 💡 Once processed, try these questions:")
+        test_questions = [
+            "What is this document about?",
+            "Summarize the main topics",
+            "What are the key points?",
+            "Tell me about this document"
+        ]
+        
+        for q in test_questions:
+            st.write(f"- `{q}`")
         
         return
     
-    # Graph visualization
-    if st.session_state.show_smart_graph:
-        st.markdown("### 🕸️ Document Knowledge Graph")
-        with st.spinner("Generating graph..."):
-            html_content = rag_system.neo4j.create_interactive_network(st.session_state.smart_rag_document)
-            if html_content:
-                st.components.v1.html(html_content, height=600, scrolling=True)
-            else:
-                st.error("Failed to generate graph")
-        st.markdown("---")
-    
     # Chat interface
-    st.markdown("### 💬 Ask Anything About Your Document")
+    st.markdown("### 💬 Test Questions (DEBUG MODE)")
     
     # Display messages
     for msg in st.session_state.smart_rag_messages:
@@ -654,26 +521,29 @@ def smart_rag_page():
         else:
             st.markdown(f"""
             <div style='background: #f0f8ff; padding: 1rem; border-radius: 10px; border-left: 4px solid #00A3FF; margin-bottom: 1rem;'>
-                <strong>Smart RAG:</strong> {msg["content"]}
+                <strong>DEBUG RAG:</strong> {msg["content"]}
             </div>
             """, unsafe_allow_html=True)
     
-    # Suggested questions for new users
+    # Quick test buttons
     if st.session_state.smart_rag_processed and len(st.session_state.smart_rag_messages) == 0:
-        st.markdown("---")
-        st.markdown("### 💡 Try These Questions:")
+        st.markdown("### 🧪 Quick Tests:")
+        col1, col2 = st.columns(2)
         
-        suggestions = [
-            "Summarize the main topics of this document",
-            "What organizations are mentioned?",
-            "Tell me about the key concepts discussed",
-            "What are the main findings or conclusions?",
-            "Who are the important people mentioned?"
-        ]
+        with col1:
+            if st.button("🧪 Test: 'What is this about?'", use_container_width=True):
+                st.session_state.smart_rag_messages.append({"role": "user", "content": "What is this document about?"})
+                st.rerun()
+            if st.button("🧪 Test: 'Summarize'", use_container_width=True):
+                st.session_state.smart_rag_messages.append({"role": "user", "content": "Summarize this document"})
+                st.rerun()
         
-        for suggestion in suggestions:
-            if st.button(suggestion, key=f"suggest_{suggestion}", use_container_width=True):
-                st.session_state.smart_rag_messages.append({"role": "user", "content": suggestion})
+        with col2:
+            if st.button("🧪 Test: 'Main topics'", use_container_width=True):
+                st.session_state.smart_rag_messages.append({"role": "user", "content": "What are the main topics?"})
+                st.rerun()
+            if st.button("🧪 Test: 'Key points'", use_container_width=True):
+                st.session_state.smart_rag_messages.append({"role": "user", "content": "What are the key points?"})
                 st.rerun()
     
     # Chat input
@@ -683,10 +553,13 @@ def smart_rag_page():
         # Add user question
         st.session_state.smart_rag_messages.append({"role": "user", "content": question})
         
-        # Generate answer
-        with st.spinner("🔍 Searching with hybrid approach..."):
+        # Generate answer with detailed feedback
+        with st.spinner("🔍 DEBUG: Searching..."):
             answer, confidence = rag_system.search(question, st.session_state.smart_rag_document)
             st.session_state.smart_rag_messages.append({"role": "assistant", "content": answer})
+            
+            # Show search confidence
+            st.sidebar.info(f"🎯 Search confidence: {confidence:.2f}")
         
         st.rerun()
 
