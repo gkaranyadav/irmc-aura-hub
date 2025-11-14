@@ -185,7 +185,7 @@ class GraphProcessor:
         return entities[:5]  # Limit to 5 entities per paragraph
 
     def search_graph(self, query, top_k=5):
-        """Search the graph database for relevant content"""
+        """Search the graph database for relevant content - FIXED CYPHER"""
         if not self.driver or not self.current_document:
             return []
 
@@ -195,11 +195,11 @@ class GraphProcessor:
         results = []
         
         with self.driver.session() as session:
-            # Search for paragraphs containing query terms
+            # Search for paragraphs containing query terms - FIXED CYPHER
             for term in query_terms:
                 paragraphs_result = session.run("""
                 MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)
-                WHERE toLower(para.content) CONTAINS toLower($term)
+                WHERE para.content CONTAINS $term
                 RETURN para.content AS content, p.number AS page, para.method AS method
                 ORDER BY length(para.content) ASC
                 LIMIT 3
@@ -213,11 +213,11 @@ class GraphProcessor:
                         "match_type": "DIRECT"
                     })
 
-            # Search for entities related to query terms
+            # Search for entities related to query terms - FIXED CYPHER
             for term in query_terms:
                 entities_result = session.run("""
                 MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)-[:MENTIONS]->(e:Entity)
-                WHERE toLower(e.name) CONTAINS toLower($term) OR toLower(e.type) CONTAINS toLower($term)
+                WHERE e.name CONTAINS $term OR e.type CONTAINS $term
                 RETURN para.content AS content, p.number AS page, e.name AS entity, e.type AS entity_type
                 LIMIT 3
                 """, doc_name=self.current_document, term=term)
