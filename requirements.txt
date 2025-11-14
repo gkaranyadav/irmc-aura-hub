@@ -20,4 +20,3 @@ plotly
 pyvis
 neo4j 
 tesseract-ocr
-pytesseract-ocr
