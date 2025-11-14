@@ -7,6 +7,10 @@ import pdf2image
 from neo4j import GraphDatabase
 from groq import Groq
 from gtts import gTTS
+import networkx as nx
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from pyvis.network import Network
 
 # =============================================================================
 # CONFIGURATION
@@ -286,6 +290,121 @@ class GraphProcessor:
                 "entities": stats["entity_count"] or 0
             }
 
+    def get_knowledge_graph_data(self, limit=50):
+        """Get data for knowledge graph visualization"""
+        if not self.driver or not self.current_document:
+            return None
+            
+        with self.driver.session() as session:
+            result = session.run("""
+            MATCH (d:Document {name: $doc_name})
+            OPTIONAL MATCH (d)-[:HAS_PAGE]->(p:Page)
+            OPTIONAL MATCH (p)-[:HAS_PARAGRAPH]->(para:Paragraph)
+            OPTIONAL MATCH (para)-[:MENTIONS]->(e:Entity)
+            RETURN d, p, para, e
+            LIMIT $limit
+            """, doc_name=self.current_document, limit=limit)
+            
+            nodes = []
+            edges = []
+            node_ids = set()
+            
+            for record in result:
+                # Document node
+                doc_node = record['d']
+                if doc_node and doc_node.id not in node_ids:
+                    nodes.append({
+                        'id': doc_node.id,
+                        'label': doc_node.get('name', 'Document'),
+                        'type': 'document',
+                        'size': 30
+                    })
+                    node_ids.add(doc_node.id)
+                
+                # Page nodes
+                page_node = record['p']
+                if page_node and page_node.id not in node_ids:
+                    nodes.append({
+                        'id': page_node.id,
+                        'label': f"Page {page_node.get('number', '')}",
+                        'type': 'page',
+                        'size': 20
+                    })
+                    node_ids.add(page_node.id)
+                    
+                    # Document-Page edge
+                    if doc_node:
+                        edges.append({
+                            'source': doc_node.id,
+                            'target': page_node.id,
+                            'type': 'HAS_PAGE'
+                        })
+                
+                # Paragraph nodes
+                para_node = record['para']
+                if para_node and para_node.id not in node_ids:
+                    content = para_node.get('content', '')[:50] + '...' if len(para_node.get('content', '')) > 50 else para_node.get('content', '')
+                    nodes.append({
+                        'id': para_node.id,
+                        'label': f"Para: {content}",
+                        'type': 'paragraph',
+                        'size': 15
+                    })
+                    node_ids.add(para_node.id)
+                    
+                    # Page-Paragraph edge
+                    if page_node:
+                        edges.append({
+                            'source': page_node.id,
+                            'target': para_node.id,
+                            'type': 'HAS_PARAGRAPH'
+                        })
+                
+                # Entity nodes
+                entity_node = record['e']
+                if entity_node and entity_node.id not in node_ids:
+                    nodes.append({
+                        'id': entity_node.id,
+                        'label': f"{entity_node.get('name', '')} ({entity_node.get('type', '')})",
+                        'type': 'entity',
+                        'size': 25
+                    })
+                    node_ids.add(entity_node.id)
+                    
+                    # Paragraph-Entity edge
+                    if para_node:
+                        edges.append({
+                            'source': para_node.id,
+                            'target': entity_node.id,
+                            'type': 'MENTIONS'
+                        })
+            
+            return {'nodes': nodes, 'edges': edges}
+
+    def get_entity_relationships(self):
+        """Get entity relationships for advanced visualization"""
+        if not self.driver or not self.current_document:
+            return None
+            
+        with self.driver.session() as session:
+            result = session.run("""
+            MATCH (e1:Entity)-[:MENTIONS*2]-(e2:Entity)
+            WHERE e1 <> e2
+            RETURN e1.name AS entity1, e2.name AS entity2, count(*) AS strength
+            ORDER BY strength DESC
+            LIMIT 20
+            """, doc_name=self.current_document)
+            
+            relationships = []
+            for record in result:
+                relationships.append({
+                    'source': record['entity1'],
+                    'target': record['entity2'],
+                    'strength': record['strength']
+                })
+            
+            return relationships
+
 # =============================================================================
 # LLM SERVICE
 # =============================================================================
@@ -399,15 +518,98 @@ class VoiceService:
         return text
 
     def speak_text(self, text):
-        text = self.clean_text_for_tts(text)
-        tts = gTTS(text)
-        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        tts.save(tmp_file.name)
-        with open(tmp_file.name, "rb") as f:
-            audio_bytes = f.read()
-        audio_base64 = base64.b64encode(audio_bytes).decode()
-        html = f"""<audio autoplay><source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3"></audio>"""
-        st.components.v1.html(html, height=50)
+        try:
+            text = self.clean_text_for_tts(text)
+            
+            # Limit text length to avoid TTS issues
+            if len(text) > 500:
+                text = text[:500] + "..."
+                
+            tts = gTTS(text=text, lang='en', slow=False)
+            tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+            tts.save(tmp_file.name)
+            
+            with open(tmp_file.name, "rb") as f:
+                audio_bytes = f.read()
+            audio_base64 = base64.b64encode(audio_bytes).decode()
+            
+            html = f"""
+            <audio autoplay controls style="width: 100%; margin: 10px 0;">
+                <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+                Your browser does not support the audio element.
+            </audio>
+            """
+            st.components.v1.html(html, height=80)
+            
+            # Clean up temporary file
+            os.unlink(tmp_file.name)
+            
+        except Exception as e:
+            st.warning(f"⚠️ Voice feature unavailable: {str(e)}")
+
+# =============================================================================
+# KNOWLEDGE GRAPH VISUALIZER
+# =============================================================================
+class KnowledgeGraphVisualizer:
+    def __init__(self):
+        pass
+    
+    def create_interactive_graph(self, graph_data):
+        """Create interactive knowledge graph using PyVis"""
+        if not graph_data or not graph_data['nodes']:
+            st.warning("No graph data available for visualization")
+            return None
+            
+        net = Network(height="600px", width="100%", bgcolor="#ffffff", font_color="black")
+        net.barnes_hut()
+        
+        # Add nodes with different colors based on type
+        type_colors = {
+            'document': '#FF6B6B',
+            'page': '#4ECDC4', 
+            'paragraph': '#45B7D1',
+            'entity': '#96CEB4'
+        }
+        
+        for node in graph_data['nodes']:
+            net.add_node(
+                node['id'],
+                label=node['label'],
+                color=type_colors.get(node['type'], '#777777'),
+                size=node.get('size', 10),
+                title=node['label']
+            )
+        
+        # Add edges
+        for edge in graph_data['edges']:
+            net.add_edge(
+                edge['source'],
+                edge['target'],
+                title=edge.get('type', ''),
+                color='#cccccc'
+            )
+        
+        # Save and return HTML
+        try:
+            net.save_graph("knowledge_graph.html")
+            with open("knowledge_graph.html", "r", encoding="utf-8") as f:
+                html_content = f.read()
+            return html_content
+        except Exception as e:
+            st.error(f"Error creating graph: {e}")
+            return None
+    
+    def create_entity_network(self, relationships):
+        """Create entity relationship network"""
+        if not relationships:
+            return None
+            
+        G = nx.Graph()
+        
+        for rel in relationships:
+            G.add_edge(rel['source'], rel['target'], weight=rel['strength'])
+        
+        return G
 
 # =============================================================================
 # MAIN GRAPH RAG APP
@@ -485,6 +687,9 @@ def main():
             border-left: 4px solid #4ECDC4;
             margin: 1rem 0;
         }
+        .tab-content {
+            padding: 1rem 0;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -514,10 +719,13 @@ def main():
         st.session_state.generating_questions = False
     if 'suggest_button_used' not in st.session_state:
         st.session_state.suggest_button_used = False
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = "Chat"
     
     # initialize services
     llm_service = LLMService()
     voice_service = VoiceService()
+    graph_visualizer = KnowledgeGraphVisualizer()
     
     # sidebar
     st.sidebar.title("📁 Document Controls")
@@ -533,6 +741,13 @@ def main():
             st.sidebar.write(f"📄 Pages: {stats['pages']}")
             st.sidebar.write(f"📝 Paragraphs: {stats['paragraphs']}")
             st.sidebar.write(f"🔗 Entities: {stats['entities']}")
+            
+            # Knowledge Graph Options
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("### 🕸️ Knowledge Graph")
+            if st.sidebar.button("🔄 Refresh Graph Visualization"):
+                st.rerun()
+                
     else:
         st.sidebar.error("❌ Neo4j Disconnected")
     
@@ -552,153 +767,256 @@ def main():
     
     enable_voice = st.sidebar.checkbox("Enable Voice", True)
     
-    # main chat interface
-    if not st.session_state.pdf_processed:
-        st.info("👆 Please upload a PDF document to build a knowledge graph and get started")
-        return
+    # Main tabs for different functionalities
+    tab1, tab2, tab3 = st.tabs(["💬 Chat", "🕸️ Knowledge Graph", "📊 Analytics"])
     
-    # display chat messages
-    for msg in st.session_state.messages:
-        if msg["role"] == "user":
-            st.markdown(f"""
-            <div class="chat-message user-message">
-                <strong>You:</strong> {msg["content"]}
-            </div>
-            """, unsafe_allow_html=True)
+    with tab1:
+        # main chat interface
+        if not st.session_state.pdf_processed:
+            st.info("👆 Please upload a PDF document to build a knowledge graph and get started")
         else:
-            confidence = msg.get("confidence", 0)
-            pages = msg.get("pages", [])
+            # display chat messages
+            for msg in st.session_state.messages:
+                if msg["role"] == "user":
+                    st.markdown(f"""
+                    <div class="chat-message user-message">
+                        <strong>You:</strong> {msg["content"]}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    confidence = msg.get("confidence", 0)
+                    pages = msg.get("pages", [])
+                    
+                    confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>' if confidence > 0 else ""
+                    pages_html = f'<span class="page-badge">pages: {", ".join(map(str, pages))}</span>' if pages else ""
+                    graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
+                    
+                    st.markdown(f"""
+                    <div class="chat-message assistant-message">
+                        <strong>Aura:</strong> {msg["content"]} {confidence_html} {pages_html} {graph_html}
+                    </div>
+                    """, unsafe_allow_html=True)
             
-            confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>' if confidence > 0 else ""
-            pages_html = f'<span class="page-badge">pages: {", ".join(map(str, pages))}</span>' if pages else ""
-            graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
+            # BIG SUGGEST BUTTON
+            if (st.session_state.pdf_processed and 
+                not st.session_state.show_suggestions and 
+                not st.session_state.generating_questions and
+                not st.session_state.suggest_button_used and
+                len(st.session_state.messages) == 0):
+                
+                st.markdown("---")
+                st.subheader("💡 Get Started with Suggested Questions")
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("💡 Let Aura suggest questions based on your document", 
+                                key="big_suggest_btn", 
+                                use_container_width=True,
+                                type="primary"):
+                        st.session_state.generating_questions = True
+                        st.session_state.suggest_button_used = True
+                        st.rerun()
             
-            st.markdown(f"""
-            <div class="chat-message assistant-message">
-                <strong>Aura:</strong> {msg["content"]} {confidence_html} {pages_html} {graph_html}
-            </div>
-            """, unsafe_allow_html=True)
-    
-    # BIG SUGGEST BUTTON
-    if (st.session_state.pdf_processed and 
-        not st.session_state.show_suggestions and 
-        not st.session_state.generating_questions and
-        not st.session_state.suggest_button_used and
-        len(st.session_state.messages) == 0):
-        
-        st.markdown("---")
-        st.subheader("💡 Get Started with Suggested Questions")
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            if st.button("💡 Let Aura suggest questions based on your document", 
-                        key="big_suggest_btn", 
-                        use_container_width=True,
-                        type="primary"):
-                st.session_state.generating_questions = True
-                st.session_state.suggest_button_used = True
-                st.rerun()
-    
-    # Generate questions when button is clicked
-    if st.session_state.generating_questions:
-        with st.spinner("🤔 Analyzing your document and generating relevant questions..."):
-            document_sample = st.session_state.graph_processor.get_document_sample()
-            st.session_state.suggested_questions = llm_service.generate_suggested_questions_from_pdf(document_sample)
-            st.session_state.generating_questions = False
-            st.session_state.show_suggestions = True
-            st.rerun()
-    
-    # Show suggested questions
-    if st.session_state.show_suggestions and st.session_state.suggested_questions:
-        st.markdown("---")
-        st.subheader("💡 Suggested Questions Based on Your Document")
-        st.write("Click on any question to ask it:")
-        
-        for i, question in enumerate(st.session_state.suggested_questions):
-            col1, col2, col1 = st.columns([1, 3, 1])
-            with col2:
-                if st.button(question, key=f"suggested_{i}", use_container_width=True):
-                    st.session_state.selected_question = question
-                    st.session_state.show_suggestions = False
+            # Generate questions when button is clicked
+            if st.session_state.generating_questions:
+                with st.spinner("🤔 Analyzing your document and generating relevant questions..."):
+                    document_sample = st.session_state.graph_processor.get_document_sample()
+                    st.session_state.suggested_questions = llm_service.generate_suggested_questions_from_pdf(document_sample)
+                    st.session_state.generating_questions = False
+                    st.session_state.show_suggestions = True
                     st.rerun()
+            
+            # Show suggested questions
+            if st.session_state.show_suggestions and st.session_state.suggested_questions:
+                st.markdown("---")
+                st.subheader("💡 Suggested Questions Based on Your Document")
+                st.write("Click on any question to ask it:")
+                
+                for i, question in enumerate(st.session_state.suggested_questions):
+                    col1, col2, col1 = st.columns([1, 3, 1])
+                    with col2:
+                        if st.button(question, key=f"suggested_{i}", use_container_width=True):
+                            st.session_state.selected_question = question
+                            st.session_state.show_suggestions = False
+                            st.rerun()
+            
+            # Handle selected question
+            if 'selected_question' in st.session_state:
+                question = st.session_state.selected_question
+                del st.session_state.selected_question
+                
+                st.session_state.messages.append({"role": "user", "content": question})
+                
+                st.markdown(f"""
+                <div class="chat-message user-message">
+                    <strong>You:</strong> {question}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                with st.spinner("🔍 Searching knowledge graph..."):
+                    chunks = st.session_state.graph_processor.search_graph(question)
+                    answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
+                    
+                    source_pages = list(set([chunk["metadata"]["page"] for chunk in source_chunks]))
+                    source_pages.sort()
+                    
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": answer,
+                        "confidence": confidence,
+                        "pages": source_pages
+                    })
+                    
+                    confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
+                    pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
+                    graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
+                    
+                    st.markdown(f"""
+                    <div class="chat-message assistant-message">
+                        <strong>Aura:</strong> {answer} {confidence_html} {pages_html} {graph_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if enable_voice:
+                        voice_service.speak_text(answer)
+            
+            # Regular chat input
+            question = st.chat_input("Ask a question about your document...")
+            
+            if question:
+                st.session_state.messages.append({"role": "user", "content": question})
+                
+                st.markdown(f"""
+                <div class="chat-message user-message">
+                    <strong>You:</strong> {question}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                with st.spinner("🔍 Searching knowledge graph..."):
+                    chunks = st.session_state.graph_processor.search_graph(question)
+                    answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
+                    
+                    source_pages = list(set([chunk["metadata"]["page"] for chunk in source_chunks]))
+                    source_pages.sort()
+                    
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": answer,
+                        "confidence": confidence,
+                        "pages": source_pages
+                    })
+                    
+                    confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
+                    pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
+                    graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
+                    
+                    st.markdown(f"""
+                    <div class="chat-message assistant-message">
+                        <strong>Aura:</strong> {answer} {confidence_html} {pages_html} {graph_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if enable_voice:
+                        voice_service.speak_text(answer)
     
-    # Handle selected question
-    if 'selected_question' in st.session_state:
-        question = st.session_state.selected_question
-        del st.session_state.selected_question
+    with tab2:
+        st.header("🕸️ Knowledge Graph Visualization")
         
-        st.session_state.messages.append({"role": "user", "content": question})
-        
-        st.markdown(f"""
-        <div class="chat-message user-message">
-            <strong>You:</strong> {question}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        with st.spinner("🔍 Searching knowledge graph..."):
-            chunks = st.session_state.graph_processor.search_graph(question)
-            answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
+        if not st.session_state.pdf_processed:
+            st.info("👆 Please upload a PDF document to visualize the knowledge graph")
+        else:
+            col1, col2 = st.columns([2, 1])
             
-            source_pages = list(set([chunk["metadata"]["page"] for chunk in source_chunks]))
-            source_pages.sort()
+            with col1:
+                st.subheader("Interactive Knowledge Graph")
+                
+                # Get graph data
+                graph_data = st.session_state.graph_processor.get_knowledge_graph_data()
+                
+                if graph_data and graph_data['nodes']:
+                    # Create interactive graph
+                    html_content = graph_visualizer.create_interactive_graph(graph_data)
+                    
+                    if html_content:
+                        st.components.v1.html(html_content, height=600, scrolling=True)
+                    else:
+                        st.warning("Could not generate graph visualization")
+                        
+                    st.info(f"📊 Showing {len(graph_data['nodes'])} nodes and {len(graph_data['edges'])} relationships")
+                else:
+                    st.warning("No graph data available for visualization")
             
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": answer,
-                "confidence": confidence,
-                "pages": source_pages
-            })
-            
-            confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
-            pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
-            graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
-            
-            st.markdown(f"""
-            <div class="chat-message assistant-message">
-                <strong>Aura:</strong> {answer} {confidence_html} {pages_html} {graph_html}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if enable_voice:
-                voice_service.speak_text(answer)
+            with col2:
+                st.subheader("Graph Legend")
+                st.markdown("""
+                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #FF6B6B;">
+                    <strong>🔴 Document</strong><br>Main document node
+                </div>
+                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #4ECDC4; margin: 0.5rem 0;">
+                    <strong>🟢 Page</strong><br>Document pages
+                </div>
+                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #45B7D1; margin: 0.5rem 0;">
+                    <strong>🔵 Paragraph</strong><br>Text paragraphs
+                </div>
+                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #96CEB4; margin: 0.5rem 0;">
+                    <strong>🟢 Entity</strong><br>Extracted entities
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Entity relationships
+                st.subheader("Entity Relationships")
+                relationships = st.session_state.graph_processor.get_entity_relationships()
+                
+                if relationships:
+                    for rel in relationships[:10]:  # Show top 10
+                        st.write(f"**{rel['source']}** ↔ **{rel['target']}** (strength: {rel['strength']})")
+                else:
+                    st.info("No entity relationships found")
     
-    # Regular chat input
-    question = st.chat_input("Ask a question about your document...")
-    
-    if question:
-        st.session_state.messages.append({"role": "user", "content": question})
+    with tab3:
+        st.header("📊 Document Analytics")
         
-        st.markdown(f"""
-        <div class="chat-message user-message">
-            <strong>You:</strong> {question}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        with st.spinner("🔍 Searching knowledge graph..."):
-            chunks = st.session_state.graph_processor.search_graph(question)
-            answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
+        if not st.session_state.pdf_processed:
+            st.info("👆 Please upload a PDF document to view analytics")
+        else:
+            col1, col2, col3 = st.columns(3)
             
-            source_pages = list(set([chunk["metadata"]["page"] for chunk in source_chunks]))
-            source_pages.sort()
+            with col1:
+                st.metric("Total Pages", st.session_state.graph_processor.get_graph_statistics()['pages'])
+            with col2:
+                st.metric("Paragraphs", st.session_state.graph_processor.get_graph_statistics()['paragraphs'])
+            with col3:
+                st.metric("Entities", st.session_state.graph_processor.get_graph_statistics()['entities'])
             
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": answer,
-                "confidence": confidence,
-                "pages": source_pages
-            })
+            # Entity type distribution
+            st.subheader("Entity Type Distribution")
             
-            confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
-            pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
-            graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
-            
-            st.markdown(f"""
-            <div class="chat-message assistant-message">
-                <strong>Aura:</strong> {answer} {confidence_html} {pages_html} {graph_html}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            if enable_voice:
-                voice_service.speak_text(answer)
+            # Get entity types count
+            if st.session_state.graph_processor.driver:
+                with st.session_state.graph_processor.driver.session() as session:
+                    result = session.run("""
+                    MATCH (e:Entity)
+                    RETURN e.type AS type, count(*) AS count
+                    ORDER BY count DESC
+                    """)
+                    
+                    entity_types = []
+                    counts = []
+                    
+                    for record in result:
+                        entity_types.append(record['type'] or 'Unknown')
+                        counts.append(record['count'])
+                    
+                    if entity_types:
+                        fig = go.Figure(data=[go.Bar(x=entity_types, y=counts, marker_color='#175CFF')])
+                        fig.update_layout(
+                            title="Entities by Type",
+                            xaxis_title="Entity Type",
+                            yaxis_title="Count",
+                            height=400
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("No entities found for analytics")
 
 if __name__ == "__main__":
     main()
