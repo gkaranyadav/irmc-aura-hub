@@ -11,14 +11,19 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from pyvis.network import Network
+import numpy as np
+from sentence_transformers import SentenceTransformer
+import faiss
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 class Config:
     GROQ_MODEL = "llama-3.3-70b-versatile"
-    CHUNK_SIZE = 1500
-    MIN_PARAGRAPH_LENGTH = 50
+    EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+    CHUNK_SIZE = 500
+    MIN_PARAGRAPH_LENGTH = 20
+    TOP_K = 3
 
 class Neo4jConfig:
     URI = st.secrets.get("NEO4J_URI", "bolt://localhost:7687")
@@ -26,9 +31,51 @@ class Neo4jConfig:
     PASSWORD = st.secrets.get("NEO4J_PASSWORD", "password")
 
 # =============================================================================
-# LLM KNOWLEDGE EXTRACTOR
+# VECTOR STORE FOR SIMILARITY SEARCH
 # =============================================================================
-class LLMKnowledgeExtractor:
+class VectorStore:
+    def __init__(self):
+        try:
+            self.embedder = SentenceTransformer(Config.EMBEDDING_MODEL)
+            self.index = None
+            self.chunks = []
+            self.chunk_metadata = []
+        except Exception as e:
+            st.error(f"❌ Vector store initialization failed: {e}")
+
+    def add_documents(self, chunks, metadata):
+        """Add document chunks to vector store"""
+        self.chunks = chunks
+        self.chunk_metadata = metadata
+        
+        if chunks:
+            embeddings = self.embedder.encode(chunks)
+            self.index = faiss.IndexFlatL2(embeddings.shape[1])
+            self.index.add(np.array(embeddings))
+
+    def similarity_search(self, query, k=Config.TOP_K):
+        """Find similar chunks to query"""
+        if not self.chunks or self.index is None:
+            return []
+            
+        query_vec = self.embedder.encode([query])
+        distances, indices = self.index.search(np.array(query_vec), k)
+        
+        results = []
+        for i, idx in enumerate(indices[0]):
+            if idx < len(self.chunks):
+                results.append({
+                    "content": self.chunks[idx],
+                    "metadata": self.chunk_metadata[idx],
+                    "similarity": 1 - distances[0][i]  # Convert distance to similarity
+                })
+        
+        return results
+
+# =============================================================================
+# LLM RELATIONSHIP EXTRACTOR
+# =============================================================================
+class LLMRelationshipExtractor:
     def __init__(self):
         try:
             self.client = Groq(api_key=st.secrets["GROQ_API_KEY"])
@@ -36,48 +83,49 @@ class LLMKnowledgeExtractor:
             st.error(f"❌ Groq initialization failed: {e}")
             self.client = None
 
-    def extract_knowledge_graph(self, text_chunk, page_num):
-        """Universal LLM extraction for ANY domain"""
-        if not self.client or not text_chunk.strip():
+    def extract_relationships_from_chunks(self, chunks):
+        """Extract entities and relationships from relevant chunks using LLM"""
+        if not self.client or not chunks:
             return [], []
         
-        # Dynamic prompt that works for ANY domain
-        prompt = f"""
-        Analyze this text and extract a knowledge graph. Work for ANY domain - medical, technical, business, educational, etc.
+        # Combine chunks for context
+        combined_text = "\n\n".join([chunk["content"] for chunk in chunks])
         
-        TEXT:
-        {text_chunk}
+        prompt = f"""
+        Extract a KNOWLEDGE GRAPH from this relevant text. Focus on meaningful entities and relationships.
+        
+        RELEVANT TEXT:
+        {combined_text}
         
         Extract:
-        1. IMPORTANT entities (names, concepts, things that matter)
-        2. REAL relationships between these entities
-        3. Focus on meaningful connections, not just word co-occurrence
+        1. Key ENTITIES (important concepts, people, organizations, products)
+        2. Semantic RELATIONSHIPS between these entities
+        3. Focus on what matters in this specific context
         
         Return JSON:
         {{
             "entities": [
                 {{
                     "name": "entity_name",
-                    "type": "appropriate_type_based_on_context",
-                    "description": "what this entity represents"
+                    "type": "PERSON|ORGANIZATION|CONCEPT|PRODUCT|EVENT|TECHNOLOGY",
+                    "description": "brief description"
                 }}
             ],
             "relationships": [
                 {{
                     "source": "source_entity",
                     "target": "target_entity", 
-                    "relationship": "meaningful_relationship_type",
-                    "evidence": "why this relationship exists"
+                    "type": "IMPACTS|CAUSES|INVESTS_IN|DEVELOPS|COMPETES_WITH|PARTNERS_WITH",
+                    "evidence": "text evidence",
+                    "confidence": 0.85
                 }}
             ]
         }}
-        
-        Be domain-agnostic and extract what actually matters in the text.
         """
         
         try:
             messages = [
-                {"role": "system", "content": "You are a universal knowledge extraction expert. Work across all domains and extract meaningful entities and relationships from any text."},
+                {"role": "system", "content": "You extract precise knowledge graphs from relevant text snippets. Focus on meaningful relationships."},
                 {"role": "user", "content": prompt}
             ]
             
@@ -95,46 +143,22 @@ class LLMKnowledgeExtractor:
             if json_match:
                 result = json.loads(json_match.group())
                 return result.get("entities", []), result.get("relationships", [])
-            else:
-                # Fallback: try to parse as plain text
-                return self._fallback_extraction(response_text)
                 
         except Exception as e:
-            st.warning(f"⚠️ LLM extraction failed for page {page_num}: {str(e)}")
-            return [], []
-
-    def _fallback_extraction(self, text):
-        """Fallback if JSON parsing fails"""
-        entities = []
-        relationships = []
+            st.warning(f"⚠️ LLM extraction failed: {str(e)}")
         
-        # Simple pattern matching as fallback
-        lines = text.split('\n')
-        for line in lines:
-            if '->' in line or '→' in line:
-                parts = re.split(r'->|→', line)
-                if len(parts) == 2:
-                    source = parts[0].strip()
-                    target = parts[1].strip()
-                    if source and target:
-                        relationships.append({
-                            "source": source,
-                            "target": target,
-                            "relationship": "related_to",
-                            "evidence": "extracted from text"
-                        })
-        
-        return entities, relationships
+        return [], []
 
 # =============================================================================
-# ENHANCED GRAPH PROCESSOR WITH LLM
+# DYNAMIC GRAPH PROCESSOR
 # =============================================================================
-class GraphProcessor:
+class DynamicGraphProcessor:
     def __init__(self):
         self.driver = None
-        self.llm_extractor = LLMKnowledgeExtractor()
-        self.connect()
+        self.vector_store = VectorStore()
+        self.llm_extractor = LLMRelationshipExtractor()
         self.current_document = None
+        self.connect()
 
     def connect(self):
         try:
@@ -178,11 +202,8 @@ class GraphProcessor:
         total_pages = len(reader.pages)
         return "text_based" if total_pages == 0 or text_pages / total_pages > 0.5 else "scanned"
 
-    def process_pdf(self, uploaded_file):
-        if not self.driver:
-            st.error("❌ No Neo4j connection available")
-            return 0, 0
-
+    def process_pdf_for_search(self, uploaded_file):
+        """Process PDF for vector search (fast, no LLM)"""
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp_file.write(uploaded_file.getvalue())
         tmp_file.close()
@@ -192,10 +213,8 @@ class GraphProcessor:
             pdf_type = self.analyze_pdf_type(pdf_path)
             if pdf_type == "text_based":
                 extracted = self.extract_text_direct(pdf_path)
-                method = "text"
             else:
                 extracted = self.extract_text_ocr(pdf_path)
-                method = "ocr"
 
             # Clear previous data
             self.current_document = uploaded_file.name
@@ -204,66 +223,70 @@ class GraphProcessor:
             # Create document node
             self._create_document_node(self.current_document)
 
-            total_entities = 0
-            total_relationships = 0
+            # Prepare chunks for vector store
+            chunks = []
+            metadata = []
             
-            # Process with progress
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            for i, item in enumerate(extracted):
+            for item in extracted:
                 page = item["page"]
-                text = item["text"]
+                paragraphs = [p.strip() for p in item["text"].split("\n\n") if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
                 
-                status_text.text(f"📄 Processing page {page}/{len(extracted)} with LLM...")
-                progress_bar.progress((i + 1) / len(extracted))
-                
-                # Use LLM to extract knowledge from this page
-                entities, relationships = self.llm_extractor.extract_knowledge_graph(text, page)
-                
-                # Store in Neo4j
-                if entities or relationships:
-                    self._store_llm_knowledge(page, entities, relationships, method)
-                    total_entities += len(entities)
-                    total_relationships += len(relationships)
-                
-                # Small delay to avoid rate limits
-                time.sleep(0.5)
+                for para in paragraphs:
+                    if para.strip():
+                        chunks.append(para)
+                        metadata.append({"page": page, "document": self.current_document})
 
-            status_text.text("✅ Document processing complete!")
-            return total_entities, total_relationships
+            # Initialize vector store
+            self.vector_store.add_documents(chunks, metadata)
+            
+            return len(chunks)
 
         finally:
             if os.path.exists(pdf_path):
                 os.unlink(pdf_path)
 
-    def _store_llm_knowledge(self, page_num, entities, relationships, method):
-        """Store LLM-extracted knowledge in Neo4j"""
-        with self.driver.session() as session:
-            # Ensure page exists
-            session.run("""
-            MATCH (d:Document {name: $doc_name})
-            MERGE (p:Page {number: $page_num, document: $doc_name})
-            MERGE (d)-[:HAS_PAGE]->(p)
-            """, doc_name=self.current_document, page_num=page_num)
+    def process_question_dynamically(self, question):
+        """Your brilliant approach: Similarity search → LLM → GraphDB"""
+        if not self.driver or not self.current_document:
+            return [], "No document processed"
 
+        # Step 1: Similarity search (like RAG)
+        with st.spinner("🔍 Finding relevant content..."):
+            relevant_chunks = self.vector_store.similarity_search(question, k=Config.TOP_K)
+        
+        if not relevant_chunks:
+            return [], "No relevant content found"
+
+        # Step 2: LLM extract relationships from relevant chunks only
+        with st.spinner("🧠 Extracting knowledge relationships..."):
+            entities, relationships = self.llm_extractor.extract_relationships_from_chunks(relevant_chunks)
+
+        # Step 3: Store in GraphDB
+        if entities or relationships:
+            self._store_dynamic_knowledge(entities, relationships, relevant_chunks)
+        
+        return relevant_chunks, f"Extracted {len(entities)} entities and {len(relationships)} relationships"
+
+    def _store_dynamic_knowledge(self, entities, relationships, source_chunks):
+        """Store dynamically extracted knowledge in Neo4j"""
+        with self.driver.session() as session:
+            # Get source pages from chunks
+            source_pages = list(set([chunk["metadata"]["page"] for chunk in source_chunks]))
+            
             # Store entities
             for entity in entities:
                 session.run("""
-                MATCH (p:Page {number: $page_num, document: $doc_name})
                 MERGE (e:Entity {name: $name, document: $doc_name})
                 SET e.type = $type, 
                     e.description = $description,
                     e.source = $source,
-                    e.page = $page_num
-                MERGE (p)-[:CONTAINS_ENTITY]->(e)
+                    e.last_updated = timestamp()
                 """, 
                 doc_name=self.current_document,
-                page_num=page_num,
                 name=entity.get('name', ''),
                 type=entity.get('type', 'CONCEPT'),
                 description=entity.get('description', ''),
-                source='llm_extraction'
+                source='dynamic_extraction'
                 )
 
             # Store relationships
@@ -274,30 +297,22 @@ class GraphProcessor:
                 WHERE e1 <> e2
                 MERGE (e1)-[r:RELATED_TO {type: $rel_type}]->(e2)
                 SET r.evidence = $evidence,
-                    r.source = $source_method,
-                    r.page = $page_num,
-                    r.confidence = $confidence
+                    r.confidence = $confidence,
+                    r.source_pages = $source_pages,
+                    r.last_updated = timestamp(),
+                    r.query_based = true
                 """, 
                 doc_name=self.current_document,
                 source=rel.get('source', ''),
                 target=rel.get('target', ''),
-                rel_type=rel.get('relationship', 'related_to'),
+                rel_type=rel.get('type', 'related_to'),
                 evidence=rel.get('evidence', ''),
-                source_method=method,
-                page_num=page_num,
-                confidence=0.8
+                confidence=rel.get('confidence', 0.8),
+                source_pages=source_pages
                 )
 
-    def _clear_document_data(self, document_name):
-        with self.driver.session() as session:
-            session.run("MATCH (d:Document {name: $name}) DETACH DELETE d", name=document_name)
-
-    def _create_document_node(self, document_name):
-        with self.driver.session() as session:
-            session.run("CREATE (d:Document {name: $name})", name=document_name)
-
     def search_graph(self, query, top_k=5):
-        """Enhanced graph search using LLM-extracted relationships"""
+        """Search existing knowledge graph"""
         if not self.driver or not self.current_document:
             return []
 
@@ -308,11 +323,11 @@ class GraphProcessor:
             entity_results = session.run("""
             MATCH (e:Entity {document: $doc_name})
             WHERE e.name CONTAINS $query OR e.description CONTAINS $query
-            MATCH (e)<-[:CONTAINS_ENTITY]-(p:Page)
             OPTIONAL MATCH (e)-[r:RELATED_TO]-(other:Entity)
             RETURN e.name AS entity, e.type AS type, e.description AS description,
-                   p.number AS page, r.type AS relation_type, other.name AS related_entity,
-                   'ENTITY_MATCH' AS match_type
+                   r.type AS relation_type, other.name AS related_entity,
+                   r.source_pages AS pages,
+                   'GRAPH_ENTITY' AS match_type
             LIMIT 10
             """, doc_name=self.current_document, query=query)
             
@@ -328,30 +343,10 @@ class GraphProcessor:
                 if content_parts:
                     results.append({
                         "content": ". ".join(content_parts),
-                        "metadata": {"page": record["page"], "match_type": record["match_type"]},
+                        "metadata": {"page": record["pages"] or [1], "match_type": record["match_type"]},
                         "similarity": 0.9,
-                        "match_type": "ENTITY_RELATION"
+                        "match_type": "GRAPH_ENTITY"
                     })
-
-            # Search by relationship patterns
-            rel_results = session.run("""
-            MATCH (e1:Entity {document: $doc_name})-[r:RELATED_TO]-(e2:Entity {document: $doc_name})
-            WHERE r.type CONTAINS $query OR r.evidence CONTAINS $query
-            MATCH (e1)<-[:CONTAINS_ENTITY]-(p:Page)
-            RETURN e1.name AS source, e2.name AS target, r.type AS relation,
-                   r.evidence AS evidence, p.number AS page,
-                   'RELATIONSHIP_MATCH' AS match_type
-            LIMIT 10
-            """, doc_name=self.current_document, query=query)
-            
-            for record in rel_results:
-                content = f"{record['source']} --[{record['relation']}]--> {record['target']}. Evidence: {record['evidence']}"
-                results.append({
-                    "content": content,
-                    "metadata": {"page": record["page"], "match_type": record["match_type"]},
-                    "similarity": 0.85,
-                    "match_type": "RELATIONSHIP"
-                })
 
         return results[:top_k]
 
@@ -362,24 +357,21 @@ class GraphProcessor:
         with self.driver.session() as session:
             result = session.run("""
             MATCH (d:Document {name: $doc_name})
-            OPTIONAL MATCH (d)-[:HAS_PAGE]->(p:Page)
-            OPTIONAL MATCH (p)-[:CONTAINS_ENTITY]->(e:Entity)
+            OPTIONAL MATCH (e:Entity {document: $doc_name})
             OPTIONAL MATCH (e)-[r:RELATED_TO]->(other:Entity)
             RETURN 
-                count(DISTINCT p) AS page_count,
                 count(DISTINCT e) AS entity_count,
                 count(DISTINCT r) AS relationship_count
             """, doc_name=self.current_document)
             
             stats = result.single()
             return {
-                "pages": stats["page_count"] or 0,
                 "entities": stats["entity_count"] or 0,
                 "relationships": stats["relationship_count"] or 0
             }
 
     def get_knowledge_graph_data(self, limit=100):
-        """Get LLM-extracted knowledge graph data"""
+        """Get dynamically built knowledge graph data"""
         if not self.driver or not self.current_document:
             return None
             
@@ -429,32 +421,13 @@ class GraphProcessor:
             
             return {'nodes': nodes, 'edges': edges}
 
-    def get_entity_relationships(self):
-        """Get meaningful entity relationships"""
-        if not self.driver or not self.current_document:
-            return None
-            
+    def _clear_document_data(self, document_name):
         with self.driver.session() as session:
-            result = session.run("""
-            MATCH (e1:Entity {document: $doc_name})-[r:RELATED_TO]-(e2:Entity {document: $doc_name})
-            WHERE e1 <> e2
-            RETURN e1.name AS entity1, e2.name AS entity2, r.type AS relationship_type,
-                   r.evidence AS evidence, count(*) AS strength
-            ORDER BY strength DESC
-            LIMIT 20
-            """, doc_name=self.current_document)
-            
-            relationships = []
-            for record in result:
-                relationships.append({
-                    'source': record['entity1'],
-                    'target': record['entity2'],
-                    'relationship': record['relationship_type'],
-                    'evidence': record['evidence'],
-                    'strength': record['strength']
-                })
-            
-            return relationships
+            session.run("MATCH (d:Document {name: $name}) DETACH DELETE d", name=document_name)
+
+    def _create_document_node(self, document_name):
+        with self.driver.session() as session:
+            session.run("CREATE (d:Document {name: $name})", name=document_name)
 
 # =============================================================================
 # LLM SERVICE
@@ -471,8 +444,8 @@ class LLMService:
         if not chunks:
             return f"❌ no relevant info found for '{question}'", 0.0, []
         
-        # Calculate confidence based on graph matches
-        confidences = [c["similarity"] for c in chunks]
+        # Calculate confidence based on similarity scores
+        confidences = [c.get("similarity", 0.7) for c in chunks]
         if len(confidences) == 1:
             final_confidence = confidences[0]
         elif len(confidences) == 2:
@@ -492,8 +465,8 @@ class LLMService:
             context = "\n\n".join([f"{c['content']}" for c in chunks])
             
             messages = [
-                {"role": "system", "content": "You are an expert document analyst. Provide clear, concise answers based only on the provided context. Do not mention page numbers, sources, or say 'based on the context' in your answer. Just provide the direct answer. If the context doesn't contain the answer, say 'I cannot find this information in the document.'"},
-                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}\n\nProvide a direct answer without mentioning sources."}
+                {"role": "system", "content": "You are an expert document analyst. Provide clear, concise answers based only on the provided context."},
+                {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}\n\nProvide a direct answer."}
             ]
             response = self.client.chat.completions.create(
                 model=Config.GROQ_MODEL,
@@ -514,48 +487,6 @@ class LLMService:
         summary = ' '.join(key_sentences[:6])
         return summary, confidence, chunks
 
-    def generate_suggested_questions_from_pdf(self, document_sample):
-        """Generate relevant questions based on actual PDF content using LLM"""
-        if not self.client:
-            return self._get_fallback_questions()
-            
-        try:
-            messages = [
-                {"role": "system", "content": "You are an expert at analyzing documents and generating relevant questions. Generate 5-6 specific questions that would help someone understand the key points of this specific document. Make the questions directly relevant to the content provided."},
-                {"role": "user", "content": f"Based on this document content, suggest 5-6 specific relevant questions:\n\n{document_sample}\n\nProvide the questions as a simple list, one per line."}
-            ]
-            response = self.client.chat.completions.create(
-                model=Config.GROQ_MODEL,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=500
-            )
-            questions_text = response.choices[0].message.content
-            
-            # Extract questions from the response
-            questions = []
-            for line in questions_text.split('\n'):
-                line = line.strip()
-                clean_line = re.sub(r'^[\d\-•\.\s]+', '', line).strip()
-                if clean_line and len(clean_line) > 10 and '?' in clean_line:
-                    questions.append(clean_line)
-                    
-            return questions[:6] if questions else self._get_fallback_questions()
-        except Exception as e:
-            st.error(f"❌ failed to generate questions: {e}")
-            return self._get_fallback_questions()
-
-    def _get_fallback_questions(self):
-        """Fallback questions if LLM fails"""
-        return [
-            "What is the main purpose of this document?",
-            "What are the key findings or conclusions?",
-            "Who is the intended audience for this content?",
-            "What methodology or approach was used?",
-            "What are the main recommendations?",
-            "What problems or challenges does this address?"
-        ]
-
 # =============================================================================
 # VOICE SERVICE
 # =============================================================================
@@ -572,7 +503,6 @@ class VoiceService:
         try:
             text = self.clean_text_for_tts(text)
             
-            # Limit text length to avoid TTS issues
             if len(text) > 500:
                 text = text[:500] + "..."
                 
@@ -587,12 +517,10 @@ class VoiceService:
             html = f"""
             <audio autoplay controls style="width: 100%; margin: 10px 0;">
                 <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
-                Your browser does not support the audio element.
             </audio>
             """
             st.components.v1.html(html, height=80)
             
-            # Clean up temporary file
             os.unlink(tmp_file.name)
             
         except Exception as e:
@@ -606,7 +534,6 @@ class KnowledgeGraphVisualizer:
         pass
     
     def create_interactive_graph(self, graph_data):
-        """Create interactive knowledge graph using PyVis"""
         if not graph_data or not graph_data['nodes']:
             st.warning("No graph data available for visualization")
             return None
@@ -614,16 +541,13 @@ class KnowledgeGraphVisualizer:
         net = Network(height="600px", width="100%", bgcolor="#ffffff", font_color="black")
         net.barnes_hut()
         
-        # Add nodes with different colors based on type
         type_colors = {
             'PERSON': '#FF6B6B',
             'ORGANIZATION': '#4ECDC4', 
             'CONCEPT': '#45B7D1',
             'PRODUCT': '#96CEB4',
             'TECHNOLOGY': '#FFE66D',
-            'EVENT': '#FF9F1C',
-            'LOCATION': '#6A0572',
-            'METRIC': '#06D6A0'
+            'EVENT': '#FF9F1C'
         }
         
         for node in graph_data['nodes']:
@@ -635,10 +559,9 @@ class KnowledgeGraphVisualizer:
                 label=node['label'],
                 color=color,
                 size=node.get('size', 15),
-                title=f"{node['label']}\nType: {node_type}\n{node.get('description', '')}"
+                title=f"{node['label']}\nType: {node_type}"
             )
         
-        # Add edges
         for edge in graph_data['edges']:
             net.add_edge(
                 edge['source'],
@@ -648,7 +571,6 @@ class KnowledgeGraphVisualizer:
                 color='#cccccc'
             )
         
-        # Save and return HTML
         try:
             net.save_graph("knowledge_graph.html")
             with open("knowledge_graph.html", "r", encoding="utf-8") as f:
@@ -662,423 +584,169 @@ class KnowledgeGraphVisualizer:
 # MAIN GRAPH RAG APP
 # =============================================================================
 def main():
-    # page configuration
     st.set_page_config(
-        page_title="Graph RAG - irmc Aura",
+        page_title="Dynamic Graph RAG - irmc Aura",
         page_icon="🌐",
         layout="wide"
     )
     
-    # custom css for better chat display
     st.markdown("""
     <style>
-        .chat-message {
-            padding: 1rem;
-            border-radius: 10px;
-            margin-bottom: 1rem;
-        }
-        .user-message {
-            background-color: #e6f3ff;
-            border-left: 4px solid #175CFF;
-        }
-        .assistant-message {
-            background-color: #f0f8ff;
-            border-left: 4px solid #00A3FF;
-        }
-        .confidence-badge {
-            background-color: #e8f5e8;
-            color: #2e7d32;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            margin-left: 0.5rem;
-        }
-        .page-badge {
-            background-color: #fff3e0;
-            color: #ef6c00;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            margin-left: 0.5rem;
-        }
-        .graph-badge {
-            background-color: #e3f2fd;
-            color: #1565c0;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            margin-left: 0.5rem;
-        }
-        .big-suggest-btn {
-            background: linear-gradient(135deg, #175CFF, #00A3FF);
-            color: white;
-            border: none;
-            border-radius: 25px;
-            padding: 15px 25px;
-            font-weight: 600;
-            font-size: 16px;
-            box-shadow: 0 4px 12px rgba(23, 92, 255, 0.3);
-            cursor: pointer;
-            transition: all 0.3s ease;
-            width: 100%;
-            margin: 10px 0;
-        }
-        .big-suggest-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(23, 92, 255, 0.4);
-        }
-        .stats-container {
-            background: white;
-            padding: 1rem;
-            border-radius: 10px;
-            border-left: 4px solid #4ECDC4;
-            margin: 1rem 0;
-        }
-        .tab-content {
-            padding: 1rem 0;
-        }
-        .entity-type-PERSON { background-color: #FF6B6B; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
-        .entity-type-ORGANIZATION { background-color: #4ECDC4; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
-        .entity-type-CONCEPT { background-color: #45B7D1; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
-        .entity-type-PRODUCT { background-color: #96CEB4; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
+        .chat-message { padding: 1rem; border-radius: 10px; margin-bottom: 1rem; }
+        .user-message { background-color: #e6f3ff; border-left: 4px solid #175CFF; }
+        .assistant-message { background-color: #f0f8ff; border-left: 4px solid #00A3FF; }
+        .confidence-badge { background-color: #e8f5e8; color: #2e7d32; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.8rem; }
+        .page-badge { background-color: #fff3e0; color: #ef6c00; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.8rem; }
+        .graph-badge { background-color: #e3f2fd; color: #1565c0; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.8rem; }
     </style>
     """, unsafe_allow_html=True)
     
-    # add back to home button
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("🌐 Graph RAG - irmc Aura")
-        st.markdown("### Chat with your documents using AI-Powered Knowledge Graph")
+        st.title("🌐 Dynamic Graph RAG - irmc Aura")
+        st.markdown("### Smart Knowledge Graph built from your questions")
     with col2:
         if st.button("🏠 Back to Home"):
             st.switch_page("app.py")
     
     st.markdown("---")
     
-    # initialize session state
+    # Initialize session state
     if 'pdf_processed' not in st.session_state:
         st.session_state.pdf_processed = False
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'graph_processor' not in st.session_state:
-        st.session_state.graph_processor = GraphProcessor()
-    if 'suggested_questions' not in st.session_state:
-        st.session_state.suggested_questions = []
-    if 'show_suggestions' not in st.session_state:
-        st.session_state.show_suggestions = False
-    if 'generating_questions' not in st.session_state:
-        st.session_state.generating_questions = False
-    if 'suggest_button_used' not in st.session_state:
-        st.session_state.suggest_button_used = False
+        st.session_state.graph_processor = DynamicGraphProcessor()
+    if 'dynamic_graph_built' not in st.session_state:
+        st.session_state.dynamic_graph_built = False
     
-    # initialize services
+    # Initialize services
     llm_service = LLMService()
     voice_service = VoiceService()
     graph_visualizer = KnowledgeGraphVisualizer()
     
-    # sidebar
+    # Sidebar
     st.sidebar.title("📁 Document Controls")
     
-    # Show Neo4j connection status
     if st.session_state.graph_processor.driver:
         st.sidebar.success("✅ Neo4j Connected")
         
-        # Show graph statistics if document is processed
         if st.session_state.pdf_processed:
             stats = st.session_state.graph_processor.get_graph_statistics()
-            st.sidebar.markdown("### 📊 Graph Statistics")
-            st.sidebar.write(f"📄 Pages: {stats['pages']}")
+            st.sidebar.markdown("### 📊 Dynamic Graph Stats")
             st.sidebar.write(f"🔗 Entities: {stats['entities']}")
             st.sidebar.write(f"🔄 Relationships: {stats['relationships']}")
-            
-            # Knowledge Graph Options
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("### 🕸️ Knowledge Graph")
-            if st.sidebar.button("🔄 Refresh Graph Visualization"):
-                st.rerun()
-                
     else:
         st.sidebar.error("❌ Neo4j Disconnected")
     
     uploaded_file = st.sidebar.file_uploader("Upload PDF", type="pdf", key="pdf_uploader")
     
-    # auto-process when file is uploaded
+    # Fast PDF processing (no LLM)
     if uploaded_file and not st.session_state.pdf_processed:
-        with st.spinner("🔄 Processing document with AI..."):
-            entity_count, relationship_count = st.session_state.graph_processor.process_pdf(uploaded_file)
-            if entity_count > 0:
+        with st.spinner("📄 Processing document for fast search..."):
+            chunk_count = st.session_state.graph_processor.process_pdf_for_search(uploaded_file)
+            if chunk_count > 0:
                 st.session_state.pdf_processed = True
                 st.session_state.pdf_name = uploaded_file.name
-                st.sidebar.success(f"✅ Extracted {entity_count} entities and {relationship_count} relationships")
+                st.sidebar.success(f"✅ Ready for questions! ({chunk_count} chunks)")
     
     if st.session_state.pdf_processed:
-        st.sidebar.success("✅ Document processed with AI")
+        st.sidebar.success("✅ Document ready for dynamic graph building")
     
     enable_voice = st.sidebar.checkbox("Enable Voice", True)
     
-    # Main tabs for different functionalities
-    tab1, tab2, tab3 = st.tabs(["💬 AI Chat", "🕸️ Knowledge Graph", "📊 Analytics"])
-    
-    with tab1:
-        # main chat interface
-        if not st.session_state.pdf_processed:
-            st.info("👆 Please upload a PDF document to build an AI knowledge graph")
-        else:
-            # display chat messages
-            for msg in st.session_state.messages:
-                if msg["role"] == "user":
-                    st.markdown(f"""
-                    <div class="chat-message user-message">
-                        <strong>You:</strong> {msg["content"]}
-                    </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    confidence = msg.get("confidence", 0)
-                    pages = msg.get("pages", [])
-                    
-                    confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>' if confidence > 0 else ""
-                    pages_html = f'<span class="page-badge">pages: {", ".join(map(str, pages))}</span>' if pages else ""
-                    graph_html = '<span class="graph-badge">🌐 AI Knowledge Graph</span>'
-                    
-                    st.markdown(f"""
-                    <div class="chat-message assistant-message">
-                        <strong>Aura:</strong> {msg["content"]} {confidence_html} {pages_html} {graph_html}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # BIG SUGGEST BUTTON
-            if (st.session_state.pdf_processed and 
-                not st.session_state.show_suggestions and 
-                not st.session_state.generating_questions and
-                not st.session_state.suggest_button_used and
-                len(st.session_state.messages) == 0):
-                
-                st.markdown("---")
-                st.subheader("💡 Get Started with AI-Suggested Questions")
-                col1, col2, col3 = st.columns([1, 2, 1])
-                with col2:
-                    if st.button("💡 Let AI suggest questions based on your document", 
-                                key="big_suggest_btn", 
-                                use_container_width=True,
-                                type="primary"):
-                        st.session_state.generating_questions = True
-                        st.session_state.suggest_button_used = True
-                        st.rerun()
-            
-            # Generate questions when button is clicked
-            if st.session_state.generating_questions:
-                with st.spinner("🤔 AI is analyzing your document and generating relevant questions..."):
-                    document_sample = st.session_state.graph_processor.get_document_sample()
-                    st.session_state.suggested_questions = llm_service.generate_suggested_questions_from_pdf(document_sample)
-                    st.session_state.generating_questions = False
-                    st.session_state.show_suggestions = True
-                    st.rerun()
-            
-            # Show suggested questions
-            if st.session_state.show_suggestions and st.session_state.suggested_questions:
-                st.markdown("---")
-                st.subheader("💡 AI-Suggested Questions")
-                st.write("Click on any question to ask it:")
-                
-                for i, question in enumerate(st.session_state.suggested_questions):
-                    col1, col2, col1 = st.columns([1, 3, 1])
-                    with col2:
-                        if st.button(question, key=f"suggested_{i}", use_container_width=True):
-                            st.session_state.selected_question = question
-                            st.session_state.show_suggestions = False
-                            st.rerun()
-            
-            # Handle selected question
-            if 'selected_question' in st.session_state:
-                question = st.session_state.selected_question
-                del st.session_state.selected_question
-                
-                st.session_state.messages.append({"role": "user", "content": question})
-                
+    # Main chat interface
+    if not st.session_state.pdf_processed:
+        st.info("👆 Please upload a PDF document to start building dynamic knowledge graphs")
+    else:
+        # Display chat messages
+        for msg in st.session_state.messages:
+            if msg["role"] == "user":
                 st.markdown(f"""
                 <div class="chat-message user-message">
-                    <strong>You:</strong> {question}
+                    <strong>You:</strong> {msg["content"]}
                 </div>
                 """, unsafe_allow_html=True)
+            else:
+                confidence = msg.get("confidence", 0)
+                pages = msg.get("pages", [])
+                graph_info = msg.get("graph_info", "")
                 
-                with st.spinner("🔍 AI is searching knowledge graph..."):
-                    chunks = st.session_state.graph_processor.search_graph(question)
-                    answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
-                    
-                    source_pages = list(set([chunk["metadata"]["page"] for chunk in source_chunks]))
-                    source_pages.sort()
-                    
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": answer,
-                        "confidence": confidence,
-                        "pages": source_pages
-                    })
-                    
-                    confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
-                    pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
-                    graph_html = '<span class="graph-badge">🌐 AI Knowledge Graph</span>'
-                    
-                    st.markdown(f"""
-                    <div class="chat-message assistant-message">
-                        <strong>Aura:</strong> {answer} {confidence_html} {pages_html} {graph_html}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if enable_voice:
-                        voice_service.speak_text(answer)
-            
-            # Regular chat input
-            question = st.chat_input("Ask a question about your document...")
-            
-            if question:
-                st.session_state.messages.append({"role": "user", "content": question})
+                confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>' if confidence > 0 else ""
+                pages_html = f'<span class="page-badge">pages: {", ".join(map(str, pages))}</span>' if pages else ""
+                graph_html = f'<span class="graph-badge">🌐 {graph_info}</span>' if graph_info else ""
                 
                 st.markdown(f"""
-                <div class="chat-message user-message">
-                    <strong>You:</strong> {question}
+                <div class="chat-message assistant-message">
+                    <strong>Aura:</strong> {msg["content"]} {confidence_html} {pages_html} {graph_html}
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Chat input
+        question = st.chat_input("Ask a question to build knowledge graph dynamically...")
+        
+        if question:
+            # Add user question
+            st.session_state.messages.append({"role": "user", "content": question})
+            
+            st.markdown(f"""
+            <div class="chat-message user-message">
+                <strong>You:</strong> {question}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Your brilliant dynamic approach!
+            with st.spinner("🚀 Building knowledge graph dynamically..."):
+                # Step 1-3: Similarity search → LLM → GraphDB
+                relevant_chunks, graph_info = st.session_state.graph_processor.process_question_dynamically(question)
+                
+                # Step 4: Generate answer
+                answer, confidence, source_chunks = llm_service.generate_answer(question, relevant_chunks)
+                
+                # Extract pages
+                source_pages = list(set([chunk["metadata"]["page"] for chunk in relevant_chunks]))
+                source_pages.sort()
+                
+                # Add assistant response
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": answer,
+                    "confidence": confidence,
+                    "pages": source_pages,
+                    "graph_info": graph_info
+                })
+                
+                # Display response
+                confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
+                pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
+                graph_html = f'<span class="graph-badge">🌐 {graph_info}</span>'
+                
+                st.markdown(f"""
+                <div class="chat-message assistant-message">
+                    <strong>Aura:</strong> {answer} {confidence_html} {pages_html} {graph_html}
                 </div>
                 """, unsafe_allow_html=True)
                 
-                with st.spinner("🔍 AI is searching knowledge graph..."):
-                    chunks = st.session_state.graph_processor.search_graph(question)
-                    answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
-                    
-                    source_pages = list(set([chunk["metadata"]["page"] for chunk in source_chunks]))
-                    source_pages.sort()
-                    
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": answer,
-                        "confidence": confidence,
-                        "pages": source_pages
-                    })
-                    
-                    confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
-                    pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
-                    graph_html = '<span class="graph-badge">🌐 AI Knowledge Graph</span>'
-                    
-                    st.markdown(f"""
-                    <div class="chat-message assistant-message">
-                        <strong>Aura:</strong> {answer} {confidence_html} {pages_html} {graph_html}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if enable_voice:
-                        voice_service.speak_text(answer)
+                if enable_voice:
+                    voice_service.speak_text(answer)
+                
+                # Mark that we've built some graph
+                st.session_state.dynamic_graph_built = True
     
-    with tab2:
-        st.header("🕸️ AI Knowledge Graph Visualization")
+    # Show graph visualization if we have data
+    if st.session_state.dynamic_graph_built:
+        st.markdown("---")
+        st.subheader("🕸️ Dynamically Built Knowledge Graph")
         
-        if not st.session_state.pdf_processed:
-            st.info("👆 Please upload a PDF document to visualize the AI knowledge graph")
+        graph_data = st.session_state.graph_processor.get_knowledge_graph_data()
+        if graph_data and graph_data['nodes']:
+            html_content = graph_visualizer.create_interactive_graph(graph_data)
+            if html_content:
+                st.components.v1.html(html_content, height=600, scrolling=True)
+                st.info(f"📊 Dynamic Graph: {len(graph_data['nodes'])} entities, {len(graph_data['edges'])} relationships")
         else:
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.subheader("Interactive Knowledge Graph")
-                
-                # Get graph data
-                graph_data = st.session_state.graph_processor.get_knowledge_graph_data()
-                
-                if graph_data and graph_data['nodes']:
-                    # Create interactive graph
-                    html_content = graph_visualizer.create_interactive_graph(graph_data)
-                    
-                    if html_content:
-                        st.components.v1.html(html_content, height=600, scrolling=True)
-                    else:
-                        st.warning("Could not generate graph visualization")
-                        
-                    st.info(f"📊 Showing {len(graph_data['nodes'])} entities and {len(graph_data['edges'])} relationships")
-                else:
-                    st.warning("No graph data available for visualization")
-            
-            with col2:
-                st.subheader("Graph Legend")
-                st.markdown("""
-                <div style="background: #FF6B6B; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
-                    <strong>🔴 PERSON</strong>
-                </div>
-                <div style="background: #4ECDC4; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
-                    <strong>🟢 ORGANIZATION</strong>
-                </div>
-                <div style="background: #45B7D1; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
-                    <strong>🔵 CONCEPT</strong>
-                </div>
-                <div style="background: #96CEB4; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
-                    <strong>🟢 PRODUCT</strong>
-                </div>
-                <div style="background: #FFE66D; color: black; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
-                    <strong>🟡 TECHNOLOGY</strong>
-                </div>
-                <div style="background: #FF9F1C; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
-                    <strong>🟠 EVENT</strong>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Entity relationships
-                st.subheader("Key Relationships")
-                relationships = st.session_state.graph_processor.get_entity_relationships()
-                
-                if relationships:
-                    for rel in relationships[:8]:
-                        st.write(f"**{rel['source']}** → **{rel['target']}**")
-                        st.caption(f"Relationship: {rel['relationship']}")
-                        if rel.get('evidence'):
-                            st.caption(f"Evidence: {rel['evidence'][:100]}...")
-                        st.markdown("---")
-                else:
-                    st.info("No relationships found")
-    
-    with tab3:
-        st.header("📊 Document Analytics")
-        
-        if not st.session_state.pdf_processed:
-            st.info("👆 Please upload a PDF document to view analytics")
-        else:
-            stats = st.session_state.graph_processor.get_graph_statistics()
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Total Pages", stats['pages'])
-            with col2:
-                st.metric("AI Entities", stats['entities'])
-            with col3:
-                st.metric("Relationships", stats['relationships'])
-            
-            # Entity type distribution
-            st.subheader("Entity Type Distribution")
-            
-            # Get entity types count
-            if st.session_state.graph_processor.driver:
-                with st.session_state.graph_processor.driver.session() as session:
-                    result = session.run("""
-                    MATCH (e:Entity {document: $doc_name})
-                    RETURN e.type AS type, count(*) AS count
-                    ORDER BY count DESC
-                    LIMIT 10
-                    """, doc_name=st.session_state.graph_processor.current_document)
-                    
-                    entity_types = []
-                    counts = []
-                    
-                    for record in result:
-                        entity_types.append(record['type'] or 'Unknown')
-                        counts.append(record['count'])
-                    
-                    if entity_types:
-                        fig = go.Figure(data=[go.Bar(x=entity_types, y=counts, marker_color='#175CFF')])
-                        fig.update_layout(
-                            title="Entities by Type (AI-Extracted)",
-                            xaxis_title="Entity Type",
-                            yaxis_title="Count",
-                            height=400
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("No entities found for analytics")
+            st.info("Ask questions to build the knowledge graph dynamically!")
 
 if __name__ == "__main__":
     main()
