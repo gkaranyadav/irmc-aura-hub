@@ -1,4 +1,4 @@
-# pages/3_🌐_Smart_RAG.py - FIXED OCR VERSION
+# pages/3_🌐_Smart_RAG.py - PROPER OCR VERSION
 import streamlit as st
 import tempfile
 import os
@@ -8,7 +8,6 @@ from PyPDF2 import PdfReader
 import pytesseract
 from PIL import Image
 import pdf2image
-from neo4j import GraphDatabase
 import groq
 from sentence_transformers import SentenceTransformer
 import faiss
@@ -16,34 +15,37 @@ import faiss
 # --------------------------------------------------------------------------------------
 # CONFIG
 class Config:
-    CHUNK_SIZE = 500  # Reduced for better handling
-    MIN_PARAGRAPH_LENGTH = 5  # Very permissive
+    CHUNK_SIZE = 500
+    MIN_PARAGRAPH_LENGTH = 10
     EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
     TOP_K = 3
-
-class Neo4jConfig:
-    URI = st.secrets.get("NEO4J_URI", "")
-    USERNAME = st.secrets.get("NEO4J_USERNAME", "")
-    PASSWORD = st.secrets.get("NEO4J_PASSWORD", "")
 
 class GroqConfig:
     API_KEY = st.secrets.get("GROQ_API_KEY", "")
     MODEL = "llama-3.3-70b-versatile"
 
 # --------------------------------------------------------------------------------------
-# ROBUST DOCUMENT PROCESSOR
+# PROPER OCR PROCESSOR
 class DocumentProcessor:
     def __init__(self):
         try:
             self.embedder = SentenceTransformer(Config.EMBEDDING_MODEL)
             self.indices = {}
             st.sidebar.success("✅ Vector Model Loaded")
+            
+            # Test if pytesseract is working
+            try:
+                pytesseract.get_tesseract_version()
+                st.sidebar.success("✅ Tesseract OCR Available")
+            except:
+                st.sidebar.error("❌ Tesseract not found")
+                
         except Exception as e:
             st.sidebar.error(f"❌ Vector model failed: {e}")
             self.embedder = None
 
     def process_pdf(self, uploaded_file):
-        """Robust PDF processing with multiple fallbacks"""
+        """Process PDF with proper OCR"""
         document_name = uploaded_file.name
         
         st.info(f"📄 Processing: {document_name}")
@@ -53,31 +55,43 @@ class DocumentProcessor:
             pdf_path = tmp_file.name
             
         try:
-            # Try multiple extraction methods
-            all_text = self._extract_text_all_methods(pdf_path)
+            # First try direct extraction
+            st.sidebar.info("🔧 Step 1: Testing direct text extraction...")
+            direct_text = self._extract_direct_text(pdf_path)
             
-            if not all_text:
-                st.error("❌ ALL text extraction methods failed!")
-                st.info("""
-                💡 **Possible issues:**
-                - PDF is image-only with no text layer
-                - PDF is password protected
-                - PDF is corrupted
-                - OCR dependencies missing
-                """)
-                return False
+            if direct_text and len(direct_text) > 100:
+                st.sidebar.success(f"✅ Direct text: {len(direct_text)} chars")
+                text = direct_text
+                method = "direct"
+            else:
+                st.sidebar.warning("❌ Little/no direct text, using OCR...")
+                # Use OCR
+                ocr_text = self._extract_ocr_text_proper(pdf_path)
+                if ocr_text:
+                    st.sidebar.success(f"✅ OCR text: {len(ocr_text)} chars")
+                    text = ocr_text
+                    method = "ocr"
+                else:
+                    st.error("❌ Both direct and OCR extraction failed!")
+                    return False
             
-            # Create chunks from extracted text
-            chunks = self._create_chunks(all_text)
+            # Create chunks
+            chunks = self._create_chunks(text)
             
             if not chunks:
                 st.error("❌ No text chunks could be created")
+                # Show raw text for debugging
+                with st.expander("🔍 Raw Extracted Text"):
+                    st.text(text[:3000] if text else "NO TEXT")
                 return False
             
-            st.success(f"✅ Created {len(chunks)} text chunks")
+            st.success(f"✅ Created {len(chunks)} text chunks using {method.upper()}")
             
-            # Show what was extracted
-            with st.expander("🔍 View Extracted Text"):
+            # Show sample
+            with st.expander("🔍 Sample Extracted Content"):
+                st.write(f"**Extraction method:** {method}")
+                st.write(f"**Total characters:** {len(text)}")
+                st.write(f"**Text chunks:** {len(chunks)}")
                 for i, chunk in enumerate(chunks[:3]):
                     st.write(f"**Chunk {i+1}:** {chunk}")
             
@@ -86,187 +100,165 @@ class DocumentProcessor:
                 embeddings = self.embedder.encode(chunks)
                 index = faiss.IndexFlatL2(embeddings.shape[1])
                 index.add(np.array(embeddings))
-                
-                self.indices[document_name] = (index, chunks, [{"page": 1, "method": "combined"}] * len(chunks))
+                self.indices[document_name] = (index, chunks, [{"page": 1, "method": method}] * len(chunks))
             else:
-                # Fallback: store chunks without embeddings
-                self.indices[document_name] = (None, chunks, [{"page": 1, "method": "combined"}] * len(chunks))
+                self.indices[document_name] = (None, chunks, [{"page": 1, "method": method}] * len(chunks))
             
             return True
             
         except Exception as e:
             st.error(f"❌ Processing failed: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
             return False
         finally:
             if os.path.exists(pdf_path):
                 os.unlink(pdf_path)
 
-    def _extract_text_all_methods(self, pdf_path):
-        """Try multiple text extraction methods"""
-        all_text = ""
-        
-        # METHOD 1: Direct PDF text extraction
-        st.sidebar.info("🔧 Method 1: Direct extraction...")
-        direct_text = self._extract_direct_text(pdf_path)
-        if direct_text:
-            st.sidebar.success(f"✅ Direct: {len(direct_text)} chars")
-            all_text += direct_text + "\n\n"
-        else:
-            st.sidebar.warning("❌ Direct: No text")
-        
-        # METHOD 2: OCR with pytesseract
-        st.sidebar.info("🔧 Method 2: OCR extraction...")
-        ocr_text = self._extract_ocr_text(pdf_path)
-        if ocr_text:
-            st.sidebar.success(f"✅ OCR: {len(ocr_text)} chars")
-            all_text += ocr_text + "\n\n"
-        else:
-            st.sidebar.warning("❌ OCR: No text")
-        
-        # METHOD 3: Fallback - try basic PDF reading
-        if not all_text.strip():
-            st.sidebar.info("🔧 Method 3: Fallback extraction...")
-            fallback_text = self._extract_fallback_text(pdf_path)
-            if fallback_text:
-                st.sidebar.success(f"✅ Fallback: {len(fallback_text)} chars")
-                all_text += fallback_text
-            else:
-                st.sidebar.error("❌ Fallback: No text")
-        
-        return all_text.strip()
-
     def _extract_direct_text(self, pdf_path):
-        """Direct text extraction from PDF"""
+        """Direct text extraction"""
         try:
             reader = PdfReader(pdf_path)
             text = ""
-            for page in reader.pages:
+            total_pages = len(reader.pages)
+            
+            for i, page in enumerate(reader.pages):
                 page_text = page.extract_text() or ""
                 if page_text.strip():
-                    text += page_text + "\n\n"
+                    text += f"PAGE {i+1}:\n{page_text}\n\n"
+            
             return text.strip()
         except Exception as e:
             st.sidebar.error(f"Direct extraction error: {e}")
             return ""
 
-    def _extract_ocr_text(self, pdf_path):
-        """OCR text extraction with error handling"""
+    def _extract_ocr_text_proper(self, pdf_path):
+        """Proper OCR extraction with better configuration"""
         try:
-            # Check if pytesseract is available
-            pytesseract.get_tesseract_version()
-        except Exception:
-            st.sidebar.error("❌ pytesseract not installed")
-            return ""
-        
-        try:
-            # Convert PDF to images
-            images = pdf2image.convert_from_path(pdf_path, dpi=150)
-            text = ""
+            st.sidebar.info("🖼️ Converting PDF to images...")
+            
+            # Convert PDF to images with better settings
+            try:
+                images = pdf2image.convert_from_path(
+                    pdf_path, 
+                    dpi=300,  # Higher DPI for better OCR
+                    poppler_path=None  # Let it use system poppler
+                )
+                st.sidebar.success(f"✅ Converted to {len(images)} images")
+            except Exception as e:
+                st.sidebar.error(f"PDF to image conversion failed: {e}")
+                return ""
+            
+            all_text = ""
             
             for i, image in enumerate(images):
                 try:
-                    # Use PIL to preprocess image for better OCR
+                    st.sidebar.info(f"   🔍 OCR page {i+1}...")
+                    
+                    # Preprocess image for better OCR
                     # Convert to grayscale
                     if image.mode != 'L':
                         image = image.convert('L')
                     
-                    # OCR with configuration for better accuracy
-                    page_text = pytesseract.image_to_string(
-                        image, 
-                        config='--psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,!?@#$%&*()_+-=[]{}|;:,<>?/ '
-                    )
+                    # Enhance contrast
+                    from PIL import ImageEnhance
+                    enhancer = ImageEnhance.Contrast(image)
+                    image = enhancer.enhance(2.0)  # Increase contrast
+                    
+                    enhancer = ImageEnhance.Sharpness(image)
+                    image = enhancer.enhance(2.0)  # Increase sharpness
+                    
+                    # Try different OCR configurations
+                    configs = [
+                        '--psm 6',  # Uniform block of text
+                        '--psm 4',  # Single column of text
+                        '--psm 3',  # Fully automatic page segmentation
+                        '--psm 1',  # Automatic page segmentation with OSD
+                    ]
+                    
+                    page_text = ""
+                    for config in configs:
+                        try:
+                            text = pytesseract.image_to_string(image, config=config)
+                            if len(text.strip()) > len(page_text.strip()):
+                                page_text = text
+                        except:
+                            continue
                     
                     if page_text.strip():
-                        text += f"Page {i+1}:\n{page_text}\n\n"
+                        all_text += f"PAGE {i+1}:\n{page_text}\n\n"
                         st.sidebar.success(f"   Page {i+1}: {len(page_text)} chars")
+                        
+                        # Show OCR sample for first page
+                        if i == 0:
+                            with st.expander("🔍 First Page OCR Sample"):
+                                st.text(f"OCR Output:\n{page_text[:1000]}")
                     else:
                         st.sidebar.warning(f"   Page {i+1}: No OCR text")
                         
                 except Exception as e:
                     st.sidebar.error(f"   Page {i+1} OCR failed: {e}")
             
-            return text.strip()
+            return all_text.strip()
+            
         except Exception as e:
-            st.sidebar.error(f"OCR extraction error: {e}")
+            st.sidebar.error(f"OCR extraction failed: {e}")
             return ""
 
-    def _extract_fallback_text(self, pdf_path):
-        """Fallback text extraction"""
-        try:
-            reader = PdfReader(pdf_path)
-            text = ""
-            for i, page in enumerate(reader.pages):
-                # Try different extraction methods
-                try:
-                    page_text = page.extract_text() or ""
-                    if not page_text.strip():
-                        # Try alternative method
-                        page_text = str(page) if hasattr(page, '__str__') else ""
-                    
-                    if page_text.strip():
-                        text += f"Page {i+1}:\n{page_text}\n\n"
-                except:
-                    continue
-            return text.strip()
-        except Exception as e:
-            return f"Fallback error: {e}"
-
     def _create_chunks(self, text):
-        """Create text chunks from extracted text"""
+        """Create text chunks"""
         if not text.strip():
             return []
         
         # Clean text
-        text = re.sub(r'\n+', '\n', text)  # Remove multiple newlines
-        text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # Remove non-ASCII characters
+        text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+        text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # Remove non-ASCII
         
-        # Split into paragraphs/sentences
+        # Split by pages first
+        page_sections = re.split(r'PAGE \d+:', text)
         chunks = []
         
-        # Method 1: Split by double newlines
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
-        
-        # Method 2: Split by single newlines if no paragraphs found
-        if not paragraphs:
-            paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
-        
-        # Method 3: Split by sentences
-        if not paragraphs:
-            sentences = re.split(r'[.!?]+', text)
-            paragraphs = [s.strip() for s in sentences if s.strip()]
-        
-        # Further split large paragraphs
-        for para in paragraphs:
-            if len(para) > Config.CHUNK_SIZE:
-                # Split into smaller chunks
-                words = para.split()
-                current_chunk = []
-                current_length = 0
+        for section in page_sections:
+            section = section.strip()
+            if not section:
+                continue
                 
-                for word in words:
-                    if current_length + len(word) + 1 <= Config.CHUNK_SIZE:
-                        current_chunk.append(word)
-                        current_length += len(word) + 1
-                    else:
-                        if current_chunk:
-                            chunks.append(' '.join(current_chunk))
-                        current_chunk = [word]
-                        current_length = len(word)
-                
-                if current_chunk:
-                    chunks.append(' '.join(current_chunk))
-            else:
-                chunks.append(para)
+            # Split into paragraphs
+            paragraphs = [p.strip() for p in section.split('\n\n') if p.strip()]
+            
+            # If no paragraphs, split by lines
+            if not paragraphs:
+                paragraphs = [p.strip() for p in section.split('\n') if p.strip()]
+            
+            # Further split large paragraphs
+            for para in paragraphs:
+                if len(para) > Config.CHUNK_SIZE:
+                    # Split by sentences
+                    sentences = re.split(r'[.!?]+', para)
+                    current_chunk = ""
+                    for sentence in sentences:
+                        sentence = sentence.strip()
+                        if not sentence:
+                            continue
+                        if len(current_chunk + sentence) < Config.CHUNK_SIZE:
+                            current_chunk += sentence + ". "
+                        else:
+                            if current_chunk.strip():
+                                chunks.append(current_chunk.strip())
+                            current_chunk = sentence + ". "
+                    if current_chunk.strip():
+                        chunks.append(current_chunk.strip())
+                else:
+                    chunks.append(para)
         
-        # Filter by minimum length
+        # Filter chunks
         chunks = [chunk for chunk in chunks if len(chunk) >= Config.MIN_PARAGRAPH_LENGTH]
         
         return chunks
 
     def semantic_search(self, question, document_name):
-        """Semantic search with fallbacks"""
+        """Semantic search"""
         if document_name not in self.indices:
-            st.error(f"❌ Document not processed: {document_name}")
             return []
             
         index, chunks, metadata = self.indices[document_name]
@@ -274,7 +266,6 @@ class DocumentProcessor:
         if not chunks:
             return []
         
-        # If we have embeddings, use semantic search
         if index is not None and self.embedder:
             query_vec = self.embedder.encode([question])
             distances, indices = index.search(np.array(query_vec), Config.TOP_K)
@@ -294,7 +285,7 @@ class DocumentProcessor:
             
             return results
         else:
-            # Fallback: return first few chunks
+            # Fallback: return all chunks for simple matching
             return [{
                 "content": chunk,
                 "metadata": meta,
@@ -315,18 +306,25 @@ class GroqService:
                 st.sidebar.error(f"❌ Groq: {str(e)}")
 
     def generate_answer(self, question, search_results):
-        """Generate answer with better fallbacks"""
+        """Generate answer"""
         if not search_results:
-            fallback_answers = [
-                "I couldn't extract any readable text from your PDF document. ",
-                "This might be because the PDF is image-based, scanned, or in an unsupported format. ",
-                "Please try uploading a PDF that contains selectable text, or try using a different PDF file.",
-                "\n\n💡 **Tips:**",
-                "- Upload PDFs with text content (not just images)",
-                "- Try converting scanned documents to searchable PDF first",
-                "- Ensure the file isn't password protected"
-            ]
-            return "".join(fallback_answers), 0.0
+            return """
+❌ **No text could be extracted from your PDF**
+
+🔍 **What happened:**
+- Direct text extraction found no selectable text
+- OCR (image-to-text) also found no readable text
+
+💡 **Solutions:**
+1. **Check if your PDF has selectable text** - try highlighting text with your cursor
+2. **Convert scanned PDFs to searchable PDF** using:
+   - Adobe Acrobat
+   - Online tools like SmallPDF, iLovePDF
+   - Google Drive (upload PDF → Open with Google Docs)
+3. **Ensure good image quality** for scanned documents
+
+📝 **For best results, use PDFs where you can select and copy text!**
+            """, 0.0
         
         confidence = min(len(search_results) / 3.0, 1.0)
         
@@ -346,10 +344,10 @@ class GroqService:
             response = self.client.chat.completions.create(
                 model=GroqConfig.MODEL,
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant. Answer the question based on the provided context from a document. If the context seems like random text or OCR errors, do your best to interpret it."},
-                    {"role": "user", "content": f"Question: {question}\n\nDocument Context:\n{context}\n\nAnswer based on the document context:"}
+                    {"role": "system", "content": "You are a helpful assistant analyzing a document. Answer the question based ONLY on the provided context. Be concise and accurate."},
+                    {"role": "user", "content": f"Question: {question}\n\nDocument Content:\n{context}\n\nAnswer:"}
                 ],
-                temperature=0.3,
+                temperature=0.1,
                 max_tokens=800
             )
             
@@ -362,7 +360,7 @@ class GroqService:
     
     def _generate_fallback(self, question, search_results, confidence):
         """Simple fallback answer"""
-        answer = f"**Question:** {question}\n\n**Document Content:**\n\n"
+        answer = f"**Based on the document:**\n\n"
         for i, result in enumerate(search_results, 1):
             answer += f"{i}. {result['content']}\n\n"
         return answer, confidence
@@ -388,7 +386,7 @@ class HybridRAGSystem:
 # MAIN PAGE
 def smart_rag_page():
     st.title("🌐 Smart RAG - Document Q&A")
-    st.markdown("### Upload a PDF and ask questions about its content")
+    st.markdown("### PDF Text Extraction + AI Analysis")
     
     # Initialize system
     rag_system = HybridRAGSystem()
@@ -430,15 +428,15 @@ def smart_rag_page():
         st.info("👆 Upload a PDF document to start asking questions")
         
         st.markdown("""
-        ### Supported PDF Types:
-        - **Text-based PDFs** (direct text extraction)
-        - **Scanned PDFs** (OCR text recognition)  
-        - **Image-heavy PDFs** (fallback methods)
+        ### 🔧 How It Works:
+        1. **Direct Text Extraction** - For PDFs with selectable text
+        2. **OCR (Optical Character Recognition)** - For scanned/image PDFs
+        3. **AI Analysis** - Answer questions about the content
         
-        ### Tips for Best Results:
-        - Use PDFs with readable text content
-        - For scanned documents, ensure good image quality
-        - Avoid password-protected PDFs
+        ### 📝 For Best Results:
+        - Use **text-based PDFs** (you can highlight text)
+        - For **scanned PDFs**, ensure good image quality
+        - Avoid password-protected files
         """)
         
         return
@@ -460,28 +458,6 @@ def smart_rag_page():
                 <strong>Assistant:</strong> {msg["content"]}
             </div>
             """, unsafe_allow_html=True)
-    
-    # Quick questions for CVs
-    if st.session_state.smart_rag_processed and len(st.session_state.smart_rag_messages) == 0:
-        st.markdown("### 💡 Try These Questions:")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("👤 What is the name?", use_container_width=True):
-                st.session_state.smart_rag_messages.append({"role": "user", "content": "What is the name of the person?"})
-                st.rerun()
-            if st.button("🎓 What education?", use_container_width=True):
-                st.session_state.smart_rag_messages.append({"role": "user", "content": "What education background is mentioned?"})
-                st.rerun()
-        
-        with col2:
-            if st.button("💼 What experience?", use_container_width=True):
-                st.session_state.smart_rag_messages.append({"role": "user", "content": "What work experience is listed?"})
-                st.rerun()
-            if st.button("🛠️ What skills?", use_container_width=True):
-                st.session_state.smart_rag_messages.append({"role": "user", "content": "What skills are mentioned?"})
-                st.rerun()
     
     # Chat input
     question = st.chat_input("Ask about your document...")
