@@ -1,6 +1,6 @@
 # pages/3_🌐_Graph_RAG.py
 import streamlit as st
-import tempfile, os, time, base64, re
+import tempfile, os, time, base64, re, json
 from PyPDF2 import PdfReader
 import pytesseract
 import pdf2image
@@ -17,8 +17,8 @@ from pyvis.network import Network
 # =============================================================================
 class Config:
     GROQ_MODEL = "llama-3.3-70b-versatile"
-    CHUNK_SIZE = 500
-    MIN_PARAGRAPH_LENGTH = 20
+    CHUNK_SIZE = 1500
+    MIN_PARAGRAPH_LENGTH = 50
 
 class Neo4jConfig:
     URI = st.secrets.get("NEO4J_URI", "bolt://localhost:7687")
@@ -26,11 +26,113 @@ class Neo4jConfig:
     PASSWORD = st.secrets.get("NEO4J_PASSWORD", "password")
 
 # =============================================================================
-# NEO4J GRAPH PROCESSOR
+# LLM KNOWLEDGE EXTRACTOR
+# =============================================================================
+class LLMKnowledgeExtractor:
+    def __init__(self):
+        try:
+            self.client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        except Exception as e:
+            st.error(f"❌ Groq initialization failed: {e}")
+            self.client = None
+
+    def extract_knowledge_graph(self, text_chunk, page_num):
+        """Universal LLM extraction for ANY domain"""
+        if not self.client or not text_chunk.strip():
+            return [], []
+        
+        # Dynamic prompt that works for ANY domain
+        prompt = f"""
+        Analyze this text and extract a knowledge graph. Work for ANY domain - medical, technical, business, educational, etc.
+        
+        TEXT:
+        {text_chunk}
+        
+        Extract:
+        1. IMPORTANT entities (names, concepts, things that matter)
+        2. REAL relationships between these entities
+        3. Focus on meaningful connections, not just word co-occurrence
+        
+        Return JSON:
+        {{
+            "entities": [
+                {{
+                    "name": "entity_name",
+                    "type": "appropriate_type_based_on_context",
+                    "description": "what this entity represents"
+                }}
+            ],
+            "relationships": [
+                {{
+                    "source": "source_entity",
+                    "target": "target_entity", 
+                    "relationship": "meaningful_relationship_type",
+                    "evidence": "why this relationship exists"
+                }}
+            ]
+        }}
+        
+        Be domain-agnostic and extract what actually matters in the text.
+        """
+        
+        try:
+            messages = [
+                {"role": "system", "content": "You are a universal knowledge extraction expert. Work across all domains and extract meaningful entities and relationships from any text."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=Config.GROQ_MODEL,
+                messages=messages,
+                temperature=0.1,
+                max_tokens=2000
+            )
+            
+            response_text = response.choices[0].message.content
+            
+            # Extract JSON from response
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+                return result.get("entities", []), result.get("relationships", [])
+            else:
+                # Fallback: try to parse as plain text
+                return self._fallback_extraction(response_text)
+                
+        except Exception as e:
+            st.warning(f"⚠️ LLM extraction failed for page {page_num}: {str(e)}")
+            return [], []
+
+    def _fallback_extraction(self, text):
+        """Fallback if JSON parsing fails"""
+        entities = []
+        relationships = []
+        
+        # Simple pattern matching as fallback
+        lines = text.split('\n')
+        for line in lines:
+            if '->' in line or '→' in line:
+                parts = re.split(r'->|→', line)
+                if len(parts) == 2:
+                    source = parts[0].strip()
+                    target = parts[1].strip()
+                    if source and target:
+                        relationships.append({
+                            "source": source,
+                            "target": target,
+                            "relationship": "related_to",
+                            "evidence": "extracted from text"
+                        })
+        
+        return entities, relationships
+
+# =============================================================================
+# ENHANCED GRAPH PROCESSOR WITH LLM
 # =============================================================================
 class GraphProcessor:
     def __init__(self):
         self.driver = None
+        self.llm_extractor = LLMKnowledgeExtractor()
         self.connect()
         self.current_document = None
 
@@ -46,7 +148,6 @@ class GraphProcessor:
                 uri,
                 auth=(Neo4jConfig.USERNAME, Neo4jConfig.PASSWORD)
             )
-            # Test connection
             with self.driver.session() as session:
                 session.run("RETURN 1 AS test")
         except Exception as e:
@@ -80,7 +181,7 @@ class GraphProcessor:
     def process_pdf(self, uploaded_file):
         if not self.driver:
             st.error("❌ No Neo4j connection available")
-            return 0
+            return 0, 0
 
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         tmp_file.write(uploaded_file.getvalue())
@@ -96,178 +197,165 @@ class GraphProcessor:
                 extracted = self.extract_text_ocr(pdf_path)
                 method = "ocr"
 
-            # Clear previous data for this document
+            # Clear previous data
             self.current_document = uploaded_file.name
             self._clear_document_data(self.current_document)
 
             # Create document node
             self._create_document_node(self.current_document)
 
-            total_chunks = 0
-            for item in extracted:
+            total_entities = 0
+            total_relationships = 0
+            
+            # Process with progress
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for i, item in enumerate(extracted):
                 page = item["page"]
-                paragraphs = [p.strip() for p in item["text"].split("\n\n") if len(p.strip()) >= Config.MIN_PARAGRAPH_LENGTH]
+                text = item["text"]
                 
-                for para_idx, para in enumerate(paragraphs):
-                    if para.strip():
-                        # Create page and paragraph nodes
-                        self._create_page_paragraph(page, para_idx, para, method)
-                        total_chunks += 1
+                status_text.text(f"📄 Processing page {page}/{len(extracted)} with LLM...")
+                progress_bar.progress((i + 1) / len(extracted))
+                
+                # Use LLM to extract knowledge from this page
+                entities, relationships = self.llm_extractor.extract_knowledge_graph(text, page)
+                
+                # Store in Neo4j
+                if entities or relationships:
+                    self._store_llm_knowledge(page, entities, relationships, method)
+                    total_entities += len(entities)
+                    total_relationships += len(relationships)
+                
+                # Small delay to avoid rate limits
+                time.sleep(0.5)
 
-            return total_chunks
+            status_text.text("✅ Document processing complete!")
+            return total_entities, total_relationships
 
         finally:
             if os.path.exists(pdf_path):
                 os.unlink(pdf_path)
 
-    def _clear_document_data(self, document_name):
-        """Clear existing data for this document"""
+    def _store_llm_knowledge(self, page_num, entities, relationships, method):
+        """Store LLM-extracted knowledge in Neo4j"""
         with self.driver.session() as session:
-            session.run("MATCH (d:Document {name: $name}) DETACH DELETE d", name=document_name)
-
-    def _create_document_node(self, document_name):
-        """Create document node"""
-        with self.driver.session() as session:
-            session.run("CREATE (d:Document {name: $name})", name=document_name)
-
-    def _create_page_paragraph(self, page_num, para_idx, paragraph, method):
-        """Create page and paragraph nodes with relationships"""
-        with self.driver.session() as session:
-            # Create page node and connect to document
+            # Ensure page exists
             session.run("""
             MATCH (d:Document {name: $doc_name})
             MERGE (p:Page {number: $page_num, document: $doc_name})
             MERGE (d)-[:HAS_PAGE]->(p)
             """, doc_name=self.current_document, page_num=page_num)
 
-            # Create paragraph node and connect to page
-            session.run("""
-            MATCH (p:Page {number: $page_num, document: $doc_name})
-            CREATE (para:Paragraph {
-                content: $content, 
-                chunk_id: $chunk_id,
-                method: $method
-            })
-            CREATE (p)-[:HAS_PARAGRAPH]->(para)
-            """, 
-            doc_name=self.current_document, 
-            page_num=page_num, 
-            content=paragraph,
-            chunk_id=f"page_{page_num}_para_{para_idx}",
-            method=method)
-
-            # Extract and create entities
-            entities = self._extract_entities(paragraph)
+            # Store entities
             for entity in entities:
                 session.run("""
-                MATCH (para:Paragraph {chunk_id: $chunk_id})
-                MERGE (e:Entity {name: $name, type: $type})
-                MERGE (para)-[:MENTIONS]->(e)
+                MATCH (p:Page {number: $page_num, document: $doc_name})
+                MERGE (e:Entity {name: $name, document: $doc_name})
+                SET e.type = $type, 
+                    e.description = $description,
+                    e.source = $source,
+                    e.page = $page_num
+                MERGE (p)-[:CONTAINS_ENTITY]->(e)
                 """, 
-                chunk_id=f"page_{page_num}_para_{para_idx}",
-                name=entity['name'], 
-                type=entity['type'])
+                doc_name=self.current_document,
+                page_num=page_num,
+                name=entity.get('name', ''),
+                type=entity.get('type', 'CONCEPT'),
+                description=entity.get('description', ''),
+                source='llm_extraction'
+                )
 
-    def _extract_entities(self, text):
-        """Extract entities from text using regex patterns"""
-        entities = []
-        
-        patterns = {
-            'PERSON': r'\b[A-Z][a-z]+ [A-Z][a-z]+\b',
-            'ORG': r'\b[A-Z][a-zA-Z]+ (?:Inc|Corp|Company|Ltd|LLC|Corporation)\b',
-            'TECH': r'\b(?:AI|ML|Machine Learning|Artificial Intelligence|Neural Network|Deep Learning)\b',
-            'DATE': r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2},? \d{4}\b',
-            'CONCEPT': r'\b[A-Z][a-z]+(?: [A-Z][a-z]+)*\b'
-        }
-        
-        for entity_type, pattern in patterns.items():
-            matches = re.findall(pattern, text)
-            for match in matches:
-                if len(match) > 3:
-                    entities.append({"name": match, "type": entity_type})
-        
-        return entities[:5]  # Limit to 5 entities per paragraph
+            # Store relationships
+            for rel in relationships:
+                session.run("""
+                MATCH (e1:Entity {name: $source, document: $doc_name})
+                MATCH (e2:Entity {name: $target, document: $doc_name})
+                WHERE e1 <> e2
+                MERGE (e1)-[r:RELATED_TO {type: $rel_type}]->(e2)
+                SET r.evidence = $evidence,
+                    r.source = $source_method,
+                    r.page = $page_num,
+                    r.confidence = $confidence
+                """, 
+                doc_name=self.current_document,
+                source=rel.get('source', ''),
+                target=rel.get('target', ''),
+                rel_type=rel.get('relationship', 'related_to'),
+                evidence=rel.get('evidence', ''),
+                source_method=method,
+                page_num=page_num,
+                confidence=0.8
+                )
+
+    def _clear_document_data(self, document_name):
+        with self.driver.session() as session:
+            session.run("MATCH (d:Document {name: $name}) DETACH DELETE d", name=document_name)
+
+    def _create_document_node(self, document_name):
+        with self.driver.session() as session:
+            session.run("CREATE (d:Document {name: $name})", name=document_name)
 
     def search_graph(self, query, top_k=5):
-        """Search the graph database for relevant content - FIXED CYPHER"""
+        """Enhanced graph search using LLM-extracted relationships"""
         if not self.driver or not self.current_document:
             return []
 
-        # Extract key terms from query
-        query_terms = self._extract_query_terms(query)
-        
         results = []
         
         with self.driver.session() as session:
-            # Search for paragraphs containing query terms - FIXED CYPHER
-            for term in query_terms:
-                paragraphs_result = session.run("""
-                MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)
-                WHERE para.content CONTAINS $term
-                RETURN para.content AS content, p.number AS page, para.method AS method
-                ORDER BY size(para.content) ASC
-                LIMIT 3
-                """, doc_name=self.current_document, term=term)
-                
-                for record in paragraphs_result:
-                    results.append({
-                        "content": record["content"],
-                        "metadata": {"page": record["page"], "method": record["method"]},
-                        "similarity": 0.8,  # Base confidence for direct matches
-                        "match_type": "DIRECT"
-                    })
-
-            # Search for entities related to query terms - FIXED CYPHER
-            for term in query_terms:
-                entities_result = session.run("""
-                MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)-[:MENTIONS]->(e:Entity)
-                WHERE e.name CONTAINS $term OR e.type CONTAINS $term
-                RETURN para.content AS content, p.number AS page, e.name AS entity, e.type AS entity_type
-                LIMIT 3
-                """, doc_name=self.current_document, term=term)
-                
-                for record in entities_result:
-                    results.append({
-                        "content": record["content"],
-                        "metadata": {"page": record["page"], "entity": record["entity"], "entity_type": record["entity_type"]},
-                        "similarity": 0.9,  # Higher confidence for entity matches
-                        "match_type": "ENTITY"
-                    })
-
-            # Remove duplicates and sort by confidence
-            unique_results = []
-            seen_content = set()
-            for result in results:
-                if result["content"] not in seen_content:
-                    unique_results.append(result)
-                    seen_content.add(result["content"])
-
-            return unique_results[:top_k]
-
-    def _extract_query_terms(self, query):
-        """Extract key terms from query"""
-        words = query.lower().split()
-        stop_words = {'what', 'how', 'why', 'when', 'where', 'who', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but'}
-        key_terms = [word for word in words if word not in stop_words and len(word) > 2]
-        return key_terms[:4]
-
-    def get_document_sample(self, num_chunks=5):
-        """Get sample content from document for question generation"""
-        if not self.driver or not self.current_document:
-            return ""
-
-        with self.driver.session() as session:
-            result = session.run("""
-            MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)
-            RETURN para.content AS content
-            LIMIT $limit
-            """, doc_name=self.current_document, limit=num_chunks)
+            # Search by entity matching
+            entity_results = session.run("""
+            MATCH (e:Entity {document: $doc_name})
+            WHERE e.name CONTAINS $query OR e.description CONTAINS $query
+            MATCH (e)<-[:CONTAINS_ENTITY]-(p:Page)
+            OPTIONAL MATCH (e)-[r:RELATED_TO]-(other:Entity)
+            RETURN e.name AS entity, e.type AS type, e.description AS description,
+                   p.number AS page, r.type AS relation_type, other.name AS related_entity,
+                   'ENTITY_MATCH' AS match_type
+            LIMIT 10
+            """, doc_name=self.current_document, query=query)
             
-            sample_chunks = [record["content"] for record in result]
-            return " ".join(sample_chunks)
+            for record in entity_results:
+                content_parts = []
+                if record["entity"]:
+                    content_parts.append(f"Entity: {record['entity']} ({record['type']})")
+                if record["description"]:
+                    content_parts.append(f"Description: {record['description']}")
+                if record["related_entity"] and record["relation_type"]:
+                    content_parts.append(f"Relationship: {record['relation_type']} -> {record['related_entity']}")
+                
+                if content_parts:
+                    results.append({
+                        "content": ". ".join(content_parts),
+                        "metadata": {"page": record["page"], "match_type": record["match_type"]},
+                        "similarity": 0.9,
+                        "match_type": "ENTITY_RELATION"
+                    })
+
+            # Search by relationship patterns
+            rel_results = session.run("""
+            MATCH (e1:Entity {document: $doc_name})-[r:RELATED_TO]-(e2:Entity {document: $doc_name})
+            WHERE r.type CONTAINS $query OR r.evidence CONTAINS $query
+            MATCH (e1)<-[:CONTAINS_ENTITY]-(p:Page)
+            RETURN e1.name AS source, e2.name AS target, r.type AS relation,
+                   r.evidence AS evidence, p.number AS page,
+                   'RELATIONSHIP_MATCH' AS match_type
+            LIMIT 10
+            """, doc_name=self.current_document, query=query)
+            
+            for record in rel_results:
+                content = f"{record['source']} --[{record['relation']}]--> {record['target']}. Evidence: {record['evidence']}"
+                results.append({
+                    "content": content,
+                    "metadata": {"page": record["page"], "match_type": record["match_type"]},
+                    "similarity": 0.85,
+                    "match_type": "RELATIONSHIP"
+                })
+
+        return results[:top_k]
 
     def get_graph_statistics(self):
-        """Get statistics about the graph"""
         if not self.driver or not self.current_document:
             return {}
             
@@ -275,33 +363,31 @@ class GraphProcessor:
             result = session.run("""
             MATCH (d:Document {name: $doc_name})
             OPTIONAL MATCH (d)-[:HAS_PAGE]->(p:Page)
-            OPTIONAL MATCH (p)-[:HAS_PARAGRAPH]->(para:Paragraph)
-            OPTIONAL MATCH (para)-[:MENTIONS]->(e:Entity)
+            OPTIONAL MATCH (p)-[:CONTAINS_ENTITY]->(e:Entity)
+            OPTIONAL MATCH (e)-[r:RELATED_TO]->(other:Entity)
             RETURN 
                 count(DISTINCT p) AS page_count,
-                count(DISTINCT para) AS paragraph_count,
-                count(DISTINCT e) AS entity_count
+                count(DISTINCT e) AS entity_count,
+                count(DISTINCT r) AS relationship_count
             """, doc_name=self.current_document)
             
             stats = result.single()
             return {
                 "pages": stats["page_count"] or 0,
-                "paragraphs": stats["paragraph_count"] or 0,
-                "entities": stats["entity_count"] or 0
+                "entities": stats["entity_count"] or 0,
+                "relationships": stats["relationship_count"] or 0
             }
 
-    def get_knowledge_graph_data(self, limit=50):
-        """Get data for knowledge graph visualization"""
+    def get_knowledge_graph_data(self, limit=100):
+        """Get LLM-extracted knowledge graph data"""
         if not self.driver or not self.current_document:
             return None
             
         with self.driver.session() as session:
             result = session.run("""
-            MATCH (d:Document {name: $doc_name})
-            OPTIONAL MATCH (d)-[:HAS_PAGE]->(p:Page)
-            OPTIONAL MATCH (p)-[:HAS_PARAGRAPH]->(para:Paragraph)
-            OPTIONAL MATCH (para)-[:MENTIONS]->(e:Entity)
-            RETURN d, p, para, e
+            MATCH (e:Entity {document: $doc_name})
+            OPTIONAL MATCH (e)-[r:RELATED_TO]-(other:Entity)
+            RETURN e, r, other
             LIMIT $limit
             """, doc_name=self.current_document, limit=limit)
             
@@ -310,87 +396,50 @@ class GraphProcessor:
             node_ids = set()
             
             for record in result:
-                # Document node
-                doc_node = record['d']
-                if doc_node and doc_node.id not in node_ids:
+                entity = record['e']
+                if entity and entity.id not in node_ids:
                     nodes.append({
-                        'id': doc_node.id,
-                        'label': doc_node.get('name', 'Document'),
-                        'type': 'document',
-                        'size': 30
-                    })
-                    node_ids.add(doc_node.id)
-                
-                # Page nodes
-                page_node = record['p']
-                if page_node and page_node.id not in node_ids:
-                    nodes.append({
-                        'id': page_node.id,
-                        'label': f"Page {page_node.get('number', '')}",
-                        'type': 'page',
+                        'id': entity.id,
+                        'label': entity.get('name', 'Entity'),
+                        'type': entity.get('type', 'entity'),
+                        'description': entity.get('description', ''),
                         'size': 20
                     })
-                    node_ids.add(page_node.id)
-                    
-                    # Document-Page edge
-                    if doc_node:
-                        edges.append({
-                            'source': doc_node.id,
-                            'target': page_node.id,
-                            'type': 'HAS_PAGE'
-                        })
+                    node_ids.add(entity.id)
                 
-                # Paragraph nodes
-                para_node = record['para']
-                if para_node and para_node.id not in node_ids:
-                    content = para_node.get('content', '')[:50] + '...' if len(para_node.get('content', '')) > 50 else para_node.get('content', '')
+                other_entity = record['other']
+                if other_entity and other_entity.id not in node_ids:
                     nodes.append({
-                        'id': para_node.id,
-                        'label': f"Para: {content}",
-                        'type': 'paragraph',
-                        'size': 15
+                        'id': other_entity.id,
+                        'label': other_entity.get('name', 'Entity'),
+                        'type': other_entity.get('type', 'entity'),
+                        'description': other_entity.get('description', ''),
+                        'size': 20
                     })
-                    node_ids.add(para_node.id)
-                    
-                    # Page-Paragraph edge
-                    if page_node:
-                        edges.append({
-                            'source': page_node.id,
-                            'target': para_node.id,
-                            'type': 'HAS_PARAGRAPH'
-                        })
+                    node_ids.add(other_entity.id)
                 
-                # Entity nodes
-                entity_node = record['e']
-                if entity_node and entity_node.id not in node_ids:
-                    nodes.append({
-                        'id': entity_node.id,
-                        'label': f"{entity_node.get('name', '')} ({entity_node.get('type', '')})",
-                        'type': 'entity',
-                        'size': 25
+                relationship = record['r']
+                if relationship and entity and other_entity:
+                    edges.append({
+                        'source': entity.id,
+                        'target': other_entity.id,
+                        'type': relationship.get('type', 'related_to'),
+                        'label': relationship.get('type', 'related_to')
                     })
-                    node_ids.add(entity_node.id)
-                    
-                    # Paragraph-Entity edge
-                    if para_node:
-                        edges.append({
-                            'source': para_node.id,
-                            'target': entity_node.id,
-                            'type': 'MENTIONS'
-                        })
             
             return {'nodes': nodes, 'edges': edges}
 
     def get_entity_relationships(self):
-        """Get entity relationships for advanced visualization"""
+        """Get meaningful entity relationships"""
         if not self.driver or not self.current_document:
             return None
             
         with self.driver.session() as session:
             result = session.run("""
-            MATCH (e1:Entity)-[:MENTIONS*2]-(e2:Entity)
+            MATCH (e1:Entity {document: $doc_name})-[r:RELATED_TO]-(e2:Entity {document: $doc_name})
             WHERE e1 <> e2
-            RETURN e1.name AS entity1, e2.name AS entity2, count(*) AS strength
+            RETURN e1.name AS entity1, e2.name AS entity2, r.type AS relationship_type,
+                   r.evidence AS evidence, count(*) AS strength
             ORDER BY strength DESC
             LIMIT 20
             """, doc_name=self.current_document)
@@ -400,6 +449,8 @@ class GraphProcessor:
                 relationships.append({
                     'source': record['entity1'],
                     'target': record['entity2'],
+                    'relationship': record['relationship_type'],
+                    'evidence': record['evidence'],
                     'strength': record['strength']
                 })
             
@@ -565,19 +616,26 @@ class KnowledgeGraphVisualizer:
         
         # Add nodes with different colors based on type
         type_colors = {
-            'document': '#FF6B6B',
-            'page': '#4ECDC4', 
-            'paragraph': '#45B7D1',
-            'entity': '#96CEB4'
+            'PERSON': '#FF6B6B',
+            'ORGANIZATION': '#4ECDC4', 
+            'CONCEPT': '#45B7D1',
+            'PRODUCT': '#96CEB4',
+            'TECHNOLOGY': '#FFE66D',
+            'EVENT': '#FF9F1C',
+            'LOCATION': '#6A0572',
+            'METRIC': '#06D6A0'
         }
         
         for node in graph_data['nodes']:
+            node_type = node.get('type', 'CONCEPT')
+            color = type_colors.get(node_type, '#777777')
+            
             net.add_node(
                 node['id'],
                 label=node['label'],
-                color=type_colors.get(node['type'], '#777777'),
-                size=node.get('size', 10),
-                title=node['label']
+                color=color,
+                size=node.get('size', 15),
+                title=f"{node['label']}\nType: {node_type}\n{node.get('description', '')}"
             )
         
         # Add edges
@@ -586,6 +644,7 @@ class KnowledgeGraphVisualizer:
                 edge['source'],
                 edge['target'],
                 title=edge.get('type', ''),
+                label=edge.get('label', '')[:20],
                 color='#cccccc'
             )
         
@@ -598,18 +657,6 @@ class KnowledgeGraphVisualizer:
         except Exception as e:
             st.error(f"Error creating graph: {e}")
             return None
-    
-    def create_entity_network(self, relationships):
-        """Create entity relationship network"""
-        if not relationships:
-            return None
-            
-        G = nx.Graph()
-        
-        for rel in relationships:
-            G.add_edge(rel['source'], rel['target'], weight=rel['strength'])
-        
-        return G
 
 # =============================================================================
 # MAIN GRAPH RAG APP
@@ -690,6 +737,10 @@ def main():
         .tab-content {
             padding: 1rem 0;
         }
+        .entity-type-PERSON { background-color: #FF6B6B; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
+        .entity-type-ORGANIZATION { background-color: #4ECDC4; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
+        .entity-type-CONCEPT { background-color: #45B7D1; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
+        .entity-type-PRODUCT { background-color: #96CEB4; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; }
     </style>
     """, unsafe_allow_html=True)
     
@@ -697,7 +748,7 @@ def main():
     col1, col2 = st.columns([4, 1])
     with col1:
         st.title("🌐 Graph RAG - irmc Aura")
-        st.markdown("### Chat with your documents using Knowledge Graph")
+        st.markdown("### Chat with your documents using AI-Powered Knowledge Graph")
     with col2:
         if st.button("🏠 Back to Home"):
             st.switch_page("app.py")
@@ -719,8 +770,6 @@ def main():
         st.session_state.generating_questions = False
     if 'suggest_button_used' not in st.session_state:
         st.session_state.suggest_button_used = False
-    if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = "Chat"
     
     # initialize services
     llm_service = LLMService()
@@ -739,8 +788,8 @@ def main():
             stats = st.session_state.graph_processor.get_graph_statistics()
             st.sidebar.markdown("### 📊 Graph Statistics")
             st.sidebar.write(f"📄 Pages: {stats['pages']}")
-            st.sidebar.write(f"📝 Paragraphs: {stats['paragraphs']}")
             st.sidebar.write(f"🔗 Entities: {stats['entities']}")
+            st.sidebar.write(f"🔄 Relationships: {stats['relationships']}")
             
             # Knowledge Graph Options
             st.sidebar.markdown("---")
@@ -755,25 +804,25 @@ def main():
     
     # auto-process when file is uploaded
     if uploaded_file and not st.session_state.pdf_processed:
-        with st.spinner("🔄 Processing document and building knowledge graph..."):
-            count = st.session_state.graph_processor.process_pdf(uploaded_file)
-            if count > 0:
+        with st.spinner("🔄 Processing document with AI..."):
+            entity_count, relationship_count = st.session_state.graph_processor.process_pdf(uploaded_file)
+            if entity_count > 0:
                 st.session_state.pdf_processed = True
                 st.session_state.pdf_name = uploaded_file.name
-                st.sidebar.success(f"✅ Processed {count} chunks into graph")
+                st.sidebar.success(f"✅ Extracted {entity_count} entities and {relationship_count} relationships")
     
     if st.session_state.pdf_processed:
-        st.sidebar.success("✅ Document processed to graph")
+        st.sidebar.success("✅ Document processed with AI")
     
     enable_voice = st.sidebar.checkbox("Enable Voice", True)
     
     # Main tabs for different functionalities
-    tab1, tab2, tab3 = st.tabs(["💬 Chat", "🕸️ Knowledge Graph", "📊 Analytics"])
+    tab1, tab2, tab3 = st.tabs(["💬 AI Chat", "🕸️ Knowledge Graph", "📊 Analytics"])
     
     with tab1:
         # main chat interface
         if not st.session_state.pdf_processed:
-            st.info("👆 Please upload a PDF document to build a knowledge graph and get started")
+            st.info("👆 Please upload a PDF document to build an AI knowledge graph")
         else:
             # display chat messages
             for msg in st.session_state.messages:
@@ -789,7 +838,7 @@ def main():
                     
                     confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>' if confidence > 0 else ""
                     pages_html = f'<span class="page-badge">pages: {", ".join(map(str, pages))}</span>' if pages else ""
-                    graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
+                    graph_html = '<span class="graph-badge">🌐 AI Knowledge Graph</span>'
                     
                     st.markdown(f"""
                     <div class="chat-message assistant-message">
@@ -805,10 +854,10 @@ def main():
                 len(st.session_state.messages) == 0):
                 
                 st.markdown("---")
-                st.subheader("💡 Get Started with Suggested Questions")
+                st.subheader("💡 Get Started with AI-Suggested Questions")
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
-                    if st.button("💡 Let Aura suggest questions based on your document", 
+                    if st.button("💡 Let AI suggest questions based on your document", 
                                 key="big_suggest_btn", 
                                 use_container_width=True,
                                 type="primary"):
@@ -818,7 +867,7 @@ def main():
             
             # Generate questions when button is clicked
             if st.session_state.generating_questions:
-                with st.spinner("🤔 Analyzing your document and generating relevant questions..."):
+                with st.spinner("🤔 AI is analyzing your document and generating relevant questions..."):
                     document_sample = st.session_state.graph_processor.get_document_sample()
                     st.session_state.suggested_questions = llm_service.generate_suggested_questions_from_pdf(document_sample)
                     st.session_state.generating_questions = False
@@ -828,7 +877,7 @@ def main():
             # Show suggested questions
             if st.session_state.show_suggestions and st.session_state.suggested_questions:
                 st.markdown("---")
-                st.subheader("💡 Suggested Questions Based on Your Document")
+                st.subheader("💡 AI-Suggested Questions")
                 st.write("Click on any question to ask it:")
                 
                 for i, question in enumerate(st.session_state.suggested_questions):
@@ -852,7 +901,7 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
                 
-                with st.spinner("🔍 Searching knowledge graph..."):
+                with st.spinner("🔍 AI is searching knowledge graph..."):
                     chunks = st.session_state.graph_processor.search_graph(question)
                     answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
                     
@@ -868,7 +917,7 @@ def main():
                     
                     confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
                     pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
-                    graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
+                    graph_html = '<span class="graph-badge">🌐 AI Knowledge Graph</span>'
                     
                     st.markdown(f"""
                     <div class="chat-message assistant-message">
@@ -891,7 +940,7 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
                 
-                with st.spinner("🔍 Searching knowledge graph..."):
+                with st.spinner("🔍 AI is searching knowledge graph..."):
                     chunks = st.session_state.graph_processor.search_graph(question)
                     answer, confidence, source_chunks = llm_service.generate_answer(question, chunks)
                     
@@ -907,7 +956,7 @@ def main():
                     
                     confidence_html = f'<span class="confidence-badge">confidence: {confidence*100:.1f}%</span>'
                     pages_html = f'<span class="page-badge">pages: {", ".join(map(str, source_pages))}</span>'
-                    graph_html = '<span class="graph-badge">🌐 Graph Search</span>'
+                    graph_html = '<span class="graph-badge">🌐 AI Knowledge Graph</span>'
                     
                     st.markdown(f"""
                     <div class="chat-message assistant-message">
@@ -919,10 +968,10 @@ def main():
                         voice_service.speak_text(answer)
     
     with tab2:
-        st.header("🕸️ Knowledge Graph Visualization")
+        st.header("🕸️ AI Knowledge Graph Visualization")
         
         if not st.session_state.pdf_processed:
-            st.info("👆 Please upload a PDF document to visualize the knowledge graph")
+            st.info("👆 Please upload a PDF document to visualize the AI knowledge graph")
         else:
             col1, col2 = st.columns([2, 1])
             
@@ -941,36 +990,46 @@ def main():
                     else:
                         st.warning("Could not generate graph visualization")
                         
-                    st.info(f"📊 Showing {len(graph_data['nodes'])} nodes and {len(graph_data['edges'])} relationships")
+                    st.info(f"📊 Showing {len(graph_data['nodes'])} entities and {len(graph_data['edges'])} relationships")
                 else:
                     st.warning("No graph data available for visualization")
             
             with col2:
                 st.subheader("Graph Legend")
                 st.markdown("""
-                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #FF6B6B;">
-                    <strong>🔴 Document</strong><br>Main document node
+                <div style="background: #FF6B6B; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
+                    <strong>🔴 PERSON</strong>
                 </div>
-                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #4ECDC4; margin: 0.5rem 0;">
-                    <strong>🟢 Page</strong><br>Document pages
+                <div style="background: #4ECDC4; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
+                    <strong>🟢 ORGANIZATION</strong>
                 </div>
-                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #45B7D1; margin: 0.5rem 0;">
-                    <strong>🔵 Paragraph</strong><br>Text paragraphs
+                <div style="background: #45B7D1; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
+                    <strong>🔵 CONCEPT</strong>
                 </div>
-                <div style="background: white; padding: 1rem; border-radius: 10px; border-left: 4px solid #96CEB4; margin: 0.5rem 0;">
-                    <strong>🟢 Entity</strong><br>Extracted entities
+                <div style="background: #96CEB4; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
+                    <strong>🟢 PRODUCT</strong>
+                </div>
+                <div style="background: #FFE66D; color: black; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
+                    <strong>🟡 TECHNOLOGY</strong>
+                </div>
+                <div style="background: #FF9F1C; color: white; padding: 0.5rem; border-radius: 5px; margin: 0.2rem 0;">
+                    <strong>🟠 EVENT</strong>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 # Entity relationships
-                st.subheader("Entity Relationships")
+                st.subheader("Key Relationships")
                 relationships = st.session_state.graph_processor.get_entity_relationships()
                 
                 if relationships:
-                    for rel in relationships[:10]:  # Show top 10
-                        st.write(f"**{rel['source']}** ↔ **{rel['target']}** (strength: {rel['strength']})")
+                    for rel in relationships[:8]:
+                        st.write(f"**{rel['source']}** → **{rel['target']}**")
+                        st.caption(f"Relationship: {rel['relationship']}")
+                        if rel.get('evidence'):
+                            st.caption(f"Evidence: {rel['evidence'][:100]}...")
+                        st.markdown("---")
                 else:
-                    st.info("No entity relationships found")
+                    st.info("No relationships found")
     
     with tab3:
         st.header("📊 Document Analytics")
@@ -978,14 +1037,16 @@ def main():
         if not st.session_state.pdf_processed:
             st.info("👆 Please upload a PDF document to view analytics")
         else:
+            stats = st.session_state.graph_processor.get_graph_statistics()
+            
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.metric("Total Pages", st.session_state.graph_processor.get_graph_statistics()['pages'])
+                st.metric("Total Pages", stats['pages'])
             with col2:
-                st.metric("Paragraphs", st.session_state.graph_processor.get_graph_statistics()['paragraphs'])
+                st.metric("AI Entities", stats['entities'])
             with col3:
-                st.metric("Entities", st.session_state.graph_processor.get_graph_statistics()['entities'])
+                st.metric("Relationships", stats['relationships'])
             
             # Entity type distribution
             st.subheader("Entity Type Distribution")
@@ -994,10 +1055,11 @@ def main():
             if st.session_state.graph_processor.driver:
                 with st.session_state.graph_processor.driver.session() as session:
                     result = session.run("""
-                    MATCH (e:Entity)
+                    MATCH (e:Entity {document: $doc_name})
                     RETURN e.type AS type, count(*) AS count
                     ORDER BY count DESC
-                    """)
+                    LIMIT 10
+                    """, doc_name=st.session_state.graph_processor.current_document)
                     
                     entity_types = []
                     counts = []
@@ -1009,7 +1071,7 @@ def main():
                     if entity_types:
                         fig = go.Figure(data=[go.Bar(x=entity_types, y=counts, marker_color='#175CFF')])
                         fig.update_layout(
-                            title="Entities by Type",
+                            title="Entities by Type (AI-Extracted)",
                             xaxis_title="Entity Type",
                             yaxis_title="Count",
                             height=400
