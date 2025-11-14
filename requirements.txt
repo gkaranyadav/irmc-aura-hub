@@ -6,9 +6,9 @@ extra-streamlit-components
 PyPDF2
 sentence-transformers
 faiss-cpu
-pytesseract
-pdf2image
-Pillow
+
+
+
 gtts
 groq
 SpeechRecognition
@@ -19,4 +19,6 @@ matplotlib
 plotly
 pyvis
 neo4j 
-tesseract-ocr
+pytesseract==0.3.13
+pdf2image==1.17.0
+pillow==10.4.0
