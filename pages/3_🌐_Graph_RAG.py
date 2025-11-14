@@ -201,7 +201,7 @@ class GraphProcessor:
                 MATCH (d:Document {name: $doc_name})-[:HAS_PAGE]->(p:Page)-[:HAS_PARAGRAPH]->(para:Paragraph)
                 WHERE para.content CONTAINS $term
                 RETURN para.content AS content, p.number AS page, para.method AS method
-                ORDER BY length(para.content) ASC
+                ORDER BY size(para.content) ASC
                 LIMIT 3
                 """, doc_name=self.current_document, term=term)
                 
