@@ -5,7 +5,7 @@ from PyPDF2 import PdfReader
 import pytesseract
 import pdf2image
 from neo4j import GraphDatabase
-import groq
+from groq import Groq
 from gtts import gTTS
 
 # =============================================================================
