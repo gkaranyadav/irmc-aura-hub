@@ -6,7 +6,8 @@ extra-streamlit-components
 PyPDF2
 sentence-transformers
 faiss-cpu
-
+mysql-connector-python
+pymysql
 
 
 gtts
