@@ -195,7 +195,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Generate SQL", key="sql_btn", use_container_width=True):
-            st.info("🚧 Coming Soon!")
+            st.switch_page("pages/4_📊_SQL_Assistant.py")
         
         st.markdown("""
         <div class="app-box">
