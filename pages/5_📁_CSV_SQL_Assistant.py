@@ -104,7 +104,6 @@ class CSVSchemaManager:
                 table_name = file_info['clean_table_name']
                 try:
                     self.connection.register(table_name, file_info['dataframe'])
-                    st.success(f"✅ Table '{table_name}' loaded successfully")
                 except Exception as e:
                     st.error(f"❌ Failed to load table '{table_name}': {str(e)}")
                     return False, f"Failed to load table {table_name}"
@@ -254,6 +253,69 @@ class SQLQueryGenerator:
         
         return context
 
+    def generate_suggested_questions(self, schema_info):
+        """Generate relevant questions based on the actual CSV data"""
+        if not self.client:
+            return self._get_fallback_questions()
+        
+        try:
+            schema_context = self._prepare_csv_schema_context(schema_info)
+            
+            prompt = f"""
+            Based on the following CSV data schema, generate 5-6 specific, relevant questions that would help someone understand and analyze this data. 
+            Make the questions directly relevant to the actual columns and data structure shown below.
+            
+            DATA SCHEMA:
+            {schema_context}
+            
+            Generate 5-6 specific, relevant questions that:
+            - Are directly related to the columns and data available
+            - Cover different aspects of analysis (trends, comparisons, insights)
+            - Are practical and answerable with SQL queries
+            - Are specific to this dataset's structure
+            
+            Return only the questions as a numbered list:
+            """
+            
+            messages = [
+                {"role": "system", "content": "You are a data analyst that generates insightful questions based on dataset schemas."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=Config.GROQ_MODEL,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=500
+            )
+            
+            questions_text = response.choices[0].message.content
+            
+            # Extract questions from the response
+            questions = []
+            for line in questions_text.split('\n'):
+                line = line.strip()
+                # Remove numbering and bullets
+                clean_line = re.sub(r'^[\d\-•\.\s]+', '', line).strip()
+                if clean_line and len(clean_line) > 10 and ('?' in clean_line or 'show' in clean_line.lower() or 'find' in clean_line.lower()):
+                    questions.append(clean_line)
+                    
+            return questions[:6] if questions else self._get_fallback_questions()
+            
+        except Exception as e:
+            return self._get_fallback_questions()
+
+    def _get_fallback_questions(self):
+        """Fallback questions if LLM fails"""
+        return [
+            "What are the top 10 records by the first numeric column?",
+            "Show the distribution of values in the first categorical column",
+            "What is the average of numeric columns?",
+            "How many unique values are in each column?",
+            "Show trends over time if date columns exist",
+            "What are the most frequent values in the dataset?"
+        ]
+
 # =============================================================================
 # CHART GENERATOR (ROBUST VERSION)
 # =============================================================================
@@ -347,7 +409,7 @@ class ChartGenerator:
             return None, f"Chart generation error: {str(e)}"
 
 # =============================================================================
-# MAIN CSV SQL ASSISTANT APP
+# MAIN CSV SQL ASSISTANT APP - CONVERSATIONAL VERSION
 # =============================================================================
 def main():
     # Page configuration
@@ -369,32 +431,44 @@ def main():
             margin-bottom: 1rem;
         }
         .chat-message {
-            padding: 1rem;
-            border-radius: 10px;
-            margin-bottom: 1rem;
+            padding: 1.5rem;
+            border-radius: 15px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         .user-message {
             background-color: #e6f3ff;
-            border-left: 4px solid #175CFF;
+            border-left: 5px solid #175CFF;
         }
         .assistant-message {
             background-color: #f0f8ff;
-            border-left: 4px solid #00A3FF;
+            border-left: 5px solid #00A3FF;
         }
         .sql-box {
             background-color: #f8f9fa;
             border: 1px solid #e9ecef;
-            border-radius: 5px;
+            border-radius: 8px;
             padding: 1rem;
             font-family: 'Courier New', monospace;
             margin: 1rem 0;
+            font-size: 0.9em;
         }
-        .file-card {
-            background-color: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 10px;
-            padding: 1rem;
-            margin: 0.5rem 0;
+        .suggestion-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 12px 20px;
+            font-weight: 600;
+            margin: 5px;
+            width: 100%;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .suggestion-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
         }
         .data-loaded {
             background-color: #d4edda;
@@ -412,9 +486,23 @@ def main():
             border-radius: 8px;
             font-weight: 600;
         }
-        .stButton button:hover {
-            transform: translateY(-1px);
+        .big-suggest-btn {
+            background: linear-gradient(135deg, #175CFF, #00A3FF);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            padding: 15px 25px;
+            font-weight: 600;
+            font-size: 16px;
             box-shadow: 0 4px 12px rgba(23, 92, 255, 0.3);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin: 10px 0;
+        }
+        .big-suggest-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(23, 92, 255, 0.4);
         }
     </style>
     """, unsafe_allow_html=True)
@@ -423,7 +511,7 @@ def main():
     col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown('<div class="main-header">📁 CSV SQL Assistant</div>', unsafe_allow_html=True)
-        st.markdown("### Upload CSV files and query with natural language")
+        st.markdown("### Chat with your CSV data using natural language")
     with col2:
         if st.button("🏠 Back to Home"):
             st.switch_page("app.py")
@@ -437,274 +525,280 @@ def main():
         st.session_state.sql_generator = SQLQueryGenerator()
     if 'chart_generator' not in st.session_state:
         st.session_state.chart_generator = ChartGenerator()
-    if 'query_history' not in st.session_state:
-        st.session_state.query_history = []
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []
     if 'data_loaded' not in st.session_state:
         st.session_state.data_loaded = False
+    if 'suggested_questions' not in st.session_state:
+        st.session_state.suggested_questions = []
+    if 'show_suggestions' not in st.session_state:
+        st.session_state.show_suggestions = False
+    if 'generating_questions' not in st.session_state:
+        st.session_state.generating_questions = False
     
-    # Main tabs
-    tab1, tab2, tab3 = st.tabs(["📤 Upload CSV Files", "💬 Query Assistant", "📈 Results & Analytics"])
-    
-    with tab1:
-        st.header("📤 Upload Your CSV Files")
+    # Sidebar for file upload
+    with st.sidebar:
+        st.title("📁 File Management")
+        st.markdown("---")
         
-        col1, col2 = st.columns([2, 1])
+        uploaded_files = st.file_uploader(
+            "Upload CSV Files",
+            type=['csv'],
+            accept_multiple_files=True,
+            help="Upload one or more CSV files to analyze"
+        )
         
-        with col1:
-            st.subheader("Upload Files")
-            uploaded_files = st.file_uploader(
-                "Choose CSV files",
-                type=['csv'],
-                accept_multiple_files=True,
-                help="Upload one or more CSV files to analyze. Each file will become a table."
-            )
-            
-            if uploaded_files:
-                for uploaded_file in uploaded_files:
-                    if uploaded_file.name not in st.session_state.csv_manager.uploaded_files:
-                        with st.spinner(f"Processing {uploaded_file.name}..."):
-                            success, message = st.session_state.csv_manager.process_csv_file(
-                                uploaded_file, uploaded_file.name
-                            )
-                            
-                            if success:
-                                st.success(message)
-                            else:
-                                st.error(message)
-            
-            # Initialize DuckDB when files are uploaded
-            if (st.session_state.csv_manager.uploaded_files and 
-                not st.session_state.data_loaded):
-                with st.spinner("🚀 Initializing query engine..."):
-                    success, message = st.session_state.csv_manager.initialize_duckdb()
-                    if success:
-                        st.session_state.data_loaded = True
-                        st.success("✅ Query engine ready! You can now run SQL queries in the 'Query Assistant' tab.")
-                    else:
-                        st.error(f"❌ {message}")
+        if uploaded_files:
+            for uploaded_file in uploaded_files:
+                if uploaded_file.name not in st.session_state.csv_manager.uploaded_files:
+                    with st.spinner(f"Processing {uploaded_file.name}..."):
+                        success, message = st.session_state.csv_manager.process_csv_file(
+                            uploaded_file, uploaded_file.name
+                        )
+                        
+                        if success:
+                            st.success(f"✅ {uploaded_file.name}")
+                        else:
+                            st.error(message)
         
-        with col2:
-            st.subheader("📊 Data Status")
-            
-            if st.session_state.data_loaded:
-                st.markdown('<div class="data-loaded">✅ Data Loaded & Ready</div>', unsafe_allow_html=True)
-                
-                # Show file statistics
-                total_files = len(st.session_state.csv_manager.uploaded_files)
-                total_rows = sum(info['row_count'] for info in st.session_state.csv_manager.uploaded_files.values())
-                total_columns = sum(info['column_count'] for info in st.session_state.csv_manager.uploaded_files.values())
-                
-                st.metric("📁 Files Uploaded", total_files)
-                st.metric("📊 Total Rows", f"{total_rows:,}")
-                st.metric("📋 Total Columns", total_columns)
-                
-                # Available tables
-                st.subheader("🗂️ Available Tables")
-                table_names = st.session_state.csv_manager.get_table_names()
-                for table_name in table_names:
-                    st.code(table_name, language='sql')
-                
-                if st.button("🗑️ Clear All Data", type="secondary"):
-                    st.session_state.csv_manager.clear_data()
-                    st.session_state.data_loaded = False
-                    st.session_state.query_history = []
-                    st.rerun()
-            else:
-                st.info("📤 Upload CSV files to get started")
-                st.markdown("""
-                **Supported:**
-                • Any CSV file format
-                • Multiple files (will be joined as tables)
-                • Automatic column name cleaning
-                • UTF-8 and Latin-1 encoding
-                """)
-        
-        # Show file details
-        if st.session_state.csv_manager.uploaded_files:
-            st.subheader("📄 File Details")
-            
-            for file_name, file_info in st.session_state.csv_manager.uploaded_files.items():
-                with st.expander(f"📋 {file_name} ({file_info['row_count']} rows, {file_info['column_count']} columns) → Table: `{file_info['clean_table_name']}`"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write("**🗂️ Columns:**")
-                        for col_name in file_info['columns']:
-                            st.write(f"• `{col_name}`")
-                    
-                    with col2:
-                        st.write("**📝 Sample Data (first 3 rows):**")
-                        if file_info['sample_data']:
-                            sample_df = pd.DataFrame(file_info['sample_data'])
-                            st.dataframe(sample_df, use_container_width=True, height=150)
-    
-    with tab2:
-        st.header("💬 Natural Language to SQL")
-        
-        if not st.session_state.data_loaded:
-            st.warning("📤 Please upload CSV files first in the 'Upload CSV Files' tab")
-        else:
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.subheader("🔍 Ask Your Question")
-                natural_language_query = st.text_area(
-                    "Enter your question in natural language:",
-                    placeholder="e.g., Show me the top 5 products by sales\nFind customers from New York\nWhat is the average price by category?\nShow monthly sales trends for this year",
-                    height=100,
-                    key="nl_query"
-                )
-                
-                if st.button("🚀 Generate SQL Query", type="primary", use_container_width=True):
-                    if natural_language_query and natural_language_query.strip():
-                        with st.spinner("🤔 Generating SQL query..."):
-                            sql_query, message = st.session_state.sql_generator.generate_sql(
-                                natural_language_query.strip(),
-                                st.session_state.csv_manager.schema_info
-                            )
-                            
-                            if sql_query:
-                                st.session_state.generated_sql = sql_query
-                                st.session_state.current_nl_query = natural_language_query
-                                st.success("✅ SQL query generated successfully!")
-                            else:
-                                st.error(f"❌ {message}")
-                    else:
-                        st.warning("⚠️ Please enter a question")
-            
-            with col2:
-                st.subheader("💡 Example Questions")
-                examples = [
-                    "Show top 10 products by sales amount",
-                    "Find customers from California",
-                    "Average price by product category",
-                    "Monthly revenue trends this year",
-                    "Products with less than 10 units in stock",
-                    "Count customers by city",
-                    "Most expensive product in each category",
-                    "Total sales by month"
-                ]
-                
-                for example in examples:
-                    if st.button(example, key=f"example_{example}", use_container_width=True):
-                        st.session_state.current_nl_query = example
-                        st.rerun()
-            
-            # Show generated SQL
-            if hasattr(st.session_state, 'generated_sql'):
-                st.subheader("🛠️ Generated SQL Query")
-                st.markdown(f'<div class="sql-box">{st.session_state.generated_sql}</div>', unsafe_allow_html=True)
-                
-                col1, col2, col3 = st.columns([1, 1, 1])
-                
-                with col1:
-                    if st.button("▶️ Execute Query", type="primary", use_container_width=True):
-                        with st.spinner("🔍 Executing query..."):
-                            df, message = st.session_state.csv_manager.execute_sql(st.session_state.generated_sql)
-                            
-                            if df is not None:
-                                st.session_state.current_results = df
-                                st.session_state.current_query = st.session_state.generated_sql
-                                st.session_state.query_executed = True
-                                
-                                # Add to history
-                                history_item = {
-                                    'timestamp': pd.Timestamp.now(),
-                                    'nl_query': st.session_state.current_nl_query,
-                                    'sql_query': st.session_state.generated_sql,
-                                    'row_count': len(df)
-                                }
-                                st.session_state.query_history.insert(0, history_item)
-                                
-                                st.success(f"✅ {message}")
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {message}")
-                
-                with col2:
-                    if st.button("📋 Copy SQL", use_container_width=True):
-                        st.code(st.session_state.generated_sql, language='sql')
-                        st.success("✅ SQL copied to clipboard!")
-                
-                with col3:
-                    if st.button("🔄 Regenerate", use_container_width=True):
-                        if hasattr(st.session_state, 'generated_sql'):
-                            del st.session_state.generated_sql
-                        st.rerun()
-    
-    with tab3:
-        st.header("📈 Query Results & Analytics")
-        
-        if not st.session_state.data_loaded:
-            st.warning("📤 Please upload CSV files and execute a query first")
-        elif not hasattr(st.session_state, 'query_executed'):
-            st.info("💬 Generate and execute a SQL query to see results here")
-        else:
-            # Results table
-            st.subheader("📊 Query Results")
-            
-            # Show query info
-            st.write(f"**Question:** {st.session_state.current_nl_query}")
-            st.code(st.session_state.current_query, language='sql')
-            
-            # Display dataframe
-            st.dataframe(st.session_state.current_results, use_container_width=True)
-            
-            col1, col2, col3 = st.columns([1, 1, 2])
-            with col1:
-                st.metric("Total Rows", f"{len(st.session_state.current_results):,}")
-            with col2:
-                st.metric("Total Columns", len(st.session_state.current_results.columns))
-            
-            # Download results
-            csv_data = st.session_state.current_results.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Results as CSV",
-                data=csv_data,
-                file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-            
-            # Auto-generated charts
-            if len(st.session_state.current_results) > 0:
-                st.subheader("📈 Automatic Visualizations")
-                charts, chart_message = st.session_state.chart_generator.auto_generate_chart(
-                    st.session_state.current_results,
-                    st.session_state.current_nl_query
-                )
-                
-                if charts:
-                    st.success(f"✅ {chart_message}")
-                    
-                    # Display charts in columns
-                    cols = st.columns(2)
-                    for i, (chart_name, chart_fig) in enumerate(charts):
-                        with cols[i % 2]:
-                            st.plotly_chart(chart_fig, use_container_width=True)
+        # Initialize DuckDB when files are uploaded
+        if (st.session_state.csv_manager.uploaded_files and 
+            not st.session_state.data_loaded):
+            with st.spinner("🚀 Initializing query engine..."):
+                success, message = st.session_state.csv_manager.initialize_duckdb()
+                if success:
+                    st.session_state.data_loaded = True
+                    st.success("✅ Query engine ready!")
                 else:
-                    st.info("ℹ️ No suitable charts could be generated for this data type")
+                    st.error(f"❌ {message}")
+        
+        if st.session_state.data_loaded:
+            st.markdown("---")
+            st.subheader("📊 Data Status")
+            total_files = len(st.session_state.csv_manager.uploaded_files)
+            total_rows = sum(info['row_count'] for info in st.session_state.csv_manager.uploaded_files.values())
             
-            # Query History
-            st.subheader("📚 Query History")
-            if st.session_state.query_history:
-                for i, item in enumerate(st.session_state.query_history[:8]):  # Last 8 queries
-                    with st.expander(f"Query {i+1}: {item['nl_query'][:60]}... ({item['row_count']} rows)"):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"**Question:** {item['nl_query']}")
-                            st.code(item['sql_query'], language='sql')
-                        with col2:
-                            st.write(f"**Rows:** {item['row_count']:,}")
-                            st.write(f"**Time:** {item['timestamp'].strftime('%H:%M:%S')}")
-                            
-                        # Quick re-execute button
-                        if st.button(f"🔄 Re-run Query {i+1}", key=f"rerun_{i}", use_container_width=True):
-                            st.session_state.generated_sql = item['sql_query']
-                            st.session_state.current_nl_query = item['nl_query']
-                            st.rerun()
+            st.metric("Files Uploaded", total_files)
+            st.metric("Total Rows", f"{total_rows:,}")
+            
+            st.subheader("🗂️ Available Tables")
+            table_names = st.session_state.csv_manager.get_table_names()
+            for table_name in table_names:
+                st.code(table_name, language='sql')
+            
+            if st.button("🗑️ Clear All Data", use_container_width=True):
+                st.session_state.csv_manager.clear_data()
+                st.session_state.data_loaded = False
+                st.session_state.messages = []
+                st.session_state.suggested_questions = []
+                st.session_state.show_suggestions = False
+                st.rerun()
+    
+    # Main chat area
+    if not st.session_state.data_loaded:
+        st.info("📤 Please upload CSV files using the sidebar to get started")
+    else:
+        # Display chat messages
+        for msg in st.session_state.messages:
+            if msg["role"] == "user":
+                st.markdown(f"""
+                <div class="chat-message user-message">
+                    <strong>👤 You:</strong> {msg["content"]}
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                st.info("No query history yet. Your queries will appear here.")
+                # Assistant message with answer
+                st.markdown(f"""
+                <div class="chat-message assistant-message">
+                    <strong>🤖 Aura:</strong> {msg["content"]}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Show SQL query in expandable section
+                if "sql_query" in msg:
+                    with st.expander("🔍 View SQL Query", expanded=False):
+                        st.markdown(f'<div class="sql-box">{msg["sql_query"]}</div>', unsafe_allow_html=True)
+                
+                # Show analytics in separate expandable section
+                if "charts" in msg and msg["charts"]:
+                    with st.expander("📈 View Analytics & Visualizations", expanded=False):
+                        charts = msg["charts"]
+                        cols = st.columns(2)
+                        for i, (chart_name, chart_fig) in enumerate(charts):
+                            with cols[i % 2]:
+                                st.plotly_chart(chart_fig, use_container_width=True)
+                
+                # Show data preview in separate expandable section
+                if "data_preview" in msg:
+                    with st.expander("📊 View Data Results", expanded=False):
+                        st.dataframe(msg["data_preview"], use_container_width=True)
+                        st.metric("Total Rows", len(msg["data_preview"]))
+        
+        # BIG SUGGEST BUTTON - Show only if no messages yet
+        if (st.session_state.data_loaded and 
+            not st.session_state.show_suggestions and 
+            not st.session_state.generating_questions and
+            len(st.session_state.messages) == 0):
+            
+            st.markdown("---")
+            st.subheader("💡 Get started with suggested questions")
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("💡 Let Aura suggest questions based on your data", 
+                            key="big_suggest_btn", 
+                            use_container_width=True,
+                            type="primary"):
+                    st.session_state.generating_questions = True
+                    st.rerun()
+        
+        # Generate questions when button is clicked
+        if st.session_state.generating_questions:
+            with st.spinner("🤔 Analyzing your data and generating relevant questions..."):
+                # Generate questions based on actual CSV data
+                st.session_state.suggested_questions = st.session_state.sql_generator.generate_suggested_questions(
+                    st.session_state.csv_manager.schema_info
+                )
+                
+                st.session_state.generating_questions = False
+                st.session_state.show_suggestions = True
+                st.rerun()
+        
+        # Show suggested questions if generated
+        if st.session_state.show_suggestions and st.session_state.suggested_questions:
+            st.markdown("---")
+            st.subheader("💡 Suggested questions based on your data")
+            st.write("Click on any question to ask Aura:")
+            
+            # Display questions as clickable buttons
+            for i, question in enumerate(st.session_state.suggested_questions):
+                col1, col2, col1 = st.columns([1, 3, 1])
+                with col2:
+                    if st.button(question, key=f"suggested_{i}", use_container_width=True):
+                        # Auto-execute the selected question
+                        st.session_state.selected_question = question
+                        st.session_state.show_suggestions = False
+                        st.rerun()
+        
+        # Handle selected question from suggestions
+        if 'selected_question' in st.session_state:
+            question = st.session_state.selected_question
+            del st.session_state.selected_question
+            
+            # Add user question to chat history
+            st.session_state.messages.append({"role": "user", "content": question})
+            
+            # Generate and execute SQL immediately
+            with st.spinner("🔍 Aura is thinking..."):
+                # Generate SQL
+                sql_query, sql_message = st.session_state.sql_generator.generate_sql(
+                    question,
+                    st.session_state.csv_manager.schema_info
+                )
+                
+                if sql_query:
+                    # Execute query
+                    df, exec_message = st.session_state.csv_manager.execute_sql(sql_query)
+                    
+                    if df is not None:
+                        # Generate answer
+                        answer = f"I found {len(df)} records for your question. "
+                        if len(df) > 0:
+                            numeric_cols = df.select_dtypes(include=np.number).columns
+                            if len(numeric_cols) > 0:
+                                answer += f"The data includes numeric columns like {', '.join(numeric_cols[:2])}."
+                            else:
+                                answer += "Here's what I discovered in the data."
+                        else:
+                            answer = "I couldn't find any records matching your query."
+                        
+                        # Generate charts
+                        charts, chart_message = st.session_state.chart_generator.auto_generate_chart(df, question)
+                        
+                        # Add assistant response to chat history
+                        assistant_msg = {
+                            "role": "assistant", 
+                            "content": answer,
+                            "sql_query": sql_query,
+                            "data_preview": df,
+                            "row_count": len(df)
+                        }
+                        
+                        if charts:
+                            assistant_msg["charts"] = charts
+                        
+                        st.session_state.messages.append(assistant_msg)
+                    else:
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": f"❌ Sorry, I encountered an error: {exec_message}"
+                        })
+                else:
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": f"❌ Sorry, I couldn't generate a query for that question: {sql_message}"
+                    })
+            
+            st.rerun()
+        
+        # Regular chat input
+        question = st.chat_input("Ask Aura about your data...")
+        
+        if question:
+            # Add user question to chat history
+            st.session_state.messages.append({"role": "user", "content": question})
+            
+            # Generate and execute SQL immediately
+            with st.spinner("🔍 Aura is thinking..."):
+                # Generate SQL
+                sql_query, sql_message = st.session_state.sql_generator.generate_sql(
+                    question,
+                    st.session_state.csv_manager.schema_info
+                )
+                
+                if sql_query:
+                    # Execute query
+                    df, exec_message = st.session_state.csv_manager.execute_sql(sql_query)
+                    
+                    if df is not None:
+                        # Generate answer
+                        answer = f"I found {len(df)} records for your question. "
+                        if len(df) > 0:
+                            numeric_cols = df.select_dtypes(include=np.number).columns
+                            if len(numeric_cols) > 0:
+                                answer += f"The data includes numeric columns like {', '.join(numeric_cols[:2])}."
+                            else:
+                                answer += "Here's what I discovered in the data."
+                        else:
+                            answer = "I couldn't find any records matching your query."
+                        
+                        # Generate charts
+                        charts, chart_message = st.session_state.chart_generator.auto_generate_chart(df, question)
+                        
+                        # Add assistant response to chat history
+                        assistant_msg = {
+                            "role": "assistant", 
+                            "content": answer,
+                            "sql_query": sql_query,
+                            "data_preview": df,
+                            "row_count": len(df)
+                        }
+                        
+                        if charts:
+                            assistant_msg["charts"] = charts
+                        
+                        st.session_state.messages.append(assistant_msg)
+                    else:
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": f"❌ Sorry, I encountered an error: {exec_message}"
+                        })
+                else:
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": f"❌ Sorry, I couldn't generate a query for that question: {sql_message}"
+                    })
+            
+            st.rerun()
 
 # Run the app
 if __name__ == "__main__":
