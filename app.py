@@ -200,13 +200,13 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🚀 Future Apps</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📁 CSV SQL Assistant</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>New AI tools coming soon.</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Explore", key="new_btn", use_container_width=True):
-            st.info("🎯 New features launching soon!")
+            st.switch_page("pages/5_📁_CSV_SQL_Assistant.py")
 
 def main():
     # Check if user is logged in
