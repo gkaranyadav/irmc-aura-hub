@@ -303,6 +303,7 @@ class SQLQueryGenerator:
             return questions[:6] if questions else self._get_fallback_questions()
             
         except Exception as e:
+            st.error(f"❌ Failed to generate questions: {e}")
             return self._get_fallback_questions()
 
     def _get_fallback_questions(self):
