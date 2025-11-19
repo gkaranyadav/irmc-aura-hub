@@ -226,6 +226,80 @@ class SQLQueryGenerator:
             
         except Exception as e:
             return None, f"LLM error: {str(e)}"
+
+    def generate_answer_from_data(self, question, sql_query, query_results):
+        """Generate natural language answer from query results using LLM"""
+        if not self.client:
+            return self._generate_simple_answer(query_results)
+        
+        try:
+            # Convert dataframe to readable text
+            if query_results.empty:
+                data_context = "No data found for this query."
+            else:
+                data_context = f"Query returned {len(query_results)} rows:\n"
+                # Show first few rows for context
+                preview_rows = query_results.head(10).to_dict('records')
+                for i, row in enumerate(preview_rows):
+                    data_context += f"Row {i+1}: {row}\n"
+                if len(query_results) > 10:
+                    data_context += f"... and {len(query_results) - 10} more rows"
+            
+            prompt = f"""
+            Based on the user's question and the SQL query results, provide a clear, direct answer.
+            
+            USER'S QUESTION: {question}
+            
+            SQL QUERY USED: {sql_query}
+            
+            QUERY RESULTS:
+            {data_context}
+            
+            INSTRUCTIONS:
+            1. Provide a direct, conversational answer to the user's question
+            2. If the data contains the answer, give it directly (e.g., "The release date is January 15, 2023")
+            3. If it's a list or multiple results, summarize the key findings
+            4. Keep it concise but informative
+            5. Don't mention SQL, queries, or technical details in the answer
+            6. Sound natural and helpful
+            7. If no data found, explain that politely
+            
+            Provide only the direct answer:
+            """
+            
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant that provides clear answers from data."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=Config.GROQ_MODEL,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=500
+            )
+            
+            answer = response.choices[0].message.content.strip()
+            return answer
+            
+        except Exception as e:
+            return self._generate_simple_answer(query_results)
+    
+    def _generate_simple_answer(self, query_results):
+        """Fallback answer generation without LLM"""
+        if query_results.empty:
+            return "I couldn't find any data matching your query."
+        
+        if len(query_results) == 1:
+            # For single row results, try to create a meaningful answer
+            row = query_results.iloc[0]
+            if len(query_results.columns) == 1:
+                value = row.iloc[0]
+                return f"The value is: {value}"
+            else:
+                return f"I found one matching record with {len(query_results.columns)} pieces of information."
+        else:
+            return f"I found {len(query_results)} records matching your query."
     
     def _prepare_csv_schema_context(self, schema_info):
         """Prepare schema information for CSV files"""
@@ -608,7 +682,7 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                # Assistant message with answer
+                # Assistant message with direct answer
                 st.markdown(f"""
                 <div class="chat-message assistant-message">
                     <strong>🤖 Aura:</strong> {msg["content"]}
@@ -701,16 +775,8 @@ def main():
                     df, exec_message = st.session_state.csv_manager.execute_sql(sql_query)
                     
                     if df is not None:
-                        # Generate answer
-                        answer = f"I found {len(df)} records for your question. "
-                        if len(df) > 0:
-                            numeric_cols = df.select_dtypes(include=np.number).columns
-                            if len(numeric_cols) > 0:
-                                answer += f"The data includes numeric columns like {', '.join(numeric_cols[:2])}."
-                            else:
-                                answer += "Here's what I discovered in the data."
-                        else:
-                            answer = "I couldn't find any records matching your query."
+                        # Generate LLM-powered answer from the data
+                        answer = st.session_state.sql_generator.generate_answer_from_data(question, sql_query, df)
                         
                         # Generate charts
                         charts, chart_message = st.session_state.chart_generator.auto_generate_chart(df, question)
@@ -761,16 +827,8 @@ def main():
                     df, exec_message = st.session_state.csv_manager.execute_sql(sql_query)
                     
                     if df is not None:
-                        # Generate answer
-                        answer = f"I found {len(df)} records for your question. "
-                        if len(df) > 0:
-                            numeric_cols = df.select_dtypes(include=np.number).columns
-                            if len(numeric_cols) > 0:
-                                answer += f"The data includes numeric columns like {', '.join(numeric_cols[:2])}."
-                            else:
-                                answer += "Here's what I discovered in the data."
-                        else:
-                            answer = "I couldn't find any records matching your query."
+                        # Generate LLM-powered answer from the data
+                        answer = st.session_state.sql_generator.generate_answer_from_data(question, sql_query, df)
                         
                         # Generate charts
                         charts, chart_message = st.session_state.chart_generator.auto_generate_chart(df, question)
