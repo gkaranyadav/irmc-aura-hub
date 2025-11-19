@@ -10,6 +10,7 @@ from groq import Groq
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+import io
 
 # =============================================================================
 # CONFIGURATION
@@ -18,7 +19,7 @@ class Config:
     GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # =============================================================================
-# CSV SCHEMA MANAGER
+# CSV SCHEMA MANAGER (ROBUST VERSION)
 # =============================================================================
 class CSVSchemaManager:
     def __init__(self):
@@ -26,99 +27,46 @@ class CSVSchemaManager:
         self.schema_info = {}
         self.connection = None
     
-    def detect_data_types(self, series):
-        """Automatically detect data types for a pandas series"""
-        if series.dtype == 'object':
-            # Try to convert to datetime
-            try:
-                pd.to_datetime(series, errors='raise')
-                return 'DATE'
-            except:
-                pass
-            
-            # Check if it's boolean
-            if series.dropna().isin(['true', 'false', 'True', 'False', '1', '0', 'yes', 'no']).all():
-                return 'BOOLEAN'
-            
-            # Check if it's numeric but stored as string
-            try:
-                pd.to_numeric(series, errors='raise')
-                return 'NUMERIC'
-            except:
-                return 'TEXT'
-        
-        elif pd.api.types.is_numeric_dtype(series):
-            if series.dropna().apply(float.is_integer).all():
-                return 'INTEGER'
-            else:
-                return 'FLOAT'
-        
-        elif pd.api.types.is_datetime64_any_dtype(series):
-            return 'DATE'
-        
-        return 'TEXT'
-    
     def process_csv_file(self, uploaded_file, file_name):
-        """Process uploaded CSV file and extract schema"""
+        """Process uploaded CSV file with robust error handling"""
         try:
-            # Read CSV with flexible parsing
-            df = pd.read_csv(uploaded_file)
+            # Read CSV with multiple encoding attempts and error handling
+            try:
+                df = pd.read_csv(uploaded_file, encoding='utf-8')
+            except UnicodeDecodeError:
+                uploaded_file.seek(0)  # Reset file pointer
+                df = pd.read_csv(uploaded_file, encoding='latin-1')
+            except Exception as e:
+                return False, f"❌ Error reading CSV: {str(e)}"
+            
+            # Validate dataframe
+            if df.empty:
+                return False, "❌ CSV file is empty"
+            
+            if len(df.columns) == 0:
+                return False, "❌ No columns found in CSV file"
+            
+            # Clean column names
+            df.columns = [str(col).strip().replace(' ', '_').replace('-', '_') for col in df.columns]
             
             # Basic info
             file_info = {
                 'name': file_name,
                 'row_count': len(df),
                 'column_count': len(df.columns),
-                'columns': {},
-                'sample_data': df.head(10).to_dict('records'),
-                'dataframe': df
+                'columns': list(df.columns),
+                'sample_data': df.head(3).fillna('NULL').to_dict('records'),  # First 3 rows, handle NaN
+                'dataframe': df,
+                'clean_table_name': self._clean_table_name(file_name)
             }
-            
-            # Analyze each column
-            for col in df.columns:
-                dtype = self.detect_data_types(df[col])
-                unique_count = df[col].nunique()
-                null_count = df[col].isnull().sum()
-                
-                file_info['columns'][col] = {
-                    'type': dtype,
-                    'unique_values': unique_count,
-                    'null_count': null_count,
-                    'sample_values': df[col].dropna().head(5).tolist()
-                }
             
             self.uploaded_files[file_name] = file_info
             self._update_schema_info()
             
-            return True, f"✅ Successfully processed {file_name} ({len(df)} rows, {len(df.columns)} columns)"
+            return True, f"✅ Successfully loaded {file_name} ({len(df)} rows, {len(df.columns)} columns)"
             
         except Exception as e:
             return False, f"❌ Error processing {file_name}: {str(e)}"
-    
-    def _update_schema_info(self):
-        """Update combined schema information for LLM"""
-        self.schema_info = {}
-        for file_name, file_info in self.uploaded_files.items():
-            self.schema_info[file_name] = {
-                'columns': list(file_info['columns'].keys()),
-                'column_types': {col: info['type'] for col, info in file_info['columns'].items()},
-                'sample_data': file_info['sample_data'],
-                'row_count': file_info['row_count']
-            }
-    
-    def initialize_duckdb(self):
-        """Initialize DuckDB connection and load data"""
-        try:
-            self.connection = duckdb.connect(database=':memory:')
-            
-            # Register all dataframes as DuckDB tables
-            for file_name, file_info in self.uploaded_files.items():
-                table_name = self._clean_table_name(file_name)
-                self.connection.register(table_name, file_info['dataframe'])
-            
-            return True, "DuckDB initialized successfully"
-        except Exception as e:
-            return False, f"DuckDB initialization failed: {str(e)}"
     
     def _clean_table_name(self, file_name):
         """Clean filename to create valid table name"""
@@ -127,13 +75,46 @@ class CSVSchemaManager:
         name = re.sub(r'_+', '_', name)  # Replace multiple underscores with single
         name = name.strip('_')  # Remove leading/trailing underscores
         
-        if not name or name[0].isdigit():
+        if not name:
+            name = 'data_table'
+        elif name[0].isdigit():
             name = 'table_' + name
         
         return name.lower()
     
+    def _update_schema_info(self):
+        """Update combined schema information for LLM"""
+        self.schema_info = {}
+        for file_name, file_info in self.uploaded_files.items():
+            self.schema_info[file_name] = {
+                'table_name': file_info['clean_table_name'],
+                'columns': file_info['columns'],
+                'sample_data': file_info['sample_data'],
+                'row_count': file_info['row_count'],
+                'column_count': file_info['column_count']
+            }
+    
+    def initialize_duckdb(self):
+        """Initialize DuckDB connection and load data with error handling"""
+        try:
+            self.connection = duckdb.connect(database=':memory:')
+            
+            # Register all dataframes as DuckDB tables
+            for file_name, file_info in self.uploaded_files.items():
+                table_name = file_info['clean_table_name']
+                try:
+                    self.connection.register(table_name, file_info['dataframe'])
+                    st.success(f"✅ Table '{table_name}' loaded successfully")
+                except Exception as e:
+                    st.error(f"❌ Failed to load table '{table_name}': {str(e)}")
+                    return False, f"Failed to load table {table_name}"
+            
+            return True, "DuckDB initialized successfully with all tables"
+        except Exception as e:
+            return False, f"DuckDB initialization failed: {str(e)}"
+    
     def execute_sql(self, sql_query):
-        """Execute SQL query on loaded CSV data"""
+        """Execute SQL query on loaded CSV data with comprehensive error handling"""
         if not self.connection:
             return None, "No data loaded. Please upload CSV files first."
         
@@ -143,16 +124,30 @@ class CSVSchemaManager:
             if not clean_query.startswith('SELECT'):
                 return None, "Only SELECT queries are allowed for safety"
             
-            # Execute query
+            # Execute query with timeout protection
             result = self.connection.execute(sql_query).fetchdf()
+            
+            # Check if result is too large
+            if len(result) > 100000:  # 100k row limit
+                result = result.head(100000)
+                return result, f"Query executed successfully. Showing first 100,000 of {len(result)} rows."
+            
             return result, f"Query executed successfully. Returned {len(result)} rows."
             
         except Exception as e:
-            return None, f"Query error: {str(e)}"
+            error_msg = str(e)
+            # Provide helpful error messages
+            if "Catalog Error" in error_msg or "Table" in error_msg and "does not exist" in error_msg:
+                available_tables = self.get_table_names()
+                return None, f"Table not found. Available tables: {', '.join(available_tables)}"
+            elif "Column" in error_msg and "not found" in error_msg:
+                return None, f"Column error: {error_msg}"
+            else:
+                return None, f"SQL Error: {error_msg}"
     
     def get_table_names(self):
         """Get list of available table names"""
-        return [self._clean_table_name(name) for name in self.uploaded_files.keys()]
+        return [info['clean_table_name'] for info in self.uploaded_files.values()]
     
     def clear_data(self):
         """Clear all loaded data"""
@@ -163,7 +158,7 @@ class CSVSchemaManager:
             self.connection = None
 
 # =============================================================================
-# SQL QUERY GENERATOR (Reused from SQL Assistant)
+# SQL QUERY GENERATOR (ROBUST VERSION)
 # =============================================================================
 class SQLQueryGenerator:
     def __init__(self):
@@ -174,38 +169,39 @@ class SQLQueryGenerator:
             self.client = None
     
     def generate_sql(self, natural_language_query, schema_info):
-        """Convert natural language to SQL using LLM"""
+        """Convert natural language to SQL using LLM with robust error handling"""
         if not self.client:
             return None, "LLM service not available"
         
-        # Prepare schema context for CSV files
-        schema_context = self._prepare_csv_schema_context(schema_info)
-        
-        prompt = f"""
-        You are an expert SQL query generator. Convert the natural language question into a valid SQL query.
-        
-        AVAILABLE TABLES (from CSV files):
-        {schema_context}
-        
-        NATURAL LANGUAGE QUESTION: {natural_language_query}
-        
-        IMPORTANT RULES:
-        1. Return ONLY the SQL query, no explanations
-        2. Use proper JOINs if multiple tables are needed
-        3. Include WHERE clauses when filtering is implied
-        4. Use appropriate aggregate functions (COUNT, SUM, AVG, etc.) when suitable
-        5. Use readable column aliases
-        6. Only generate SELECT queries (no INSERT, UPDATE, DELETE)
-        7. Make the query efficient and accurate
-        8. Use table names exactly as provided
-        9. Handle different data types appropriately (TEXT, INTEGER, FLOAT, DATE, BOOLEAN)
-        
-        Return the SQL query only:
-        """
-        
         try:
+            # Prepare schema context for CSV files
+            schema_context = self._prepare_csv_schema_context(schema_info)
+            
+            prompt = f"""
+            You are an expert SQL query generator. Convert the natural language question into a valid SQL query.
+            
+            AVAILABLE TABLES (from CSV files):
+            {schema_context}
+            
+            NATURAL LANGUAGE QUESTION: {natural_language_query}
+            
+            IMPORTANT RULES:
+            1. Return ONLY the SQL query, no explanations
+            2. Use proper JOINs if multiple tables are needed
+            3. Include WHERE clauses when filtering is implied
+            4. Use appropriate aggregate functions (COUNT, SUM, AVG, MAX, MIN) when suitable
+            5. Use readable column aliases with AS
+            6. Only generate SELECT queries (no INSERT, UPDATE, DELETE)
+            7. Use table names exactly as provided in the schema
+            8. Handle different data types appropriately
+            9. Use LIMIT for large datasets when appropriate
+            10. Make the query efficient and accurate
+            
+            Return the SQL query only:
+            """
+            
             messages = [
-                {"role": "system", "content": "You are a SQL expert that converts natural language to SQL queries for CSV data."},
+                {"role": "system", "content": "You are a SQL expert that converts natural language to SQL queries for CSV data. Always return valid SQL."},
                 {"role": "user", "content": prompt}
             ]
             
@@ -213,14 +209,20 @@ class SQLQueryGenerator:
                 model=Config.GROQ_MODEL,
                 messages=messages,
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=1000,
+                timeout=30  # 30 second timeout
             )
             
             sql_query = response.choices[0].message.content.strip()
             
-            # Clean up the response (remove markdown code blocks if present)
+            # Clean up the response
             sql_query = re.sub(r'```sql\s*|\s*```', '', sql_query).strip()
+            sql_query = re.sub(r'^SELECT', 'SELECT', sql_query, flags=re.IGNORECASE)
             
+            # Basic validation
+            if not sql_query.upper().startswith('SELECT'):
+                return None, "Generated query is not a SELECT statement"
+                
             return sql_query, "SQL generated successfully"
             
         except Exception as e:
@@ -228,103 +230,116 @@ class SQLQueryGenerator:
     
     def _prepare_csv_schema_context(self, schema_info):
         """Prepare schema information for CSV files"""
-        context = ""
-        for table_name, table_info in schema_info.items():
-            context += f"Table: {table_name}\n"
-            context += f"Columns: {', '.join(table_info['columns'])}\n"
-            context += f"Column Types: {table_info['column_types']}\n"
-            context += f"Row Count: {table_info['row_count']}\n"
+        if not schema_info:
+            return "No tables available"
+            
+        context = "=== DATABASE SCHEMA ===\n\n"
+        for file_name, table_info in schema_info.items():
+            context += f"📊 TABLE: {table_info['table_name']} (from {file_name})\n"
+            context += f"   📋 COLUMNS: {', '.join(table_info['columns'])}\n"
+            context += f"   📊 STATS: {table_info['row_count']} rows, {table_info['column_count']} columns\n"
             
             # Add sample data for context
             if table_info['sample_data']:
-                context += "Sample data (first few rows):\n"
-                for i, row in enumerate(table_info['sample_data'][:2]):  # First 2 rows
-                    context += f"  Row {i+1}: {row}\n"
+                context += "   📝 SAMPLE DATA (first 3 rows):\n"
+                for i, row in enumerate(table_info['sample_data']):
+                    context += f"      Row {i+1}: {row}\n"
             context += "\n"
+        
+        context += "=== INSTRUCTIONS ===\n"
+        context += "- Use exact table names and column names as shown above\n"
+        context += "- Join tables when needed using common columns\n"
+        context += "- Use aggregate functions for calculations\n"
+        context += "- Add LIMIT when dealing with large datasets\n"
         
         return context
 
 # =============================================================================
-# CHART GENERATOR (Reused from SQL Assistant)
+# CHART GENERATOR (ROBUST VERSION)
 # =============================================================================
 class ChartGenerator:
     def __init__(self):
         pass
     
     def auto_generate_chart(self, df, query_type=""):
-        """Automatically generate appropriate charts based on data"""
+        """Automatically generate appropriate charts based on data with error handling"""
         if df.empty or len(df) == 0:
             return None, "No data to visualize"
         
         charts = []
         
         try:
-            # Analyze dataframe structure
-            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
-            categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-            date_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
+            # Create a safe copy for analysis
+            df_safe = df.copy().head(1000)  # Limit for performance
+            
+            # Analyze dataframe structure safely
+            numeric_cols = df_safe.select_dtypes(include=np.number).columns.tolist()
+            categorical_cols = df_safe.select_dtypes(include=['object']).columns.tolist()
             
             # Chart 1: Bar chart for categorical vs numeric
             if categorical_cols and numeric_cols:
                 cat_col = categorical_cols[0]
                 num_col = numeric_cols[0]
                 
-                if len(df[cat_col].unique()) <= 20:  # Reasonable number of categories
-                    fig_bar = px.bar(
-                        df, x=cat_col, y=num_col,
-                        title=f"{num_col} by {cat_col}",
-                        color=cat_col
-                    )
-                    charts.append(("Bar Chart", fig_bar))
+                # Check if reasonable for bar chart
+                unique_cats = df_safe[cat_col].nunique()
+                if 1 < unique_cats <= 15:
+                    try:
+                        fig_bar = px.bar(
+                            df_safe, x=cat_col, y=num_col,
+                            title=f"{num_col} by {cat_col}",
+                            color=cat_col
+                        )
+                        charts.append(("Bar Chart", fig_bar))
+                    except Exception:
+                        pass
             
-            # Chart 2: Line chart for time series
-            if date_cols and numeric_cols:
-                date_col = date_cols[0]
-                num_col = numeric_cols[0]
-                
-                try:
-                    df[date_col] = pd.to_datetime(df[date_col])
-                    fig_line = px.line(
-                        df, x=date_col, y=num_col,
-                        title=f"{num_col} Over Time"
-                    )
-                    charts.append(("Line Chart", fig_line))
-                except:
-                    pass
-            
-            # Chart 3: Pie chart for categorical distribution
-            if categorical_cols and len(df[categorical_cols[0]].unique()) <= 10:
+            # Chart 2: Pie chart for categorical distribution
+            if categorical_cols:
                 cat_col = categorical_cols[0]
-                if numeric_cols:
+                unique_cats = df_safe[cat_col].nunique()
+                if 1 < unique_cats <= 8:
+                    try:
+                        if numeric_cols:
+                            num_col = numeric_cols[0]
+                            fig_pie = px.pie(
+                                df_safe, names=cat_col, values=num_col,
+                                title=f"Distribution of {num_col} by {cat_col}"
+                            )
+                        else:
+                            value_counts = df_safe[cat_col].value_counts().head(8)
+                            fig_pie = px.pie(
+                                names=value_counts.index,
+                                values=value_counts.values,
+                                title=f"Distribution of {cat_col}"
+                            )
+                        charts.append(("Pie Chart", fig_pie))
+                    except Exception:
+                        pass
+            
+            # Chart 3: Histogram for numeric distribution
+            if numeric_cols:
+                try:
                     num_col = numeric_cols[0]
-                    fig_pie = px.pie(
-                        df, names=cat_col, values=num_col,
-                        title=f"Distribution of {num_col} by {cat_col}"
+                    fig_hist = px.histogram(
+                        df_safe, x=num_col,
+                        title=f"Distribution of {num_col}",
+                        nbins=20
                     )
-                else:
-                    value_counts = df[cat_col].value_counts()
-                    fig_pie = px.pie(
-                        names=value_counts.index,
-                        values=value_counts.values,
-                        title=f"Distribution of {cat_col}"
-                    )
-                charts.append(("Pie Chart", fig_pie))
+                    charts.append(("Histogram", fig_hist))
+                except Exception:
+                    pass
             
             # Chart 4: Scatter plot for numeric relationships
             if len(numeric_cols) >= 2:
-                fig_scatter = px.scatter(
-                    df, x=numeric_cols[0], y=numeric_cols[1],
-                    title=f"{numeric_cols[1]} vs {numeric_cols[0]}"
-                )
-                charts.append(("Scatter Plot", fig_scatter))
-            
-            # Chart 5: Histogram for numeric distribution
-            if numeric_cols:
-                fig_hist = px.histogram(
-                    df, x=numeric_cols[0],
-                    title=f"Distribution of {numeric_cols[0]}"
-                )
-                charts.append(("Histogram", fig_hist))
+                try:
+                    fig_scatter = px.scatter(
+                        df_safe, x=numeric_cols[0], y=numeric_cols[1],
+                        title=f"{numeric_cols[1]} vs {numeric_cols[0]}"
+                    )
+                    charts.append(("Scatter Plot", fig_scatter))
+                except Exception:
+                    pass
             
             return charts, f"Generated {len(charts)} charts"
             
@@ -345,6 +360,14 @@ def main():
     # Custom CSS
     st.markdown("""
     <style>
+        .main-header {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #175CFF, #00A3FF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
         .chat-message {
             padding: 1rem;
             border-radius: 10px;
@@ -381,13 +404,25 @@ def main():
             border-radius: 5px;
             margin: 0.5rem 0;
         }
+        .stButton button {
+            background: linear-gradient(135deg, #175CFF, #00A3FF);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .stButton button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(23, 92, 255, 0.3);
+        }
     </style>
     """, unsafe_allow_html=True)
     
     # Header
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("📁 CSV SQL Assistant - irmc Aura")
+        st.markdown('<div class="main-header">📁 CSV SQL Assistant</div>', unsafe_allow_html=True)
         st.markdown("### Upload CSV files and query with natural language")
     with col2:
         if st.button("🏠 Back to Home"):
@@ -421,7 +456,7 @@ def main():
                 "Choose CSV files",
                 type=['csv'],
                 accept_multiple_files=True,
-                help="Upload one or more CSV files to analyze"
+                help="Upload one or more CSV files to analyze. Each file will become a table."
             )
             
             if uploaded_files:
@@ -440,16 +475,16 @@ def main():
             # Initialize DuckDB when files are uploaded
             if (st.session_state.csv_manager.uploaded_files and 
                 not st.session_state.data_loaded):
-                with st.spinner("Initializing query engine..."):
+                with st.spinner("🚀 Initializing query engine..."):
                     success, message = st.session_state.csv_manager.initialize_duckdb()
                     if success:
                         st.session_state.data_loaded = True
-                        st.success("✅ Query engine ready! You can now run SQL queries.")
+                        st.success("✅ Query engine ready! You can now run SQL queries in the 'Query Assistant' tab.")
                     else:
                         st.error(f"❌ {message}")
         
         with col2:
-            st.subheader("Data Status")
+            st.subheader("📊 Data Status")
             
             if st.session_state.data_loaded:
                 st.markdown('<div class="data-loaded">✅ Data Loaded & Ready</div>', unsafe_allow_html=True)
@@ -459,44 +494,49 @@ def main():
                 total_rows = sum(info['row_count'] for info in st.session_state.csv_manager.uploaded_files.values())
                 total_columns = sum(info['column_count'] for info in st.session_state.csv_manager.uploaded_files.values())
                 
-                st.metric("Files Uploaded", total_files)
-                st.metric("Total Rows", total_rows)
-                st.metric("Total Columns", total_columns)
+                st.metric("📁 Files Uploaded", total_files)
+                st.metric("📊 Total Rows", f"{total_rows:,}")
+                st.metric("📋 Total Columns", total_columns)
                 
                 # Available tables
-                st.subheader("📋 Available Tables")
+                st.subheader("🗂️ Available Tables")
                 table_names = st.session_state.csv_manager.get_table_names()
                 for table_name in table_names:
-                    st.write(f"• `{table_name}`")
+                    st.code(table_name, language='sql')
                 
-                if st.button("🗑️ Clear All Data"):
+                if st.button("🗑️ Clear All Data", type="secondary"):
                     st.session_state.csv_manager.clear_data()
                     st.session_state.data_loaded = False
                     st.session_state.query_history = []
                     st.rerun()
             else:
                 st.info("📤 Upload CSV files to get started")
+                st.markdown("""
+                **Supported:**
+                • Any CSV file format
+                • Multiple files (will be joined as tables)
+                • Automatic column name cleaning
+                • UTF-8 and Latin-1 encoding
+                """)
         
         # Show file details
         if st.session_state.csv_manager.uploaded_files:
-            st.subheader("📊 File Details")
+            st.subheader("📄 File Details")
             
             for file_name, file_info in st.session_state.csv_manager.uploaded_files.items():
-                with st.expander(f"📄 {file_name} ({file_info['row_count']} rows, {file_info['column_count']} columns)"):
+                with st.expander(f"📋 {file_name} ({file_info['row_count']} rows, {file_info['column_count']} columns) → Table: `{file_info['clean_table_name']}`"):
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.write("**Columns & Types:**")
-                        for col_name, col_info in file_info['columns'].items():
-                            st.write(f"- `{col_name}`: {col_info['type']} "
-                                   f"(Unique: {col_info['unique_values']}, "
-                                   f"Nulls: {col_info['null_count']})")
+                        st.write("**🗂️ Columns:**")
+                        for col_name in file_info['columns']:
+                            st.write(f"• `{col_name}`")
                     
                     with col2:
-                        st.write("**Sample Data:**")
+                        st.write("**📝 Sample Data (first 3 rows):**")
                         if file_info['sample_data']:
                             sample_df = pd.DataFrame(file_info['sample_data'])
-                            st.dataframe(sample_df, use_container_width=True, height=200)
+                            st.dataframe(sample_df, use_container_width=True, height=150)
     
     with tab2:
         st.header("💬 Natural Language to SQL")
@@ -507,18 +547,19 @@ def main():
             col1, col2 = st.columns([2, 1])
             
             with col1:
-                st.subheader("Ask Your Question")
+                st.subheader("🔍 Ask Your Question")
                 natural_language_query = st.text_area(
                     "Enter your question in natural language:",
-                    placeholder="e.g., Show me the top 5 products by sales\nFind customers from New York\nWhat is the average price by category?\nShow monthly sales trends",
-                    height=100
+                    placeholder="e.g., Show me the top 5 products by sales\nFind customers from New York\nWhat is the average price by category?\nShow monthly sales trends for this year",
+                    height=100,
+                    key="nl_query"
                 )
                 
-                if st.button("🔍 Generate SQL Query", type="primary"):
-                    if natural_language_query:
+                if st.button("🚀 Generate SQL Query", type="primary", use_container_width=True):
+                    if natural_language_query and natural_language_query.strip():
                         with st.spinner("🤔 Generating SQL query..."):
                             sql_query, message = st.session_state.sql_generator.generate_sql(
-                                natural_language_query,
+                                natural_language_query.strip(),
                                 st.session_state.csv_manager.schema_info
                             )
                             
@@ -529,19 +570,19 @@ def main():
                             else:
                                 st.error(f"❌ {message}")
                     else:
-                        st.warning("Please enter a question")
+                        st.warning("⚠️ Please enter a question")
             
             with col2:
                 st.subheader("💡 Example Questions")
                 examples = [
-                    "Show me the top 10 products by sales amount",
-                    "Find all customers from California",
-                    "What is the average price by product category?",
-                    "List orders from the last 30 days",
-                    "Which products have less than 10 units in stock?",
-                    "Show monthly revenue trends for this year",
-                    "Find the most expensive product in each category",
-                    "Count customers by city and state"
+                    "Show top 10 products by sales amount",
+                    "Find customers from California",
+                    "Average price by product category",
+                    "Monthly revenue trends this year",
+                    "Products with less than 10 units in stock",
+                    "Count customers by city",
+                    "Most expensive product in each category",
+                    "Total sales by month"
                 ]
                 
                 for example in examples:
@@ -551,14 +592,14 @@ def main():
             
             # Show generated SQL
             if hasattr(st.session_state, 'generated_sql'):
-                st.subheader("Generated SQL Query")
+                st.subheader("🛠️ Generated SQL Query")
                 st.markdown(f'<div class="sql-box">{st.session_state.generated_sql}</div>', unsafe_allow_html=True)
                 
                 col1, col2, col3 = st.columns([1, 1, 1])
                 
                 with col1:
-                    if st.button("▶️ Execute Query", type="primary"):
-                        with st.spinner("Executing query..."):
+                    if st.button("▶️ Execute Query", type="primary", use_container_width=True):
+                        with st.spinner("🔍 Executing query..."):
                             df, message = st.session_state.csv_manager.execute_sql(st.session_state.generated_sql)
                             
                             if df is not None:
@@ -576,17 +617,19 @@ def main():
                                 st.session_state.query_history.insert(0, history_item)
                                 
                                 st.success(f"✅ {message}")
+                                st.rerun()
                             else:
                                 st.error(f"❌ {message}")
                 
                 with col2:
-                    if st.button("📋 Copy SQL"):
+                    if st.button("📋 Copy SQL", use_container_width=True):
                         st.code(st.session_state.generated_sql, language='sql')
-                        st.success("SQL copied to clipboard!")
+                        st.success("✅ SQL copied to clipboard!")
                 
                 with col3:
-                    if st.button("🔄 Regenerate SQL"):
-                        del st.session_state.generated_sql
+                    if st.button("🔄 Regenerate", use_container_width=True):
+                        if hasattr(st.session_state, 'generated_sql'):
+                            del st.session_state.generated_sql
                         st.rerun()
     
     with tab3:
@@ -599,9 +642,19 @@ def main():
         else:
             # Results table
             st.subheader("📊 Query Results")
+            
+            # Show query info
+            st.write(f"**Question:** {st.session_state.current_nl_query}")
+            st.code(st.session_state.current_query, language='sql')
+            
+            # Display dataframe
             st.dataframe(st.session_state.current_results, use_container_width=True)
             
-            st.metric("Total Rows", len(st.session_state.current_results))
+            col1, col2, col3 = st.columns([1, 1, 2])
+            with col1:
+                st.metric("Total Rows", f"{len(st.session_state.current_results):,}")
+            with col2:
+                st.metric("Total Columns", len(st.session_state.current_results.columns))
             
             # Download results
             csv_data = st.session_state.current_results.to_csv(index=False)
@@ -609,7 +662,8 @@ def main():
                 label="📥 Download Results as CSV",
                 data=csv_data,
                 file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+                mime="text/csv",
+                use_container_width=True
             )
             
             # Auto-generated charts
@@ -629,28 +683,28 @@ def main():
                         with cols[i % 2]:
                             st.plotly_chart(chart_fig, use_container_width=True)
                 else:
-                    st.info("No suitable charts could be generated for this data")
+                    st.info("ℹ️ No suitable charts could be generated for this data type")
             
             # Query History
             st.subheader("📚 Query History")
             if st.session_state.query_history:
-                for i, item in enumerate(st.session_state.query_history[:10]):  # Last 10 queries
-                    with st.expander(f"Query {i+1}: {item['nl_query'][:50]}..."):
+                for i, item in enumerate(st.session_state.query_history[:8]):  # Last 8 queries
+                    with st.expander(f"Query {i+1}: {item['nl_query'][:60]}... ({item['row_count']} rows)"):
                         col1, col2 = st.columns([3, 1])
                         with col1:
-                            st.write(f"**Natural Language:** {item['nl_query']}")
+                            st.write(f"**Question:** {item['nl_query']}")
                             st.code(item['sql_query'], language='sql')
                         with col2:
-                            st.write(f"**Rows:** {item['row_count']}")
+                            st.write(f"**Rows:** {item['row_count']:,}")
                             st.write(f"**Time:** {item['timestamp'].strftime('%H:%M:%S')}")
                             
                         # Quick re-execute button
-                        if st.button(f"🔄 Re-run Query {i+1}", key=f"rerun_{i}"):
+                        if st.button(f"🔄 Re-run Query {i+1}", key=f"rerun_{i}", use_container_width=True):
                             st.session_state.generated_sql = item['sql_query']
                             st.session_state.current_nl_query = item['nl_query']
                             st.rerun()
             else:
-                st.info("No query history yet")
+                st.info("No query history yet. Your queries will appear here.")
 
 # Run the app
 if __name__ == "__main__":
