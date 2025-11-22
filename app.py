@@ -8,7 +8,7 @@ init_database()
 # Page configuration
 st.set_page_config(
     page_title="IRMC aura - AI Apps Hub",
-    page_icon="🔮",
+    page_icon="",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
