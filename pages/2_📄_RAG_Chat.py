@@ -348,7 +348,7 @@ def main():
     # add back to home button
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("📄 irmc aura")
+        st.title("📄 irmc Aura")
         st.markdown("### chat with your documents using Aura")
     with col2:
         if st.button("🏠 back to home"):
