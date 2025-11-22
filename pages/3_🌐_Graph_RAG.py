@@ -650,8 +650,8 @@ def main():
     # add back to home button
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("🌐 irmc aura")
-        st.markdown("### chat with your documents using knowledge graph")
+        st.title("irmc Aura")
+        st.markdown("### chat with your documents using Aura")
     with col2:
         if st.button("🏠 back to home"):
             st.switch_page("app.py")
@@ -743,7 +743,7 @@ def main():
                 len(st.session_state.messages) == 0):
                 
                 st.markdown("---")
-                st.subheader("💡 get started with suggested questions")
+                st.subheader("💡 Get started with Aura suggested questions")
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
                     if st.button("💡 let Aura suggest questions based on your document", 
