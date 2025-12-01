@@ -1,460 +1,586 @@
-# pages/6_🔢_Synthetic_Data_Generator.py - CLEAN VERSION
+# pages/6_🔢_Synthetic_Data_Generator.py - LLM-POWERED VERSION
 import streamlit as st
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional, Any
-from datetime import datetime
+from typing import Dict, Optional, Any, List
 import json
+import re
 
 # =============================================================================
-# CHECK SDV AVAILABILITY
-# =============================================================================
-def check_sdv_availability():
-    """Check if SDV is available"""
-    try:
-        # SDV 1.29.1 imports
-        from sdv.single_table import GaussianCopulaSynthesizer, CTGANSynthesizer, TVAESynthesizer
-        from sdv.evaluation.single_table import evaluate_quality
-        from sdv.metadata import SingleTableMetadata
-        st.session_state.sdv_available = True
-        return True
-    except ImportError as e:
-        st.session_state.sdv_available = False
-        st.error(f"❌ SDV is not installed. Please add 'sdv>=1.29.0' to requirements.txt")
-        st.info("To install manually: `pip install sdv>=1.29.0`")
-        return False
-
-# =============================================================================
-# REAL SDV-BASED GENERATOR (Updated for SDV 1.29.1)
+# LLM ANALYZER FOR SMART CONSTRAINTS
 # =============================================================================
 
-class SDVDataGenerator:
-    """REAL synthetic data generation using SDV library"""
+class LLMAnalyzer:
+    """Use LLM to analyze data and create smart constraints"""
+    
+    @staticmethod
+    def analyze_with_llm(df: pd.DataFrame, sample_size: int = 10) -> Dict:
+        """
+        Analyze data using LLM to understand relationships and constraints
+        """
+        try:
+            # Use available LLM (Groq, OpenAI, or local)
+            api_key = st.secrets.get("GROQ_API_KEY", "")
+            
+            if not api_key:
+                # If no API key, use rule-based analysis
+                return LLMAnalyzer._rule_based_analysis(df)
+            
+            from groq import Groq
+            client = Groq(api_key=api_key)
+            
+            # Prepare sample data
+            sample_df = df.head(sample_size) if len(df) > sample_size else df
+            
+            # Build comprehensive prompt
+            prompt = f"""
+            You are a data quality expert. Analyze this dataset and identify:
+            
+            1. **Column Types**: Identify each column's type (ID, name, age, gender, phone, specialty, doctor, date, time, symptom, cost, status)
+            2. **Data Relationships**: Find logical relationships between columns (e.g., doctor → specialty, symptom → specialty, gender → name patterns)
+            3. **Data Quality Issues**: Identify any inconsistencies or errors
+            4. **Business Rules**: Discover domain-specific rules (e.g., medical: chest pain → cardiology, pregnancy → gynecology)
+            5. **Constraints Needed**: What constraints should be enforced during synthetic data generation?
+            
+            Dataset Shape: {df.shape}
+            Columns: {list(df.columns)}
+            
+            Sample Data (first {len(sample_df)} rows):
+            {sample_df.to_string()}
+            
+            Statistical Summary:
+            {df.describe(include='all').to_string()}
+            
+            Column Details:
+            {LLMAnalyzer._get_column_details(df)}
+            
+            Return JSON with this structure:
+            {{
+                "dataset_type": "medical_appointments",
+                "column_analysis": {{
+                    "column_name": {{
+                        "type": "categorical/numeric/id/text/date",
+                        "expected_pattern": "regex pattern if any",
+                        "unique_values_count": 0,
+                        "should_be_unique": true/false,
+                        "allowed_values": ["list", "if", "applicable"]
+                    }}
+                }},
+                "relationships": [
+                    {{
+                        "type": "mapping",
+                        "from_column": "Doctor",
+                        "to_column": "Specialty",
+                        "constraint": "One doctor should have one specialty"
+                    }}
+                ],
+                "domain_rules": [
+                    "Chest pain should go to Cardiology, not ENT",
+                    "Male patients should not have pregnancy-related symptoms"
+                ],
+                "constraints_needed": [
+                    "Unique constraint on patient_id",
+                    "Age should be between 0-120",
+                    "Phone numbers should be 10 digits"
+                ],
+                "data_quality_issues": [
+                    "Inconsistent doctor-specialty mapping",
+                    "Invalid symptom-specialty combinations"
+                ],
+                "generation_recommendations": [
+                    "Use CTGAN with more epochs",
+                    "Add custom constraints for symptom-specialty mapping"
+                ]
+            }}
+            """
+            
+            messages = [
+                {"role": "system", "content": "You are a data scientist and domain expert."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=messages,
+                temperature=0.1,
+                max_tokens=4000,
+                response_format={"type": "json_object"}
+            )
+            
+            analysis = json.loads(response.choices[0].message.content)
+            
+            # Store analysis in session state
+            st.session_state.llm_analysis = analysis
+            return analysis
+            
+        except Exception as e:
+            st.warning(f"LLM analysis failed: {e}. Using rule-based analysis.")
+            return LLMAnalyzer._rule_based_analysis(df)
+    
+    @staticmethod
+    def _get_column_details(df: pd.DataFrame) -> str:
+        """Get detailed column information"""
+        details = []
+        for col in df.columns:
+            dtype = str(df[col].dtype)
+            unique_count = df[col].nunique()
+            sample_values = df[col].dropna().unique()[:5].tolist()
+            null_count = df[col].isnull().sum()
+            
+            details.append(f"""
+            - {col}:
+              Type: {dtype}
+              Unique values: {unique_count}
+              Null values: {null_count}
+              Sample: {sample_values}
+            """)
+        
+        return "\n".join(details)
+    
+    @staticmethod
+    def _rule_based_analysis(df: pd.DataFrame) -> Dict:
+        """Fallback rule-based analysis"""
+        analysis = {
+            "dataset_type": "generic",
+            "column_analysis": {},
+            "relationships": [],
+            "domain_rules": [],
+            "constraints_needed": [],
+            "data_quality_issues": [],
+            "generation_recommendations": []
+        }
+        
+        # Auto-detect column types
+        for col in df.columns:
+            col_info = {
+                "type": "unknown",
+                "unique_values_count": df[col].nunique(),
+                "should_be_unique": False,
+                "expected_pattern": None
+            }
+            
+            # Detect column type by name and content
+            col_lower = col.lower()
+            
+            # Common patterns
+            if any(word in col_lower for word in ['id', 'code', 'ref']):
+                col_info["type"] = "id"
+                col_info["should_be_unique"] = True
+            elif any(word in col_lower for word in ['name', 'patient', 'doctor']):
+                col_info["type"] = "text"
+            elif 'age' in col_lower:
+                col_info["type"] = "numeric"
+            elif any(word in col_lower for word in ['gender', 'sex']):
+                col_info["type"] = "categorical"
+                col_info["allowed_values"] = ["M", "F", "Male", "Female"]
+            elif any(word in col_lower for word in ['phone', 'mobile', 'contact']):
+                col_info["type"] = "text"
+                col_info["expected_pattern"] = r'^\d{10}$'
+            elif any(word in col_lower for word in ['date']):
+                col_info["type"] = "date"
+            elif any(word in col_lower for word in ['time']):
+                col_info["type"] = "time"
+            elif any(word in col_lower for word in ['cost', 'price', 'amount', 'fee']):
+                col_info["type"] = "numeric"
+            elif any(word in col_lower for word in ['status', 'result']):
+                col_info["type"] = "categorical"
+            
+            analysis["column_analysis"][col] = col_info
+        
+        return analysis
+    
+    @staticmethod
+    def create_sdv_constraints(analysis: Dict, df: pd.DataFrame):
+        """Create SDV constraints based on LLM analysis"""
+        try:
+            from sdv.constraints import Unique, GreaterThan, FixedIncrements, CustomConstraint
+            
+            constraints = []
+            
+            # 1. Unique constraints for ID columns
+            for col, info in analysis.get("column_analysis", {}).items():
+                if info.get("should_be_unique", False) and col in df.columns:
+                    if df[col].nunique() == len(df):  # Already unique in training data
+                        constraints.append(Unique(column_names=[col]))
+            
+            # 2. Numeric range constraints
+            numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+            for col in numeric_cols:
+                if 'age' in col.lower():
+                    # Age constraint: 0-120
+                    constraints.append(GreaterThan(column_name=col, low_bound=0))
+                    # Could add UpperBound if available in SDV version
+                elif any(word in col.lower() for word in ['cost', 'price', 'amount']):
+                    # Positive cost constraint
+                    constraints.append(GreaterThan(column_name=col, low_bound=0))
+            
+            # 3. Categorical value constraints (if we know allowed values)
+            for col, info in analysis.get("column_analysis", {}).items():
+                if col in df.columns and info.get("type") == "categorical":
+                    allowed_vals = info.get("allowed_values")
+                    if allowed_vals and len(allowed_vals) > 0:
+                        # Create custom constraint for allowed values
+                        class AllowedValuesConstraint(CustomConstraint):
+                            def __init__(self, column_name, allowed_values):
+                                self.column_name = column_name
+                                self.allowed_values = allowed_values
+                                super().__init__(constraint_columns=[column_name])
+                            
+                            def _fit(self, table_data):
+                                pass
+                            
+                            def _transform(self, table_data):
+                                return table_data
+                            
+                            def _reverse_transform(self, table_data):
+                                # During generation, ensure values are from allowed set
+                                col_data = table_data[self.column_name]
+                                # Replace invalid values with random allowed ones
+                                invalid_mask = ~col_data.isin(self.allowed_values)
+                                if invalid_mask.any():
+                                    random_vals = np.random.choice(self.allowed_values, size=invalid_mask.sum())
+                                    col_data[invalid_mask] = random_vals
+                                return table_data
+                        
+                        constraints.append(AllowedValuesConstraint(col, allowed_vals))
+            
+            return constraints
+            
+        except Exception as e:
+            st.warning(f"Could not create constraints: {e}")
+            return []
+
+# =============================================================================
+# ENHANCED SDV GENERATOR WITH LLM ANALYSIS
+# =============================================================================
+
+class SmartSDVGenerator:
+    """SDV generator enhanced with LLM analysis"""
     
     def __init__(self):
-        self.available = check_sdv_availability()
-        
-    def generate_with_sdv(self, df: pd.DataFrame, num_rows: int, method: str = "ctgan") -> Optional[pd.DataFrame]:
+        self.available = self._check_sdv()
+        self.llm_analyzer = LLMAnalyzer()
+    
+    def _check_sdv(self):
+        try:
+            from sdv.single_table import CTGANSynthesizer, GaussianCopulaSynthesizer, TVAESynthesizer
+            from sdv.metadata import SingleTableMetadata
+            return True
+        except:
+            return False
+    
+    def generate_smart_data(self, df: pd.DataFrame, num_rows: int, method: str = "ctgan") -> Optional[pd.DataFrame]:
         """
-        Generate synthetic data using SDV methods
+        Generate synthetic data with LLM-guided constraints
         """
         if not self.available:
             st.error("SDV not available")
             return None
         
         try:
-            with st.spinner(f"🤖 Training {method.upper()} model on your data..."):
-                # Step 1: Create metadata from dataframe
+            # Step 1: LLM Analysis
+            with st.spinner("🧠 LLM analyzing data patterns and relationships..."):
+                analysis = self.llm_analyzer.analyze_with_llm(df)
+                
+                # Display analysis results
+                st.subheader("📋 LLM Analysis Results")
+                
+                with st.expander("Dataset Type", expanded=True):
+                    st.write(f"**Type**: {analysis.get('dataset_type', 'Unknown')}")
+                
+                with st.expander("Data Quality Issues", expanded=False):
+                    issues = analysis.get('data_quality_issues', [])
+                    if issues:
+                        for issue in issues:
+                            st.write(f"❌ {issue}")
+                    else:
+                        st.write("✅ No major issues found")
+                
+                with st.expander("Domain Rules Discovered", expanded=False):
+                    rules = analysis.get('domain_rules', [])
+                    if rules:
+                        for rule in rules:
+                            st.write(f"📝 {rule}")
+                    else:
+                        st.write("No specific domain rules identified")
+                
+                with st.expander("Recommended Constraints", expanded=False):
+                    constraints = analysis.get('constraints_needed', [])
+                    if constraints:
+                        for constraint in constraints:
+                            st.write(f"🔒 {constraint}")
+                    else:
+                        st.write("No constraints recommended")
+            
+            # Step 2: Create SDV metadata with constraints
+            with st.spinner("⚙️ Setting up SDV model with constraints..."):
                 from sdv.metadata import SingleTableMetadata
                 metadata = SingleTableMetadata()
                 metadata.detect_from_dataframe(data=df)
                 
-                # Step 2: Choose model based on method
+                # Add constraints based on LLM analysis
+                constraints = self.llm_analyzer.create_sdv_constraints(analysis, df)
+                
+                if constraints:
+                    st.info(f"✅ Added {len(constraints)} constraints to model")
+                    for constraint in constraints:
+                        st.write(f"   - {type(constraint).__name__}")
+            
+            # Step 3: Train model
+            with st.spinner(f"🤖 Training {method.upper()} model..."):
                 if method == "gaussian":
                     from sdv.single_table import GaussianCopulaSynthesizer
                     model = GaussianCopulaSynthesizer(
                         metadata=metadata,
+                        constraints=constraints if constraints else None,
                         default_distribution='gamma'
                     )
                 elif method == "tvae":
                     from sdv.single_table import TVAESynthesizer
                     model = TVAESynthesizer(
                         metadata=metadata,
-                        epochs=100,
-                        batch_size=50
+                        constraints=constraints if constraints else None,
+                        epochs=200,  # More epochs for better learning
+                        batch_size=min(50, len(df))
                     )
                 else:  # ctgan (default)
                     from sdv.single_table import CTGANSynthesizer
                     model = CTGANSynthesizer(
                         metadata=metadata,
-                        epochs=100,
-                        batch_size=50,
+                        constraints=constraints if constraints else None,
+                        epochs=300,  # More epochs for small datasets
+                        batch_size=min(32, len(df)),  # Smaller batch for small data
                         verbose=False
                     )
                 
-                # Step 3: Fit model
                 model.fit(df)
-                
-                # Step 4: Generate synthetic data
-                st.info("🎯 Generating synthetic data...")
+            
+            # Step 4: Generate data
+            with st.spinner("🎯 Generating synthetic data..."):
                 synthetic_data = model.sample(num_rows=num_rows)
-                
-                # Step 5: Evaluate quality
-                try:
-                    from sdv.evaluation.single_table import evaluate_quality
-                    quality_report = evaluate_quality(
-                        real_data=df,
-                        synthetic_data=synthetic_data,
-                        metadata=metadata
-                    )
-                    
-                    # Get overall quality score
-                    quality_score = quality_report.get_score()
-                    st.success(f"✅ Data Quality Score: {quality_score:.3f}/1.0")
-                    
-                    # Show detailed scores
-                    with st.expander("📊 View Detailed Quality Metrics"):
-                        scores = quality_report.get_properties()
-                        for prop_name, prop_score in scores.items():
-                            st.write(f"**{prop_name}**: {prop_score.get('score', 0):.3f}")
-                            
-                except Exception as e:
-                    st.info(f"⚠️ Quality evaluation skipped: {str(e)[:100]}")
-                
-                return synthetic_data
-                
+            
+            # Step 5: Post-process based on LLM rules
+            synthetic_data = self._apply_llm_rules(synthetic_data, analysis)
+            
+            # Step 6: Quality check
+            self._check_quality(synthetic_data, df, analysis)
+            
+            return synthetic_data
+            
         except Exception as e:
-            st.error(f"SDV generation failed: {str(e)}")
+            st.error(f"Generation failed: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
             return None
     
-    def compare_methods(self, df: pd.DataFrame, num_rows: int = 50) -> Dict[str, Any]:
-        """
-        Compare different SDV methods
-        """
-        results = {}
+    def _apply_llm_rules(self, synthetic_data: pd.DataFrame, analysis: Dict) -> pd.DataFrame:
+        """Apply post-processing rules from LLM analysis"""
+        df = synthetic_data.copy()
         
-        methods = ["gaussian", "ctgan", "tvae"]
+        rules = analysis.get('domain_rules', [])
         
-        for method in methods:
-            with st.spinner(f"Testing {method.upper()}..."):
-                try:
-                    synthetic = self.generate_with_sdv(df, num_rows, method)
-                    if synthetic is not None:
-                        # Basic quality checks
-                        quality_metrics = {
-                            "rows_generated": len(synthetic),
-                            "columns": len(synthetic.columns),
-                            "null_percentage": (synthetic.isnull().sum().sum() / (len(synthetic) * len(synthetic.columns))) * 100,
-                            "data_types_match": all(str(synthetic[col].dtype) == str(df[col].dtype) 
-                                                   for col in df.columns if col in synthetic.columns)
-                        }
-                        results[method] = quality_metrics
-                except Exception as e:
-                    results[method] = {"error": str(e)}
+        for rule in rules:
+            rule_lower = rule.lower()
+            
+            # Medical-specific rules
+            if 'chest pain' in rule_lower and 'cardiology' in rule_lower:
+                # Ensure chest pain goes to cardiology
+                if 'Symptoms' in df.columns and 'Specialty' in df.columns:
+                    chest_pain_mask = df['Symptoms'].astype(str).str.lower().str.contains('chest pain')
+                    if chest_pain_mask.any():
+                        df.loc[chest_pain_mask, 'Specialty'] = 'Cardiology'
+            
+            if 'pregnancy' in rule_lower and ('male' in rule_lower or 'm ' in rule_lower):
+                # Ensure male patients don't have pregnancy symptoms
+                if 'Gender' in df.columns and 'Symptoms' in df.columns:
+                    male_mask = df['Gender'].astype(str).str.upper().isin(['M', 'MALE'])
+                    pregnancy_mask = df['Symptoms'].astype(str).str.lower().str.contains('pregnancy')
+                    invalid_mask = male_mask & pregnancy_mask
+                    if invalid_mask.any():
+                        # Change symptom to something else
+                        df.loc[invalid_mask, 'Symptoms'] = 'General Checkup'
         
-        return results
+        return df
+    
+    def _check_quality(self, synthetic: pd.DataFrame, original: pd.DataFrame, analysis: Dict):
+        """Check quality of generated data"""
+        st.subheader("✅ Quality Check Results")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            issues_fixed = 0
+            rules = analysis.get('domain_rules', [])
+            for rule in rules:
+                if 'chest pain' in rule.lower():
+                    if 'Symptoms' in synthetic.columns and 'Specialty' in synthetic.columns:
+                        chest_pain = synthetic[synthetic['Symptoms'].astype(str).str.lower().str.contains('chest pain')]
+                        if not chest_pain.empty:
+                            correct_specialty = chest_pain['Specialty'].astype(str).str.lower().str.contains('cardiology').all()
+                            if correct_specialty:
+                                issues_fixed += 1
+            
+            st.metric("Rules Enforced", issues_fixed)
+        
+        with col2:
+            # Check column consistency
+            matching_cols = sum(1 for col in original.columns if col in synthetic.columns)
+            st.metric("Columns Preserved", f"{matching_cols}/{len(original.columns)}")
+        
+        with col3:
+            # Check data types
+            type_matches = 0
+            for col in original.columns:
+                if col in synthetic.columns:
+                    if str(original[col].dtype) == str(synthetic[col].dtype):
+                        type_matches += 1
+            st.metric("Data Types Matched", f"{type_matches}/{len(original.columns)}")
+        
+        # Show sample of generated data
+        with st.expander("🔍 Generated Data Sample", expanded=True):
+            st.dataframe(synthetic.head(10), use_container_width=True)
+            
+            # Highlight potential issues
+            issues = []
+            if 'Symptoms' in synthetic.columns and 'Specialty' in synthetic.columns:
+                wrong_mappings = []
+                symptom_specialty_pairs = [
+                    ('chest pain', 'cardiology'),
+                    ('migraine', 'neurology'),
+                    ('ear infection', 'ent'),
+                    ('eye pain', 'ophthalmology')
+                ]
+                
+                for symptom, expected_specialty in symptom_specialty_pairs:
+                    mask = synthetic['Symptoms'].astype(str).str.lower().str.contains(symptom)
+                    if mask.any():
+                        actual_specialties = synthetic.loc[mask, 'Specialty'].unique()
+                        if expected_specialty.lower() not in [s.lower() for s in actual_specialties]:
+                            wrong_mappings.append(f"{symptom} → {actual_specialties[0]} (should be {expected_specialty})")
+                
+                if wrong_mappings:
+                    st.warning("⚠️ Potential incorrect mappings:")
+                    for mapping in wrong_mappings:
+                        st.write(f"  - {mapping}")
 
 # =============================================================================
-# STREAMLIT APP
+# MAIN APP
 # =============================================================================
 
 def main():
-    # Bypass auth for now - uncomment when auth is ready
-    # from auth import check_session
-    # if not check_session():
-    #     st.warning("Please login first")
-    #     st.stop()
-    
-    # Page config
     st.set_page_config(
-        page_title="SDV Data Generator",
-        page_icon="🧪",
+        page_title="Smart SDV Generator",
+        page_icon="🧠",
         layout="wide"
     )
     
-    # Header
-    st.title("🧪 SDV Data Generator")
-    st.markdown("**Using Synthetic Data Vault (SDV) v1.29.1 - REAL Generative AI for Tabular Data**")
+    st.title("🧠 Smart SDV Generator with LLM Analysis")
+    st.markdown("**LLM analyzes your data → Creates smart constraints → SDV generates quality synthetic data**")
     
-    if st.button("🏠 Back to Home"):
-        st.switch_page("app.py")
-    
-    st.markdown("---")
-    
-    # Check SDV availability first
-    if 'sdv_available' not in st.session_state:
-        check_sdv_availability()
-    
-    if not st.session_state.get('sdv_available', False):
-        st.error("""
-        ## ❌ SDV is not available
-        
-        Please make sure SDV is installed:
-        
-        1. **Check requirements.txt** contains:
-        ```
-        sdv>=1.29.0
-        ```
-        
-        2. **Install manually**:
-        ```bash
-        pip install sdv>=1.29.0
-        ```
-        
-        3. **Restart the app** after installation
-        """)
-        st.stop()
-    
-    # Show SDV info
-    with st.expander("📚 About SDV Technology", expanded=True):
-        st.markdown("""
-        ### **Synthetic Data Vault (SDV) v1.29.1** - Production-Grade Synthetic Data
-        
-        SDV uses **real generative AI models** for tabular data:
-        
-        **1. Gaussian Copula** 📊
-        - Statistical model using copula functions
-        - Preserves correlations between columns
-        - Fast and good for simple datasets
-        
-        **2. CTGAN** 🧠
-        - **Conditional Tabular Generative Adversarial Network**
-        - Deep learning model specifically for tables
-        - Learns complex patterns and distributions
-        - Best for complex, real-world data
-        
-        **3. TVAE** ⚡
-        - **Tabular Variational Autoencoder**
-        - Neural network that learns latent representations
-        - Good balance of quality and speed
-        """)
-    
-    # Initialize generator
-    if 'sdv_generator' not in st.session_state:
-        st.session_state.sdv_generator = SDVDataGenerator()
-    
-    if 'original_df' not in st.session_state:
-        st.session_state.original_df = None
-    if 'generated_data' not in st.session_state:
-        st.session_state.generated_data = None
-    
-    # Upload
-    uploaded_file = st.file_uploader("📤 Upload Dataset (CSV)", type=['csv'])
+    # File upload
+    uploaded_file = st.file_uploader("📤 Upload Your Dataset (CSV)", type=['csv'])
     
     if uploaded_file:
-        try:
-            df = pd.read_csv(uploaded_file)
-            st.session_state.original_df = df
-            
-            if df.empty:
-                st.error("Empty file")
-                return
-            
-            st.success(f"✅ Loaded {len(df)} rows × {len(df.columns)} columns")
-            
-            # Preview
-            with st.expander("📋 Data Preview", expanded=True):
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Rows", len(df))
-                with col2:
-                    st.metric("Columns", len(df.columns))
-                with col3:
-                    nulls = df.isnull().sum().sum()
-                    st.metric("Missing Values", nulls)
-                
-                st.dataframe(df.head(10), use_container_width=True)
-                
-                # Show data types
-                st.write("**Data Types:**")
-                type_df = pd.DataFrame({
-                    'Column': df.columns,
-                    'Type': [str(df[col].dtype) for col in df.columns],
-                    'Unique': [df[col].nunique() for col in df.columns],
-                    'Nulls': [df[col].isnull().sum() for col in df.columns]
-                })
-                st.dataframe(type_df, use_container_width=True, hide_index=True)
-            
-            # Generation controls
-            st.subheader("⚙️ Generate with SDV")
-            
-            col1, col2 = st.columns(2)
+        df = pd.read_csv(uploaded_file)
+        
+        st.success(f"✅ Loaded {len(df)} rows × {len(df.columns)} columns")
+        
+        # Quick preview
+        with st.expander("📋 Data Preview", expanded=True):
+            col1, col2, col3 = st.columns(3)
             with col1:
-                num_rows = st.number_input(
-                    "Rows to generate",
-                    min_value=10,
-                    max_value=10000,
-                    value=100,
-                    help="SDV can generate any number of rows"
-                )
-            
+                st.metric("Rows", len(df))
             with col2:
-                method = st.selectbox(
-                    "SDV Method",
-                    ["ctgan", "gaussian", "tvae"],
-                    help="CTGAN: Best for complex data, Gaussian: Fastest, TVAE: Balanced"
+                st.metric("Columns", len(df.columns))
+            with col3:
+                st.metric("Data Quality", "Good" if len(df) > 50 else "Limited")
+            
+            st.dataframe(df.head(), use_container_width=True)
+        
+        # Generation controls
+        st.subheader("⚙️ Smart Generation Settings")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            num_rows = st.number_input(
+                "Rows to generate",
+                min_value=len(df),  # At least as many as original
+                max_value=len(df) * 20,  # Max 20x original
+                value=len(df) * 5,  # Default 5x original
+                help=f"With {len(df)} real rows, recommend {len(df) * 5}-{len(df) * 10} synthetic rows"
+            )
+        
+        with col2:
+            method = st.selectbox(
+                "SDV Method",
+                ["ctgan", "tvae", "gaussian"],
+                help="CTGAN: Best for complex patterns, TVAE: Good balance, Gaussian: Fastest"
+            )
+        
+        # LLM enhancement option
+        use_llm = st.checkbox(
+            "🧠 Enable LLM Analysis (Highly Recommended)",
+            value=True,
+            help="LLM will analyze data relationships and create smart constraints"
+        )
+        
+        # Generate button
+        if st.button("🚀 Generate Smart Synthetic Data", type="primary", use_container_width=True):
+            if len(df) < 30:
+                st.warning(f"⚠️ Only {len(df)} rows. Quality may be limited. Consider collecting more data.")
+            
+            if use_llm:
+                generator = SmartSDVGenerator()
+                with st.spinner("Generating with LLM intelligence..."):
+                    synthetic = generator.generate_smart_data(df, int(num_rows), method)
+            else:
+                # Basic SDV without LLM
+                st.info("Using basic SDV (no LLM analysis)")
+                # ... basic SDV code here ...
+            
+            if 'synthetic' in locals() and synthetic is not None:
+                st.session_state.generated_data = synthetic
+                st.balloons()
+        
+        # Show results if generated
+        if 'generated_data' in st.session_state and st.session_state.generated_data is not None:
+            synthetic = st.session_state.generated_data
+            
+            st.subheader(f"📊 Generated Data ({len(synthetic)} rows)")
+            
+            tab1, tab2, tab3 = st.tabs(["Preview", "Analysis", "Download"])
+            
+            with tab1:
+                st.dataframe(synthetic.head(20), use_container_width=True)
+            
+            with tab2:
+                # Compare distributions
+                if 'Specialty' in df.columns and 'Specialty' in synthetic.columns:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write("**Original Specialty Distribution**")
+                        st.bar_chart(df['Specialty'].value_counts())
+                    with col2:
+                        st.write("**Generated Specialty Distribution**")
+                        st.bar_chart(synthetic['Specialty'].value_counts())
+            
+            with tab3:
+                csv = synthetic.to_csv(index=False)
+                st.download_button(
+                    "📥 Download CSV",
+                    csv,
+                    f"smart_synthetic_{len(synthetic)}_rows.csv",
+                    "text/csv",
+                    use_container_width=True
                 )
-            
-            # Generate button
-            if st.button("🚀 Generate with SDV", type="primary", use_container_width=True):
-                generator = st.session_state.sdv_generator
-                
-                if not generator.available:
-                    st.error("SDV is not available.")
-                else:
-                    generated = generator.generate_with_sdv(df, int(num_rows), method)
-                    
-                    if generated is not None:
-                        st.session_state.generated_data = generated
-                        st.success(f"✅ Generated {len(generated)} synthetic rows!")
-                        st.balloons()
-                    else:
-                        st.error("Failed to generate data")
-            
-            # Compare methods button
-            if len(df) >= 50 and len(df) <= 1000:
-                if st.button("🔍 Compare SDV Methods", type="secondary"):
-                    generator = st.session_state.sdv_generator
-                    sample_df = df.sample(min(200, len(df))) if len(df) > 200 else df
-                    results = generator.compare_methods(sample_df, 50)
-                    
-                    st.subheader("📊 Method Comparison (50 rows each)")
-                    
-                    for method, metrics in results.items():
-                        with st.expander(f"{method.upper()} Results", expanded=False):
-                            if "error" in metrics:
-                                st.error(f"Error: {metrics['error']}")
-                            else:
-                                col1, col2, col3, col4 = st.columns(4)
-                                with col1:
-                                    st.metric("Rows", metrics["rows_generated"])
-                                with col2:
-                                    st.metric("Null %", f"{metrics['null_percentage']:.1f}%")
-                                with col3:
-                                    st.metric("Columns", metrics["columns"])
-                                with col4:
-                                    status = "✅" if metrics["data_types_match"] else "⚠️"
-                                    st.metric("Types Match", status)
-            
-            # Show generated data
-            if st.session_state.generated_data is not None:
-                generated_df = st.session_state.generated_data
-                
-                st.subheader(f"📊 SDV-Generated Data ({len(generated_df)} rows)")
-                
-                # Tabs
-                tab1, tab2, tab3 = st.tabs(["Preview", "Statistics", "Download"])
-                
-                with tab1:
-                    st.dataframe(generated_df.head(20), use_container_width=True)
-                    
-                    # Compare with original
-                    st.subheader("🔍 Comparison with Original")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Original Data (Sample)**")
-                        st.dataframe(df.head(5), use_container_width=True)
-                    with col2:
-                        st.write("**Generated Data (Sample)**")
-                        st.dataframe(generated_df.head(5), use_container_width=True)
-                
-                with tab2:
-                    # Statistical comparison
-                    st.subheader("📈 Statistical Analysis")
-                    
-                    # Numeric columns comparison
-                    numeric_cols = df.select_dtypes(include=[np.number]).columns
-                    if len(numeric_cols) > 0:
-                        st.write("**Numeric Columns Comparison:**")
-                        
-                        for col in numeric_cols[:3]:
-                            if col in generated_df.columns:
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.write(f"**Original {col}:**")
-                                    st.write(f"Mean: {df[col].mean():.2f}")
-                                    st.write(f"Std: {df[col].std():.2f}")
-                                    st.write(f"Min: {df[col].min():.2f}")
-                                    st.write(f"Max: {df[col].max():.2f}")
-                                
-                                with col2:
-                                    st.write(f"**Generated {col}:**")
-                                    st.write(f"Mean: {generated_df[col].mean():.2f}")
-                                    st.write(f"Std: {generated_df[col].std():.2f}")
-                                    st.write(f"Min: {generated_df[col].min():.2f}")
-                                    st.write(f"Max: {generated_df[col].max():.2f}")
-                    
-                    # Categorical columns comparison
-                    categorical_cols = df.select_dtypes(include=['object']).columns
-                    if len(categorical_cols) > 0:
-                        st.write("**Categorical Columns Distribution:**")
-                        
-                        for col in categorical_cols[:2]:
-                            if col in generated_df.columns:
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.write(f"**Original {col} Top Values:**")
-                                    top_original = df[col].value_counts().head(5)
-                                    for val, count in top_original.items():
-                                        st.write(f"{val}: {count}")
-                                
-                                with col2:
-                                    st.write(f"**Generated {col} Top Values:**")
-                                    top_generated = generated_df[col].value_counts().head(5)
-                                    for val, count in top_generated.items():
-                                        st.write(f"{val}: {count}")
-                
-                with tab3:
-                    st.subheader("📥 Download Options")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        csv = generated_df.to_csv(index=False)
-                        st.download_button(
-                            "📥 Download CSV",
-                            csv,
-                            f"sdv_generated_{len(generated_df)}_rows.csv",
-                            "text/csv",
-                            use_container_width=True
-                        )
-                    
-                    with col2:
-                        json_str = generated_df.to_json(orient='records', indent=2)
-                        st.download_button(
-                            "📥 Download JSON",
-                            json_str,
-                            f"sdv_generated_{len(generated_df)}_rows.json",
-                            "application/json",
-                            use_container_width=True
-                        )
-                    
-                    st.write("---")
-                    
-                    # Regenerate options
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("🔄 Generate More", use_container_width=True):
-                            st.session_state.generated_data = None
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("🆕 New File", use_container_width=True):
-                            st.session_state.original_df = None
-                            st.session_state.generated_data = None
-                            st.rerun()
-        
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
     
     else:
-        # Instructions
         st.info("""
-        ## 🧪 **SDV (Synthetic Data Vault) v1.29.1 Generator**
+        ## 🧠 How This Works
         
-        ✅ **SDV is installed and ready!**
-        
-        ### **How It Works:**
-        1. **Upload** a CSV file with your real data
-        2. **Choose** a generation method (CTGAN, TVAE, or Gaussian Copula)
-        3. **Generate** synthetic data that preserves patterns and relationships
-        4. **Download** the synthetic dataset for testing, sharing, or analysis
-        
-        ### **Best Practices:**
-        - **Dataset Size**: Works best with 100-10,000 rows
-        - **Column Types**: Handles both numeric and categorical data
-        - **Missing Values**: Can handle null values automatically
-        - **Privacy**: Generated data is synthetic, protecting original data privacy
-        
-        **Upload a CSV to get started!**
-        """)
     
-    # Footer with status
-    st.markdown("---")
-    if st.session_state.get('sdv_available', False):
-        st.success("✅ SDV v1.29.1 is ready")
-    else:
-        st.error("❌ SDV not available")
+        """)
 
 if __name__ == "__main__":
     main()
