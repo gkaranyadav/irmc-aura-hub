@@ -224,7 +224,7 @@ def home_page():
         <div class="app-box">
             <div>
                 <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>DataGiene</h4>
-                <p style='color: #555; margin: 0; font-size: 0.9rem;'>Research paper analysis, summarization and Q&A.</p>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>Generate Data</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
