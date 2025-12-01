@@ -287,8 +287,8 @@ class VoiceService:
 def main():
     # page configuration for rag chat
     st.set_page_config(
-        page_title="irmc Aura",
-        page_icon="📄",
+        page_title="iRMC Aura",
+        page_icon="",
         layout="wide"
     )
     
@@ -348,8 +348,7 @@ def main():
     # add back to home button
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("📄 irmc Aura")
-        st.markdown("### chat with your documents using Aura")
+        st.title("iRMC Aura")
     with col2:
         if st.button("🏠 back to home"):
             st.switch_page("app.py")
@@ -395,7 +394,7 @@ def main():
     
     # main chat interface
     if not st.session_state.pdf_processed:
-        st.info("👆 please upload a pdf document to get started")
+        st.info("please upload a pdf document to get started")
         return
     
     # display chat messages with both questions and answers
