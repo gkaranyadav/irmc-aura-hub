@@ -165,6 +165,9 @@ class IntelligentDataGenerator:
             
             column_details.append(detail)
         
+        # Escape curly braces in the prompt template
+        example_format = "AP{num:03d}".replace("{", "{{").replace("}", "}}")
+        
         prompt = f"""
         DEEP DATASET ANALYSIS REQUEST
         
@@ -243,7 +246,7 @@ class IntelligentDataGenerator:
                 "column_name_1": {{
                     "column_type": "sequential_id",
                     "patterns_detected": ["AP### format", "sequential numbers"],
-                    "generation_rules": ["Continue from AP025", "AP{num:03d} format"],
+                    "generation_rules": ["Continue from AP025", "{example_format} format"],
                     "value_pool_suggestions": []
                 }},
                 "column_name_2": {{
@@ -462,18 +465,23 @@ class IntelligentDataGenerator:
         for name_col in name_cols:
             for gender_col in gender_cols:
                 if name_col != gender_col:
-                    # Check if there's a pattern
-                    for idx, row in df.iterrows():
-                        if pd.notna(row[name_col]) and pd.notna(row[gender_col]):
-                            name = str(row[name_col])
-                            gender = str(row[gender_col])
-                            # Could add pattern detection here
-                            break
+                    relationships.append(f"If {name_col} contains 'Singh' or 'Kumar' then {gender_col} = 'M'")
+                    relationships.append(f"If {name_col} contains 'Devi' or 'Kumari' then {gender_col} = 'F'")
         
         # Look for date sequence relationships
         date_cols = [col for col in df.columns if 'date' in col.lower()]
         if len(date_cols) >= 2:
             relationships.append(f"{date_cols[0]} should be before or equal to {date_cols[1]} for logical consistency")
+        
+        # Look for amount-category relationships
+        amount_cols = [col for col in df.columns if any(x in col.lower() for x in ['amount', 'fee', 'price', 'cost'])]
+        category_cols = [col for col in df.columns if any(x in col.lower() for x in ['category', 'type', 'department', 'product'])]
+        
+        for amount_col in amount_cols:
+            for category_col in category_cols:
+                if amount_col != category_col:
+                    relationships.append(f"If {category_col} contains 'Premium' then {amount_col} should be higher")
+                    relationships.append(f"If {category_col} contains 'Basic' then {amount_col} should be lower")
         
         return relationships
     
