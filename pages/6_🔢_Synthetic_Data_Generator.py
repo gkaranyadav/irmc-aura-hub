@@ -781,11 +781,11 @@ class TemplateGenerator:
 
 
 # =============================================================================
-# MAIN GENERATOR CLASS
+# MAIN GENERATOR CLASS - FIXED NAME
 # =============================================================================
 import math
 
-class UniversalTemplateGenerator:
+class IndustryDataGenerator:  # Keep this name to match error
     """Main generator using templates"""
     
     def __init__(self):
@@ -793,7 +793,7 @@ class UniversalTemplateGenerator:
         self.generator = TemplateGenerator()
         self.templates = None
     
-    def generate_data(self, original_df, num_rows):
+    def generate_data(self, original_df, num_rows):  # FIXED: This method exists
         """Generate data using template approach"""
         if original_df.empty:
             return pd.DataFrame()
@@ -835,9 +835,9 @@ def main():
     
     st.markdown("---")
     
-    # Initialize
+    # Initialize - USING CORRECT CLASS NAME
     if 'generator' not in st.session_state:
-        st.session_state.generator = UniversalTemplateGenerator()
+        st.session_state.generator = IndustryDataGenerator()  # This matches the class name
     if 'generated_data' not in st.session_state:
         st.session_state.generated_data = None
     
@@ -870,6 +870,7 @@ def main():
                 with col2:
                     if st.button("🚀 Generate with Dynamic Templates", type="primary"):
                         with st.spinner("Creating templates and generating data..."):
+                            # FIXED: Now calling generate_data() method which exists
                             generated = st.session_state.generator.generate_data(df, int(num_rows))
                             st.session_state.generated_data = generated
                             st.success(f"✅ Generated {len(generated)} diverse rows!")
