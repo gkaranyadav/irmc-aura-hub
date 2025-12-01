@@ -6,6 +6,7 @@ import re
 import json
 import random
 from datetime import datetime
+from typing import Dict, Optional, Any  # ADDED IMPORT
 import subprocess
 import sys
 from auth import check_session
@@ -24,14 +25,14 @@ def install_sdv():
         st.warning("Installing SDV (Synthetic Data Vault)... This may take a minute.")
         try:
             # Install SDV
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "sdv", "rdt"])
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "sdv==1.10.0", "rdt==1.9.0"])
             from sdv.tabular import GaussianCopula, CTGAN, TVAE
             from sdv.evaluation import evaluate
             from sdv.metadata import SingleTableMetadata
             st.success("✅ SDV installed successfully!")
             return True
-        except:
-            st.error("Failed to install SDV")
+        except Exception as e:
+            st.error(f"Failed to install SDV: {str(e)}")
             return False
 
 # Install SDV
@@ -41,7 +42,6 @@ if SDV_AVAILABLE:
     from sdv.tabular import GaussianCopula, CTGAN, TVAE
     from sdv.evaluation import evaluate
     from sdv.metadata import SingleTableMetadata
-    from sdv.constraints import Unique, GreaterThan, FixedIncrements
 
 # =============================================================================
 # REAL SDV-BASED GENERATOR
@@ -53,7 +53,7 @@ class SDVDataGenerator:
     def __init__(self):
         self.available = SDV_AVAILABLE
         
-    def generate_with_sdv(self, df: pd.DataFrame, num_rows: int, method: str = "ctgan") -> pd.DataFrame:
+    def generate_with_sdv(self, df: pd.DataFrame, num_rows: int, method: str = "ctgan") -> Optional[pd.DataFrame]:  # UPDATED RETURN TYPE
         """
         Generate synthetic data using SDV methods
         """
@@ -102,8 +102,8 @@ class SDVDataGenerator:
                         metadata=metadata
                     )
                     st.success(f"✅ Data Quality Score: {quality_score:.3f}/1.0")
-                except:
-                    st.info("⚠️ Could not compute quality score (sample too small)")
+                except Exception as e:
+                    st.info(f"⚠️ Could not compute quality score: {str(e)[:100]}")
                 
                 return synthetic_data
                 
@@ -111,13 +111,13 @@ class SDVDataGenerator:
             st.error(f"SDV generation failed: {str(e)}")
             return None
     
-    def generate_with_llm_enhanced_sdv(self, df: pd.DataFrame, num_rows: int) -> pd.DataFrame:
+    def generate_with_llm_enhanced_sdv(self, df: pd.DataFrame, num_rows: int) -> Optional[pd.DataFrame]:  # UPDATED RETURN TYPE
         """
         Enhanced generation: Use LLM to understand data first, then SDV
         """
         try:
             from groq import Groq
-            client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+            client = Groq(api_key=st.secrets.get("GROQ_API_KEY", ""))
             
             # First, let LLM analyze the data
             with st.spinner("🧠 LLM analyzing data patterns..."):
@@ -184,7 +184,7 @@ class SDVDataGenerator:
         }}
         """
     
-    def compare_methods(self, df: pd.DataFrame, num_rows: int = 50) -> Dict:
+    def compare_methods(self, df: pd.DataFrame, num_rows: int = 50) -> Dict[str, Any]:  # FIXED TYPE HINT
         """
         Compare different SDV methods
         """
@@ -495,7 +495,6 @@ def main():
         
         except Exception as e:
             st.error(f"Error: {str(e)}")
-            st.exception(e)
     
     else:
         # Instructions
