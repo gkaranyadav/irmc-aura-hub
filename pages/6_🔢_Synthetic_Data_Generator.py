@@ -6,814 +6,674 @@ from datetime import datetime, timedelta
 import re
 import json
 import io
-import time
-import hashlib
 import random
+import hashlib
 from groq import Groq
 from auth import check_session
 
 # =============================================================================
-# IMPORT FREE LIBRARIES
+# SMART PATTERN DETECTOR (Understands just enough)
 # =============================================================================
-try:
-    # SDV for statistical pattern learning (FREE)
-    from sdv.tabular import GaussianCopula
-    from sdv.constraints import Unique, Positive, FixedIncrements, Between
-    from sdv.metadata import SingleTableMetadata
-    
-    # Mimesis for realistic data (FREE)
-    from mimesis import Person, Address, Finance, Business, Datetime, Text, Generic
-    from mimesis.locales import Locale
-    from mimesis import Internet, Science, Development, Food, Hardware
-    
-    SDV_AVAILABLE = True
-    MIMESIS_AVAILABLE = True
-except ImportError as e:
-    SDV_AVAILABLE = False
-    MIMESIS_AVAILABLE = False
-    st.warning(f"⚠️ For better results, install: `pip install sdv mimesis`")
-
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-class Config:
-    GROQ_MODEL = "llama-3.3-70b-versatile"  # Use best model for analysis
-    LLM_SAMPLE_SIZE = 10  # Analyze only 10 rows with LLM (one-time)
-    SDV_SAMPLE_SIZE = 100  # Use 100 rows for SDV training
-    MAX_GENERATE_ROWS = 10000
-
-# =============================================================================
-# SMART LLM RULE EXTRACTOR (ONE-TIME ANALYSIS)
-# =============================================================================
-class SmartRuleExtractor:
+class SmartPatternDetector:
     def __init__(self):
         try:
             self.client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-            self.client_available = True
+            self.llm_available = True
         except:
-            self.client_available = False
-            st.warning("⚠️ Groq API key not found. Using basic generation.")
-        
-        # Cache for rules (avoid duplicate LLM calls)
-        self.rule_cache = {}
+            self.llm_available = False
     
-    def extract_smart_rules(self, df_sample):
+    def detect_semantic_types(self, df_sample):
         """
-        ONE-TIME LLM ANALYSIS: Analyze 10 rows, extract rules for ALL future generation
-        This is the ONLY LLM call we make!
+        SMART ANALYSIS: Understands WHAT data represents
+        but only at HIGH LEVEL (cheap on tokens)
         """
-        # Create hash of dataset for caching
-        dataset_hash = self._create_dataset_hash(df_sample)
+        if not self.llm_available or df_sample.empty:
+            return self._fallback_detection(df_sample)
         
-        # Check cache first (avoid duplicate LLM calls)
-        if dataset_hash in self.rule_cache:
-            return self.rule_cache[dataset_hash]
+        # OPTIMIZATION: Use only essential info
+        column_info = []
+        for col in df_sample.columns[:15]:  # Limit columns
+            # Get 2 sample values (enough to understand)
+            samples = []
+            for i in range(min(2, len(df_sample))):
+                val = str(df_sample[col].iloc[i])[:30]  # Trim to save tokens
+                samples.append(val)
+            
+            column_info.append({
+                'column': col,
+                'samples': samples
+            })
         
-        if not self.client_available or df_sample.empty:
-            return self._get_basic_rules(df_sample)
+        # SMALL PROMPT for semantic understanding
+        prompt = f"""
+        Look at these data samples and tell me what KIND of data each column contains.
+        Be SPECIFIC but BRIEF.
+        
+        COLUMNS:
+        {json.dumps(column_info, indent=2)}
+        
+        For EACH column, identify the SEMANTIC TYPE from these options:
+        
+        1. PERSON_DATA: "customer_name", "employee_name", "first_name", "last_name", "full_name"
+        2. CONTACT_INFO: "email_address", "phone_number", "mobile_number", "contact_email"
+        3. IDENTIFIERS: "order_id", "customer_id", "product_id", "transaction_id", "invoice_number"
+        4. NUMERIC_VALUES: "age", "price", "amount", "quantity", "weight", "height", "score"
+        5. DATES_TIMES: "order_date", "birth_date", "timestamp", "created_at", "updated_at"
+        6. CATEGORIES: "product_category", "status", "type", "gender", "country", "city"
+        7. DESCRIPTIONS: "product_description", "notes", "comments", "address", "title"
+        8. BOOLEAN: "is_active", "has_account", "verified", "completed"
+        9. OTHER: "unknown_data", "codes", "references", "links"
+        
+        Return ONLY JSON:
+        {{
+            "columns": {{
+                "column_name": "semantic_type",
+                "specific_example": "customer_name" (more specific)
+            }},
+            "dataset_context": "ecommerce|customer|inventory|financial|other",
+            "generation_advice": "specific advice for realistic generation"
+        }}
+        
+        Example:
+        {{
+            "columns": {{
+                "OrderID": "IDENTIFIERS",
+                "specific_example": "order_id"
+            }},
+            "dataset_context": "ecommerce",
+            "generation_advice": "Order IDs should be sequential integers starting from 1000"
+        }}
+        """
         
         try:
-            # COST OPTIMIZATION: Use only 10 rows for LLM analysis
-            sample_size = min(Config.LLM_SAMPLE_SIZE, len(df_sample))
-            llm_sample = df_sample.head(sample_size)
-            
-            # Prepare data for LLM (minimal info)
-            columns_info = []
-            for col in llm_sample.columns:
-                unique_vals = llm_sample[col].dropna().unique()[:3].tolist()
-                col_type = str(llm_sample[col].dtype)
-                columns_info.append({
-                    'column': col,
-                    'type': col_type,
-                    'sample_values': unique_vals
-                })
-            
-            # Sample data for LLM
-            sample_data = llm_sample.head(5).to_dict(orient='records')
-            
-            prompt = f"""
-            Analyze this dataset and extract SMART GENERATION RULES for synthetic data.
-            
-            COLUMNS TO ANALYZE:
-            {json.dumps(columns_info, indent=2)}
-            
-            SAMPLE DATA (5 rows):
-            {json.dumps(sample_data, indent=2)}
-            
-            DATASET INFO: {len(llm_sample)} rows, {len(llm_sample.columns)} columns
-            
-            YOUR TASK:
-            1. Identify the DATASET TYPE (ecommerce, customer_data, inventory, financial, healthcare, etc.)
-            2. For EACH COLUMN, determine:
-               - Semantic meaning (what does this column represent?)
-               - Data constraints (min/max, unique, sequential, etc.)
-               - Realistic generation rules
-            3. Identify relationships between columns
-            
-            Return ONLY JSON with this structure:
-            {{
-                "dataset_type": "detected_type",
-                "columns": {{
-                    "column_name": {{
-                        "semantic_type": "order_id|customer_name|age|email|price|quantity|date|status|etc",
-                        "generation_method": "sequential_int|real_name|int_range|email_pattern|float_price|small_int|date_range|categorical",
-                        "constraints": {{"min": X, "max": Y, "unique": true/false, "sequential": true/false}},
-                        "realistic_values": ["value1", "value2"] if categorical
-                    }}
-                }},
-                "relationships": ["column_A depends on column_B"],
-                "generation_advice": "Use SDV for correlations, Mimesis for text data"
-            }}
-            """
-            
-            # ONE LLM CALL ONLY!
             messages = [
-                {"role": "system", "content": "You are a data generation expert. Extract smart rules for synthetic data."},
+                {"role": "system", "content": "You are a data semantics expert. Identify what data represents."},
                 {"role": "user", "content": prompt}
             ]
             
             response = self.client.chat.completions.create(
-                model=Config.GROQ_MODEL,
+                model="llama-3.1-8b",  # Smaller model for cost
                 messages=messages,
                 temperature=0.1,
-                max_tokens=2000  # Limit output tokens
+                max_tokens=1000
             )
             
-            response_text = response.choices[0].message.content
+            result = json.loads(response.choices[0].message.content)
             
-            # Extract JSON from response
-            try:
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-                if json_match:
-                    rules = json.loads(json_match.group())
-                    
-                    # Enhance rules with basic stats
-                    rules = self._enhance_rules_with_stats(rules, df_sample)
-                    
-                    # Cache the rules (avoid future LLM calls for same dataset)
-                    self.rule_cache[dataset_hash] = rules
-                    return rules
-            except json.JSONDecodeError:
-                st.warning("⚠️ Could not parse LLM response. Using basic rules.")
+            # Enhance with statistical analysis
+            result = self._add_statistical_insights(result, df_sample)
             
-            return self._get_basic_rules(df_sample)
+            return result
             
         except Exception as e:
-            st.warning(f"⚠️ LLM analysis failed: {str(e)}")
-            return self._get_basic_rules(df_sample)
+            st.warning(f"LLM analysis failed: {e}")
+            return self._fallback_detection(df_sample)
     
-    def _enhance_rules_with_stats(self, rules, df):
-        """Add statistical info to LLM rules"""
-        if 'columns' not in rules:
-            return rules
+    def _add_statistical_insights(self, analysis, df):
+        """Add concrete numbers to LLM analysis"""
+        if 'columns' not in analysis:
+            return analysis
         
-        for col_name, col_info in rules['columns'].items():
-            if col_name in df.columns:
-                col_data = df[col_name].dropna()
+        for col, col_type in analysis['columns'].items():
+            if col in df.columns:
+                col_data = df[col].dropna()
                 if not col_data.empty:
-                    # Add statistical info
-                    if col_info.get('generation_method') == 'int_range':
+                    # Add concrete stats based on type
+                    if 'IDENTIFIERS' in col_type:
+                        # Check if sequential
+                        if pd.api.types.is_numeric_dtype(col_data):
+                            analysis[col] = analysis.get(col, {})
+                            analysis[col]['is_sequential'] = self._check_sequential(col_data)
+                            analysis[col]['start_value'] = int(col_data.min())
+                    
+                    elif 'NUMERIC_VALUES' in col_type:
+                        if pd.api.types.is_numeric_dtype(col_data):
+                            analysis[col] = analysis.get(col, {})
+                            analysis[col]['min'] = float(col_data.min())
+                            analysis[col]['max'] = float(col_data.max())
+                            analysis[col]['mean'] = float(col_data.mean())
+                            
+                            # Detect if integer
+                            if col_data.apply(lambda x: float(x).is_integer()).all():
+                                analysis[col]['is_integer'] = True
+                    
+                    elif 'DATES_TIMES' in col_type:
+                        # Try to parse as date
                         try:
-                            numeric_vals = pd.to_numeric(col_data, errors='coerce').dropna()
-                            if len(numeric_vals) > 0:
-                                if 'constraints' not in col_info:
-                                    col_info['constraints'] = {}
-                                col_info['constraints']['min'] = float(numeric_vals.min())
-                                col_info['constraints']['max'] = float(numeric_vals.max())
+                            dates = pd.to_datetime(col_data, errors='coerce')
+                            if dates.notna().any():
+                                analysis[col] = analysis.get(col, {})
+                                analysis[col]['min_date'] = str(dates.min())
+                                analysis[col]['max_date'] = str(dates.max())
                         except:
                             pass
         
-        return rules
+        return analysis
     
-    def _get_basic_rules(self, df):
-        """Fallback rules when LLM is not available"""
-        basic_rules = {
-            'dataset_type': 'generic',
+    def _check_sequential(self, series):
+        """Check if values are sequential"""
+        if len(series) < 2:
+            return False
+        
+        sorted_vals = sorted(series.dropna().unique())
+        diffs = np.diff(sorted_vals[:10])  # Check first 10
+        
+        # If all diffs are 1 (or consistent), it's sequential
+        if len(diffs) > 0 and np.allclose(diffs, diffs[0], rtol=0.1):
+            return True
+        return False
+    
+    def _fallback_detection(self, df):
+        """Rule-based fallback"""
+        analysis = {
             'columns': {},
-            'relationships': [],
-            'generation_advice': 'Use statistical generation'
+            'dataset_context': 'unknown',
+            'generation_advice': 'Use statistical patterns'
         }
         
         for col in df.columns:
+            col_lower = col.lower()
             col_data = df[col].dropna()
-            if not col_data.empty:
-                # Simple type detection
-                col_str = str(col).lower()
-                
-                if any(keyword in col_str for keyword in ['id', 'num', 'no', 'code']):
-                    semantic_type = 'id'
-                    generation_method = 'sequential_int'
-                    constraints = {'unique': True, 'sequential': True}
-                elif any(keyword in col_str for keyword in ['name', 'first', 'last', 'full']):
-                    semantic_type = 'name'
-                    generation_method = 'real_name'
-                elif 'age' in col_str:
-                    semantic_type = 'age'
-                    generation_method = 'int_range'
-                    constraints = {'min': 18, 'max': 80}
-                elif 'email' in col_str:
-                    semantic_type = 'email'
-                    generation_method = 'email_pattern'
-                elif 'price' in col_str or 'amount' in col_str or 'cost' in col_str:
-                    semantic_type = 'price'
-                    generation_method = 'float_price'
-                elif 'date' in col_str or 'time' in col_str:
-                    semantic_type = 'date'
-                    generation_method = 'date_range'
-                elif 'status' in col_str or 'type' in col_str or 'category' in col_str:
-                    semantic_type = 'category'
-                    generation_method = 'categorical'
-                    # Get unique values
-                    unique_vals = col_data.unique()[:10].tolist()
-                    constraints = {'values': unique_vals}
-                else:
-                    semantic_type = 'text'
-                    generation_method = 'text'
-                
-                basic_rules['columns'][col] = {
-                    'semantic_type': semantic_type,
-                    'generation_method': generation_method
-                }
-                if 'constraints' in locals():
-                    basic_rules['columns'][col]['constraints'] = constraints
+            
+            # Heuristic detection
+            if any(x in col_lower for x in ['id', 'no', 'num', 'code']):
+                analysis['columns'][col] = 'IDENTIFIERS'
+            elif any(x in col_lower for x in ['name', 'first', 'last', 'full']):
+                analysis['columns'][col] = 'PERSON_DATA'
+            elif 'email' in col_lower:
+                analysis['columns'][col] = 'CONTACT_INFO'
+            elif 'phone' in col_lower:
+                analysis['columns'][col] = 'CONTACT_INFO'
+            elif 'age' in col_lower:
+                analysis['columns'][col] = 'NUMERIC_VALUES'
+            elif any(x in col_lower for x in ['price', 'amount', 'cost', 'total']):
+                analysis['columns'][col] = 'NUMERIC_VALUES'
+            elif any(x in col_lower for x in ['date', 'time', 'created', 'updated']):
+                analysis['columns'][col] = 'DATES_TIMES'
+            elif any(x in col_lower for x in ['category', 'type', 'status', 'gender']):
+                analysis['columns'][col] = 'CATEGORIES'
+            else:
+                analysis['columns'][col] = 'OTHER'
         
-        return basic_rules
-    
-    def _create_dataset_hash(self, df):
-        """Create hash of dataset for caching"""
-        # Use column names and first few rows for hash
-        hash_data = str(df.columns.tolist()) + str(df.head(3).values.tolist())
-        return hashlib.md5(hash_data.encode()).hexdigest()
+        return analysis
 
 # =============================================================================
-# HYBRID DATA GENERATOR (FREE LIBRARIES + SMART RULES)
+# REALISTIC DATA GENERATORS (Domain-specific)
 # =============================================================================
-class HybridDataGenerator:
+class RealisticGenerator:
     def __init__(self):
-        self.rule_extractor = SmartRuleExtractor()
+        # Realistic data pools
+        self.first_names = ['James', 'Mary', 'John', 'Patricia', 'Robert', 'Jennifer', 
+                          'Michael', 'Linda', 'William', 'Elizabeth', 'David', 'Susan']
+        self.last_names = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia',
+                          'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez']
         
-        # Initialize Mimesis generators (FREE)
-        if MIMESIS_AVAILABLE:
-            self.person = Person(Locale.EN)
-            self.address = Address(Locale.EN)
-            self.finance = Finance(Locale.EN)
-            self.business = Business(Locale.EN)
-            self.datetime_gen = Datetime(Locale.EN)
-            self.text_gen = Text(Locale.EN)
-            self.internet = Internet()
-            self.generic = Generic(Locale.EN)
-        
-        # Realistic data templates
         self.product_categories = {
-            'electronics': ['iPhone', 'Laptop', 'Tablet', 'Smartwatch', 'Headphones', 'Camera'],
-            'clothing': ['T-Shirt', 'Jeans', 'Jacket', 'Dress', 'Shoes', 'Hat'],
-            'home': ['Chair', 'Table', 'Lamp', 'Bed', 'Sofa', 'Desk'],
-            'books': ['Novel', 'Textbook', 'Cookbook', 'Biography', 'Self-Help'],
-            'food': ['Coffee', 'Tea', 'Snacks', 'Chocolate', 'Chips']
+            'Electronics': ['Smartphone', 'Laptop', 'Tablet', 'Headphones', 'Smartwatch'],
+            'Clothing': ['T-Shirt', 'Jeans', 'Jacket', 'Dress', 'Shoes'],
+            'Home': ['Chair', 'Table', 'Lamp', 'Bed', 'Sofa'],
+            'Books': ['Novel', 'Textbook', 'Cookbook', 'Biography', 'Self-Help'],
+            'Food': ['Coffee', 'Tea', 'Snacks', 'Chocolate', 'Chips']
         }
         
-        self.order_statuses = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Returned']
-        self.countries = ['USA', 'India', 'UK', 'Canada', 'Australia', 'Germany', 'France', 'Japan']
+        self.countries = ['USA', 'India', 'UK', 'Canada', 'Australia', 'Germany', 
+                         'France', 'Japan', 'China', 'Brazil', 'Mexico', 'Spain']
+        
+        self.cities_by_country = {
+            'USA': ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix'],
+            'India': ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai'],
+            'UK': ['London', 'Manchester', 'Birmingham', 'Liverpool', 'Glasgow']
+        }
     
-    def generate_smart_data(self, original_df, num_rows, noise_level=0.1):
+    def generate_column(self, col_name, semantic_type, analysis, num_rows, original_data=None):
+        """Generate realistic data based on semantic understanding"""
+        
+        if semantic_type == 'PERSON_DATA':
+            if 'first' in col_name.lower():
+                return [random.choice(self.first_names) for _ in range(num_rows)]
+            elif 'last' in col_name.lower():
+                return [random.choice(self.last_names) for _ in range(num_rows)]
+            else:
+                return [f"{random.choice(self.first_names)} {random.choice(self.last_names)}" 
+                       for _ in range(num_rows)]
+        
+        elif semantic_type == 'CONTACT_INFO':
+            if 'email' in col_name.lower():
+                # Generate realistic emails
+                domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'company.com', 'business.com']
+                emails = []
+                for i in range(num_rows):
+                    first = random.choice(self.first_names).lower()
+                    last = random.choice(self.last_names).lower()
+                    domain = random.choice(domains)
+                    # Multiple email patterns
+                    pattern = random.choice([1, 2, 3])
+                    if pattern == 1:
+                        email = f"{first}.{last}@{domain}"
+                    elif pattern == 2:
+                        email = f"{first[0]}{last}@{domain}"
+                    else:
+                        email = f"{first}{last}{random.randint(1, 99)}@{domain}"
+                    emails.append(email)
+                return emails
+            
+            elif 'phone' in col_name.lower():
+                # Realistic phone numbers
+                formats = ['(###) ###-####', '###-###-####', '+1 ### ### ####']
+                phones = []
+                for _ in range(num_rows):
+                    fmt = random.choice(formats)
+                    phone = ''
+                    for char in fmt:
+                        if char == '#':
+                            phone += str(random.randint(0, 9))
+                        else:
+                            phone += char
+                    phones.append(phone)
+                return phones
+        
+        elif semantic_type == 'IDENTIFIERS':
+            # Check if sequential
+            if original_data is not None and analysis.get(col_name, {}).get('is_sequential'):
+                start = analysis[col_name].get('start_value', 1000)
+                return list(range(start, start + num_rows))
+            else:
+                # Generate realistic IDs
+                patterns = ['ID-#####', 'REF-####', 'ORD-###', 'CUST-#####']
+                ids = []
+                for i in range(num_rows):
+                    pattern = random.choice(patterns)
+                    id_str = ''
+                    for char in pattern:
+                        if char == '#':
+                            id_str += str(random.randint(0, 9))
+                        else:
+                            id_str += char
+                    ids.append(id_str)
+                return ids
+        
+        elif semantic_type == 'NUMERIC_VALUES':
+            # Get realistic ranges from analysis
+            min_val = analysis.get(col_name, {}).get('min', 0)
+            max_val = analysis.get(col_name, {}).get('max', 100)
+            mean_val = analysis.get(col_name, {}).get('mean', (min_val + max_val) / 2)
+            
+            if analysis.get(col_name, {}).get('is_integer', False):
+                # Generate integers
+                if 'age' in col_name.lower():
+                    # Age-specific: mostly 18-65, some older
+                    ages = []
+                    for _ in range(num_rows):
+                        if random.random() < 0.8:
+                            ages.append(random.randint(18, 65))
+                        else:
+                            ages.append(random.randint(66, 90))
+                    return ages
+                elif 'quantity' in col_name.lower():
+                    # Quantity: mostly small numbers
+                    return np.random.poisson(lam=3, size=num_rows).clip(1, 20)
+                else:
+                    # General integers
+                    return np.random.randint(min_val, max_val + 1, num_rows)
+            else:
+                # Generate floats (prices, amounts)
+                if any(x in col_name.lower() for x in ['price', 'amount', 'cost', 'total']):
+                    # Prices: realistic with .99/.50 endings
+                    prices = np.random.uniform(min_val, max_val, num_rows)
+                    # Apply realistic price patterns
+                    realistic_prices = []
+                    for price in prices:
+                        if random.random() < 0.3:
+                            # End with .99
+                            realistic_prices.append(int(price) + 0.99)
+                        elif random.random() < 0.2:
+                            # End with .50
+                            realistic_prices.append(int(price) + 0.50)
+                        elif random.random() < 0.2:
+                            # Round number
+                            realistic_prices.append(round(price))
+                        else:
+                            # Keep as is, round to 2 decimals
+                            realistic_prices.append(round(price, 2))
+                    return realistic_prices
+                else:
+                    # General floats
+                    return np.random.uniform(min_val, max_val, num_rows).round(2)
+        
+        elif semantic_type == 'DATES_TIMES':
+            # Generate realistic dates
+            start_date = datetime.now() - timedelta(days=365)
+            end_date = datetime.now() + timedelta(days=30)
+            
+            if 'birth' in col_name.lower():
+                # Birth dates: mostly 1950-2005
+                start_date = datetime(1950, 1, 1)
+                end_date = datetime(2005, 12, 31)
+            
+            date_range = (end_date - start_date).days
+            dates = []
+            for _ in range(num_rows):
+                random_days = random.randint(0, date_range)
+                date = start_date + timedelta(days=random_days)
+                
+                # Format based on original
+                if original_data is not None and len(original_data) > 0:
+                    sample = str(original_data.iloc[0])
+                    if re.match(r'\d{4}-\d{2}-\d{2}', sample):
+                        dates.append(date.strftime('%Y-%m-%d'))
+                    elif re.match(r'\d{2}/\d{2}/\d{4}', sample):
+                        dates.append(date.strftime('%m/%d/%Y'))
+                    else:
+                        dates.append(date.strftime('%Y-%m-%d %H:%M:%S'))
+                else:
+                    dates.append(date.strftime('%Y-%m-%d'))
+            
+            return dates
+        
+        elif semantic_type == 'CATEGORIES':
+            # Generate realistic categories
+            if 'country' in col_name.lower():
+                return [random.choice(self.countries) for _ in range(num_rows)]
+            elif 'city' in col_name.lower():
+                cities = []
+                for _ in range(num_rows):
+                    country = random.choice(self.countries)
+                    if country in self.cities_by_country:
+                        cities.append(random.choice(self.cities_by_country[country]))
+                    else:
+                        cities.append(f"City_{random.randint(1, 100)}")
+                return cities
+            elif 'gender' in col_name.lower():
+                return random.choices(['Male', 'Female', 'Other'], 
+                                    weights=[48, 48, 4], k=num_rows)
+            elif any(x in col_name.lower() for x in ['status', 'state']):
+                return random.choices(['Active', 'Inactive', 'Pending', 'Completed'], 
+                                    k=num_rows)
+            else:
+                # Generic categories
+                if original_data is not None and len(original_data) > 0:
+                    # Use original categories
+                    unique_vals = original_data.dropna().unique()
+                    if len(unique_vals) <= 20:
+                        return random.choices(list(unique_vals), k=num_rows)
+                
+                # Fallback
+                letters = ['A', 'B', 'C', 'D', 'E', 'F']
+                return [f"Category_{random.choice(letters)}" for _ in range(num_rows)]
+        
+        elif semantic_type == 'DESCRIPTIONS':
+            # Generate realistic descriptions
+            templates = [
+                "High quality {product} with excellent features",
+                "Premium {product} for professional use",
+                "Standard {product} suitable for everyday use",
+                "Economy {product} with basic functionality"
+            ]
+            
+            products = ['product', 'item', 'device', 'tool', 'equipment']
+            descriptions = []
+            for _ in range(num_rows):
+                template = random.choice(templates)
+                product = random.choice(products)
+                description = template.replace('{product}', product)
+                
+                # Add some variation
+                if random.random() < 0.3:
+                    description += ". Includes warranty."
+                elif random.random() < 0.3:
+                    description += ". Energy efficient."
+                
+                descriptions.append(description)
+            
+            return descriptions
+        
+        else:
+            # Unknown type - try to mimic original pattern
+            if original_data is not None and len(original_data) > 0:
+                return self._mimic_pattern(original_data, num_rows)
+            else:
+                # Generate placeholder
+                return [f"Data_{i}" for i in range(num_rows)]
+    
+    def _mimic_pattern(self, original_series, num_rows):
+        """Generate data that looks like original"""
+        samples = original_series.dropna().head(20).astype(str).tolist()
+        
+        if not samples:
+            return [f"Value_{i}" for i in range(num_rows)]
+        
+        # Check pattern
+        first_sample = samples[0]
+        
+        # Pattern 1: Alphanumeric codes
+        if re.match(r'^[A-Z]+-\d+$', first_sample):
+            # Format like "ABC-123"
+            prefix = re.match(r'^[A-Z]+-', first_sample).group()
+            return [f"{prefix}{random.randint(100, 999)}" for _ in range(num_rows)]
+        
+        # Pattern 2: Numbers only
+        elif re.match(r'^\d+$', first_sample):
+            length = len(first_sample)
+            return [str(random.randint(10**(length-1), 10**length - 1)) 
+                   for _ in range(num_rows)]
+        
+        # Pattern 3: Mixed with separators
+        elif any(sep in first_sample for sep in ['_', '-', '.']):
+            parts = re.split(r'[_\-.]+', first_sample)
+            generated = []
+            for _ in range(num_rows):
+                part_list = []
+                for part in parts:
+                    if part.isdigit():
+                        part_list.append(str(random.randint(0, 999)))
+                    elif part.isalpha():
+                        part_list.append(''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ', k=len(part))))
+                    else:
+                        part_list.append(part)
+                separator = first_sample[re.search(r'[_\-.]+', first_sample).start()]
+                generated.append(separator.join(part_list))
+            return generated
+        
+        # Default: Reuse samples
+        else:
+            return random.choices(samples, k=num_rows)
+
+# =============================================================================
+# MAIN GENERATOR (Orchestrates everything)
+# =============================================================================
+class SmartDataGenerator:
+    def __init__(self):
+        self.detector = SmartPatternDetector()
+        self.generator = RealisticGenerator()
+    
+    def generate_realistic_data(self, original_df, num_rows, noise_level=0.1):
         """
-        Generate realistic synthetic data using:
-        1. ONE-TIME LLM rule extraction
-        2. SDV for statistical patterns (FREE)
-        3. Mimesis for realistic text (FREE)
-        4. Business logic for domain rules
+        Main function: Generate realistic synthetic data
         """
         if original_df.empty:
             return pd.DataFrame()
         
-        # STEP 1: ONE-TIME LLM RULE EXTRACTION
-        with st.spinner("🤔 Analyzing data patterns (one-time LLM analysis)..."):
-            rules = self.rule_extractor.extract_smart_rules(original_df)
+        # Step 1: Understand data semantics (ONE LLM CALL)
+        with st.spinner("🤔 Understanding your data (one-time analysis)..."):
+            analysis = self.detector.detect_semantic_types(original_df.head(20))
         
-        # STEP 2: USE SDV FOR STATISTICAL GENERATION (FREE)
-        sdv_data = None
-        if SDV_AVAILABLE and len(original_df) >= 5:
-            try:
-                # Train SDV on larger sample (100 rows max)
-                train_size = min(Config.SDV_SAMPLE_SIZE, len(original_df))
-                train_data = original_df.head(train_size)
-                
-                # Create metadata for better generation
-                metadata = SingleTableMetadata()
-                metadata.detect_from_dataframe(train_data)
-                
-                # Add constraints based on LLM rules
-                constraints = self._create_sdv_constraints(rules, train_data)
-                
-                # Train GaussianCopula model
-                model = GaussianCopula(
-                    constraints=constraints if constraints else None,
-                    default_distribution='gaussian_kde'
-                )
-                
-                model.fit(train_data)
-                
-                # Generate synthetic data with SDV
-                sdv_data = model.sample(num_rows=num_rows)
-                
-                # Apply post-processing for realism
-                sdv_data = self._apply_business_rules(sdv_data, rules)
-                
-            except Exception as e:
-                st.warning(f"⚠️ SDV generation failed: {str(e)}")
-                sdv_data = None
+        # Step 2: Generate each column realistically
+        generated_data = {}
         
-        # STEP 3: IF SDV FAILS, USE RULE-BASED GENERATION
-        if sdv_data is None or sdv_data.empty:
-            with st.spinner("🔄 Using rule-based generation..."):
-                sdv_data = self._generate_with_rules(rules, original_df, num_rows)
+        for col in original_df.columns:
+            semantic_type = analysis.get('columns', {}).get(col, 'OTHER')
+            
+            # Generate this column
+            generated_data[col] = self.generator.generate_column(
+                col_name=col,
+                semantic_type=semantic_type,
+                analysis=analysis.get(col, {}),
+                num_rows=num_rows,
+                original_data=original_df[col] if col in original_df.columns else None
+            )
         
-        # STEP 4: ENHANCE WITH REALISTIC DATA (MIMESIS)
-        if MIMESIS_AVAILABLE:
-            sdv_data = self._enhance_with_mimesis(sdv_data, rules)
+        # Step 3: Create DataFrame
+        df_generated = pd.DataFrame(generated_data)
         
-        # STEP 5: APPLY NOISE IF REQUESTED
+        # Step 4: Apply relationships
+        df_generated = self._apply_relationships(df_generated, analysis)
+        
+        # Step 5: Add noise if requested
         if noise_level > 0:
-            sdv_data = self._apply_noise(sdv_data, noise_level, rules)
+            df_generated = self._add_controlled_noise(df_generated, noise_level)
         
-        return sdv_data
+        return df_generated
     
-    def _create_sdv_constraints(self, rules, df):
-        """Create SDV constraints from LLM rules"""
-        constraints = []
+    def _apply_relationships(self, df, analysis):
+        """Apply simple relationships for realism"""
         
-        if 'columns' not in rules:
-            return constraints
+        # Relationship 1: Email should match name if both exist
+        name_cols = [c for c in df.columns if 'PERSON_DATA' in analysis.get('columns', {}).get(c, '')]
+        email_cols = [c for c in df.columns if 'email' in c.lower()]
         
-        for col_name, col_info in rules['columns'].items():
-            if col_name in df.columns:
-                semantic_type = col_info.get('semantic_type', '')
-                constraints_dict = col_info.get('constraints', {})
-                
-                # Add Unique constraint for IDs
-                if semantic_type in ['order_id', 'customer_id', 'id'] or constraints_dict.get('unique'):
-                    try:
-                        constraints.append(Unique(column_names=[col_name]))
-                    except:
-                        pass
-                
-                # Add Positive constraint for age, price, quantity
-                if semantic_type in ['age', 'price', 'quantity', 'amount']:
-                    try:
-                        constraints.append(Positive(column_names=[col_name]))
-                    except:
-                        pass
-                
-                # Add Between constraint for ranges
-                if 'min' in constraints_dict and 'max' in constraints_dict:
-                    try:
-                        min_val = float(constraints_dict['min'])
-                        max_val = float(constraints_dict['max'])
-                        constraints.append(Between(column_names=[col_name], low=min_val, high=max_val))
-                    except:
-                        pass
+        if name_cols and email_cols:
+            name_col = name_cols[0]
+            email_col = email_cols[0]
+            
+            for i in range(len(df)):
+                name = str(df.at[i, name_col])
+                if ' ' in name:
+                    first, last = name.split(' ', 1)
+                    first = first.lower()
+                    last = last.lower()
+                    
+                    # Update email to match name
+                    current_email = str(df.at[i, email_col])
+                    if '@' in current_email:
+                        domain = current_email.split('@')[1]
+                        # Create realistic email from name
+                        email_pattern = random.choice([1, 2])
+                        if email_pattern == 1:
+                            new_email = f"{first}.{last}@{domain}"
+                        else:
+                            new_email = f"{first[0]}{last}@{domain}"
+                        
+                        df.at[i, email_col] = new_email
         
-        return constraints
+        # Relationship 2: Dates should be logical
+        date_cols = [c for c in df.columns if 'DATES_TIMES' in analysis.get('columns', {}).get(c, '')]
+        status_cols = [c for c in df.columns if any(x in c.lower() for x in ['status', 'state'])]
+        
+        if date_cols and status_cols:
+            date_col = date_cols[0]
+            status_col = status_cols[0]
+            
+            for i in range(len(df)):
+                status = str(df.at[i, status_col]).lower()
+                if 'pending' in status or 'processing' in status:
+                    # Future dates for pending
+                    date = pd.to_datetime(df.at[i, date_col], errors='coerce')
+                    if pd.notna(date):
+                        # Make it future (next 30 days)
+                        if date < datetime.now():
+                            new_date = datetime.now() + timedelta(days=random.randint(1, 30))
+                            df.at[i, date_col] = new_date.strftime('%Y-%m-%d')
+        
+        return df
     
-    def _apply_business_rules(self, data, rules):
-        """Apply business logic to generated data"""
-        if data.empty:
-            return data
-        
-        dataset_type = rules.get('dataset_type', 'generic')
-        
-        # Fix common issues based on dataset type
-        if dataset_type in ['ecommerce', 'sales', 'orders']:
-            data = self._apply_ecommerce_rules(data, rules)
-        elif dataset_type in ['customer', 'user']:
-            data = self._apply_customer_rules(data, rules)
-        
-        # Fix data types
-        for col in data.columns:
-            if col in rules.get('columns', {}):
-                col_info = rules['columns'][col]
-                semantic_type = col_info.get('semantic_type', '')
-                
-                # Fix integer columns
-                if semantic_type in ['age', 'quantity', 'order_id', 'customer_id']:
-                    try:
-                        data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(int)
-                    except:
-                        pass
-                
-                # Fix price columns (2 decimals)
-                if semantic_type in ['price', 'amount', 'cost']:
-                    try:
-                        data[col] = pd.to_numeric(data[col], errors='coerce')
-                        # Round to 2 decimals, common price endings
-                        data[col] = data[col].apply(lambda x: round(x, 2) if pd.notnull(x) else x)
-                        # Make some end with .99 or .50
-                        mask = data[col].notna()
-                        if mask.any():
-                            for i in data[mask].index:
-                                if random.random() < 0.3:
-                                    data.at[i, col] = round(data.at[i, col]) + 0.99
-                                elif random.random() < 0.5:
-                                    data.at[i, col] = round(data.at[i, col]) + 0.50
-                    except:
-                        pass
-        
-        return data
-    
-    def _apply_ecommerce_rules(self, data, rules):
-        """Apply e-commerce specific rules"""
-        # Ensure order IDs are sequential integers
-        order_id_col = None
-        for col, info in rules.get('columns', {}).items():
-            if info.get('semantic_type') == 'order_id' and col in data.columns:
-                order_id_col = col
-                break
-        
-        if order_id_col:
-            try:
-                # Make order IDs sequential integers starting from 1000
-                data[order_id_col] = range(1000, 1000 + len(data))
-            except:
-                pass
-        
-        # Ensure ages are integers 18-80
-        age_col = None
-        for col, info in rules.get('columns', {}).items():
-            if info.get('semantic_type') == 'age' and col in data.columns:
-                age_col = col
-                break
-        
-        if age_col:
-            try:
-                data[age_col] = pd.to_numeric(data[age_col], errors='coerce')
-                data[age_col] = data[age_col].clip(18, 80).astype(int)
-            except:
-                pass
-        
-        # Ensure quantities are small integers (1-10)
-        qty_col = None
-        for col, info in rules.get('columns', {}).items():
-            if 'quantity' in info.get('semantic_type', '') and col in data.columns:
-                qty_col = col
-                break
-        
-        if qty_col:
-            try:
-                data[qty_col] = pd.to_numeric(data[qty_col], errors='coerce')
-                data[qty_col] = data[qty_col].clip(1, 10).astype(int)
-            except:
-                pass
-        
-        return data
-    
-    def _generate_with_rules(self, rules, original_df, num_rows):
-        """Fallback generation using rules only"""
-        data = {}
-        
-        if 'columns' not in rules:
-            return pd.DataFrame()
-        
-        for col_name, col_info in rules.get('columns', {}).items():
-            semantic_type = col_info.get('semantic_type', 'text')
-            generation_method = col_info.get('generation_method', 'text')
-            constraints = col_info.get('constraints', {})
-            
-            if generation_method == 'sequential_int':
-                # Generate sequential IDs
-                start = constraints.get('start', 1000)
-                data[col_name] = range(start, start + num_rows)
-            
-            elif generation_method == 'real_name':
-                # Generate realistic names
-                if MIMESIS_AVAILABLE:
-                    data[col_name] = [self.person.full_name() for _ in range(num_rows)]
-                else:
-                    first_names = ['John', 'Sarah', 'Mike', 'Emma', 'David', 'Lisa']
-                    last_names = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia']
-                    data[col_name] = [f"{random.choice(first_names)} {random.choice(last_names)}" 
-                                     for _ in range(num_rows)]
-            
-            elif generation_method == 'int_range':
-                # Generate integers in range
-                min_val = constraints.get('min', 18)
-                max_val = constraints.get('max', 80)
-                data[col_name] = np.random.randint(min_val, max_val + 1, num_rows)
-            
-            elif generation_method == 'email_pattern':
-                # Generate realistic emails
-                if MIMESIS_AVAILABLE:
-                    data[col_name] = [self.person.email() for _ in range(num_rows)]
-                else:
-                    domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'company.com']
-                    data[col_name] = [f"user{i}@{random.choice(domains)}" for i in range(num_rows)]
-            
-            elif generation_method == 'float_price':
-                # Generate realistic prices
-                min_price = constraints.get('min', 10)
-                max_price = constraints.get('max', 5000)
-                prices = np.random.uniform(min_price, max_price, num_rows)
-                # Round to 2 decimals, make some end with .99
-                data[col_name] = [round(p, 2) for p in prices]
-                for i in range(num_rows):
-                    if random.random() < 0.3:
-                        data[col_name][i] = round(data[col_name][i]) + 0.99
-            
-            elif generation_method == 'small_int':
-                # Small integers (1-10)
-                data[col_name] = np.random.randint(1, 11, num_rows)
-            
-            elif generation_method == 'date_range':
-                # Generate dates
-                start_date = datetime.now() - timedelta(days=365)
-                end_date = datetime.now() + timedelta(days=365)
-                date_range = (end_date - start_date).days
-                dates = [start_date + timedelta(days=random.randint(0, date_range)) 
-                        for _ in range(num_rows)]
-                data[col_name] = dates
-            
-            elif generation_method == 'categorical':
-                # Use provided values or generate
-                values = constraints.get('values', ['A', 'B', 'C', 'D'])
-                data[col_name] = np.random.choice(values, num_rows)
-            
-            else:
-                # Default text generation
-                if MIMESIS_AVAILABLE:
-                    data[col_name] = [self.text_gen.sentence() for _ in range(num_rows)]
-                else:
-                    words = ['Lorem', 'ipsum', 'dolor', 'sit', 'amet']
-                    data[col_name] = [' '.join(random.choices(words, k=5)) for _ in range(num_rows)]
-        
-        return pd.DataFrame(data)
-    
-    def _enhance_with_mimesis(self, data, rules):
-        """Enhance data with realistic values using Mimesis"""
-        if not MIMESIS_AVAILABLE or data.empty:
-            return data
-        
-        for col in data.columns:
-            if col in rules.get('columns', {}):
-                col_info = rules['columns'][col]
-                semantic_type = col_info.get('semantic_type', '')
-                
-                # Enhance specific column types
-                if 'name' in semantic_type:
-                    # Replace with realistic names
-                    data[col] = [self.person.full_name() for _ in range(len(data))]
-                
-                elif 'email' in semantic_type:
-                    # Replace with realistic emails
-                    data[col] = [self.person.email() for _ in range(len(data))]
-                
-                elif 'address' in semantic_type:
-                    # Replace with realistic addresses
-                    data[col] = [self.address.address() for _ in range(len(data))]
-                
-                elif 'city' in semantic_type:
-                    data[col] = [self.address.city() for _ in range(len(data))]
-                
-                elif 'country' in semantic_type:
-                    data[col] = [self.address.country() for _ in range(len(data))]
-                
-                elif 'phone' in semantic_type:
-                    data[col] = [self.person.telephone() for _ in range(len(data))]
-        
-        return data
-    
-    def _apply_noise(self, data, noise_level, rules):
-        """Apply controlled noise to data"""
-        if noise_level <= 0 or data.empty:
-            return data
-        
-        # Only apply noise to numeric columns
-        numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+    def _add_controlled_noise(self, df, noise_level):
+        """Add realistic variation"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
         
         for col in numeric_cols:
-            if col in data.columns:
-                col_data = data[col]
-                if col in rules.get('columns', {}):
-                    col_info = rules['columns'][col]
-                    semantic_type = col_info.get('semantic_type', '')
-                    
-                    # Apply different noise based on column type
-                    if semantic_type in ['age', 'quantity']:
-                        # For integers, add/subtract small amounts
-                        noise = np.random.randint(-int(noise_level * 10), int(noise_level * 10), len(data))
-                        data[col] = col_data + noise
-                        # Ensure still valid range
-                        if 'constraints' in col_info:
-                            min_val = col_info['constraints'].get('min')
-                            max_val = col_info['constraints'].get('max')
-                            if min_val is not None and max_val is not None:
-                                data[col] = data[col].clip(min_val, max_val).astype(int)
-                    
-                    elif semantic_type in ['price', 'amount']:
-                        # For prices, add percentage noise
-                        noise_percent = np.random.uniform(-noise_level, noise_level, len(data))
-                        data[col] = col_data * (1 + noise_percent)
-                        # Round to 2 decimals
-                        data[col] = data[col].round(2)
+            if noise_level > 0:
+                # Add percentage-based noise
+                noise = np.random.uniform(-noise_level, noise_level, len(df))
+                df[col] = df[col] * (1 + noise)
+                
+                # Round appropriately
+                if df[col].dtype in ['int64', 'int32']:
+                    df[col] = df[col].round().astype(int)
+                else:
+                    df[col] = df[col].round(2)
         
-        return data
+        return df
 
 # =============================================================================
-# MAIN APP
+# MAIN APP (Streamlit Interface)
 # =============================================================================
 def main():
-    # Check authentication
+    # Authentication check
     if not check_session():
-        st.warning("Please login first to access Synthetic Data Generator")
+        st.warning("Please login first")
         st.stop()
     
-    # Page configuration
+    # Page config
     st.set_page_config(
-        page_title="Synthetic Data Generator - irmc Aura",
+        page_title="Smart Data Generator",
         page_icon="🔢",
         layout="wide"
     )
     
-    # Custom CSS
-    st.markdown("""
-    <style>
-        .main-header {
-            font-size: 2.5rem;
-            background: linear-gradient(135deg, #175CFF, #00A3FF);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-weight: 800;
-            margin-bottom: 1rem;
-        }
-        .step-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 15px;
-            border-left: 5px solid #175CFF;
-            box-shadow: 0 4px 12px rgba(23, 92, 255, 0.1);
-            margin-bottom: 1.5rem;
-        }
-        .llm-analysis {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 1rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-        }
-        .data-preview {
-            background-color: #f8f9fa;
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 1rem;
-            margin: 1rem 0;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
     # Header
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.markdown('<div class="main-header">🔢 Smart Data Generator</div>', unsafe_allow_html=True)
-        st.markdown("### Generate realistic synthetic data using AI + Smart Libraries")
-    with col2:
-        if st.button("🏠 Back to Home"):
-            st.switch_page("app.py")
+    st.title("🔢 Smart Synthetic Data Generator")
+    st.markdown("Generate **realistic, meaningful** data from your samples")
+    
+    if st.button("🏠 Back to Home"):
+        st.switch_page("app.py")
     
     st.markdown("---")
     
-    # Show library status
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("LLM Usage", "One-time analysis", delta="Cost optimized")
-    with col2:
-        status = "✅ Available" if SDV_AVAILABLE else "⚠️ Install SDV"
-        st.metric("SDV Library", status)
-    with col3:
-        status = "✅ Available" if MIMESIS_AVAILABLE else "⚠️ Install Mimesis"
-        st.metric("Mimesis Library", status)
-    
-    # Initialize session state
-    if 'data_generator' not in st.session_state:
-        st.session_state.data_generator = HybridDataGenerator()
-    if 'uploaded_data' not in st.session_state:
-        st.session_state.uploaded_data = None
-    if 'llm_rules' not in st.session_state:
-        st.session_state.llm_rules = None
+    # Initialize
+    if 'generator' not in st.session_state:
+        st.session_state.generator = SmartDataGenerator()
+    if 'original_data' not in st.session_state:
+        st.session_state.original_data = None
     if 'generated_data' not in st.session_state:
         st.session_state.generated_data = None
     
-    # Main tabs
-    tab1, tab2, tab3 = st.tabs(["📤 Upload & Analyze", "⚙️ Generate Data", "📊 Results & Download"])
+    # Tabs
+    tab1, tab2, tab3 = st.tabs(["📤 Upload", "⚙️ Generate", "📊 Download"])
     
     with tab1:
-        st.markdown('<div class="step-card"><h3>Step 1: Upload Sample Data</h3></div>', unsafe_allow_html=True)
+        st.header("Upload Your Data")
         
-        col1, col2 = st.columns([2, 1])
+        uploaded_file = st.file_uploader("Choose CSV file", type=['csv'])
         
-        with col1:
-            st.subheader("Upload CSV File")
-            uploaded_file = st.file_uploader(
-                "Upload your sample data (CSV)",
-                type=['csv'],
-                help="Upload 5-1000 rows for best analysis"
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    df = pd.read_csv(uploaded_file)
-                    
-                    if df.empty:
-                        st.error("❌ Empty file")
-                    else:
-                        st.session_state.uploaded_data = df
-                        
-                        st.success(f"✅ Uploaded: {uploaded_file.name}")
-                        
-                        # Show stats
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Rows", f"{len(df):,}")
-                        with col2:
-                            st.metric("Columns", len(df.columns))
-                        with col3:
-                            missing = df.isna().sum().sum()
-                            st.metric("Missing Values", missing)
-                        
-                        # Preview
-                        with st.expander("📋 Data Preview", expanded=True):
-                            st.dataframe(df.head(10), use_container_width=True)
-                        
-                        # Smart Analysis Button
-                        st.markdown('<div class="llm-analysis"><h4>🤖 Smart Analysis (One-time LLM)</h4></div>', unsafe_allow_html=True)
-                        st.caption("LLM will analyze ONLY 10 rows to extract generation rules. This is a one-time cost.")
-                        
-                        if st.button("🚀 Run Smart Analysis", type="primary", use_container_width=True):
-                            if len(df) >= 3:
-                                with st.spinner("Running one-time LLM analysis..."):
-                                    rules = st.session_state.data_generator.rule_extractor.extract_smart_rules(df)
-                                    st.session_state.llm_rules = rules
-                                    
-                                    # Show analysis results
-                                    st.success("✅ Analysis complete!")
-                                    
-                                    # Display detected rules
-                                    with st.expander("📊 Detected Rules", expanded=True):
-                                        st.json(rules)
-                                        
-                                    st.rerun()
-                            else:
-                                st.warning("Need at least 3 rows for analysis")
+        if uploaded_file:
+            try:
+                df = pd.read_csv(uploaded_file)
                 
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
-        
-        with col2:
-            st.subheader("💡 How It Works")
-            st.markdown("""
-            **Smart Pipeline:**
-            1. **One-time LLM Analysis** (10 rows only)
-            2. **Rule extraction** for all columns
-            3. **SDV statistical generation** (free)
-            4. **Mimesis realistic data** (free)
-            5. **Business logic application**
+                if df.empty:
+                    st.error("Empty file")
+                else:
+                    st.session_state.original_data = df
+                    
+                    st.success(f"✅ Loaded {len(df)} rows, {len(df.columns)} columns")
+                    
+                    # Show preview
+                    with st.expander("Preview Data", expanded=True):
+                        st.dataframe(df.head(10))
+                    
+                    # Show column types
+                    st.subheader("📋 Column Analysis")
+                    col_types = {}
+                    for col in df.columns:
+                        dtype = str(df[col].dtype)
+                        sample = str(df[col].iloc[0])[:30] if len(df) > 0 else ""
+                        col_types[col] = f"{dtype}: {sample}"
+                    
+                    for col, info in col_types.items():
+                        st.write(f"**{col}**: `{info}`")
             
-            **Cost Optimized:**
-            - Only **1 LLM call** per dataset
-            - Rules cached for reuse
-            - Free libraries for generation
-            
-            **Better Results:**
-            - Realistic names, emails
-            - Correct data types
-            - Business logic applied
-            """)
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
     
     with tab2:
-        if st.session_state.uploaded_data is None:
-            st.info("📤 Please upload data in Step 1")
-        elif st.session_state.llm_rules is None:
-            st.info("🤖 Please run Smart Analysis first")
+        if st.session_state.original_data is None:
+            st.info("Please upload data first")
         else:
-            st.markdown('<div class="step-card"><h3>Step 2: Generate Synthetic Data</h3></div>', unsafe_allow_html=True)
+            st.header("Generate Synthetic Data")
             
-            # Show analysis summary
-            rules = st.session_state.llm_rules
-            st.subheader("📊 Analysis Summary")
+            df = st.session_state.original_data
             
+            # Settings
             col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"**Dataset Type:** `{rules.get('dataset_type', 'Unknown')}`")
-                st.write(f"**Columns Analyzed:** {len(rules.get('columns', {}))}")
-            
-            with col2:
-                relationships = rules.get('relationships', [])
-                st.write(f"**Relationships Found:** {len(relationships)}")
-                if relationships:
-                    for rel in relationships[:2]:
-                        st.write(f"• {rel}")
-            
-            # Generation settings
-            st.subheader("⚙️ Generation Settings")
-            
-            col1, col2, col3 = st.columns(3)
             
             with col1:
                 num_rows = st.select_slider(
@@ -823,171 +683,88 @@ def main():
                 )
             
             with col2:
-                noise_level = st.slider(
-                    "Noise/Variation",
-                    min_value=0.0,
-                    max_value=0.5,
-                    value=0.1,
-                    step=0.05,
-                    help="Add randomness to data (0 = exact patterns, 0.5 = more variation)"
-                )
-                st.caption(f"Noise level: {int(noise_level * 100)}%")
+                noise = st.slider("Variation", 0.0, 0.5, 0.1, 0.05,
+                                help="Adds realistic variation to data")
             
-            with col3:
-                generation_method = st.selectbox(
-                    "Generation Method",
-                    options=["Smart Hybrid (Recommended)", "Rule-Based Only", "Statistical Only"],
-                    help="Smart Hybrid uses LLM rules + SDV + Mimesis"
-                )
-            
-            # Advanced options
-            with st.expander("⚙️ Advanced Options"):
-                fix_data_types = st.checkbox("Fix data types", value=True, 
-                    help="Ensure ages are integers, prices have 2 decimals, etc.")
-                enhance_realism = st.checkbox("Enhance with realistic data", value=True,
-                    help="Use Mimesis for realistic names, emails, addresses")
-            
-            # Generate button
-            if st.button("🚀 Generate Synthetic Data", type="primary", use_container_width=True):
-                with st.spinner(f"Generating {num_rows} realistic rows..."):
-                    # Generate data
-                    generated_df = st.session_state.data_generator.generate_smart_data(
-                        original_df=st.session_state.uploaded_data,
-                        num_rows=num_rows,
-                        noise_level=noise_level
-                    )
-                    
-                    if generated_df is not None and not generated_df.empty:
-                        st.session_state.generated_data = generated_df
-                        st.success(f"✅ Generated {len(generated_df)} realistic rows!")
-                        st.rerun()
-                    else:
-                        st.error("❌ Generation failed")
+            # Generation button
+            if st.button("🚀 Generate Realistic Data", type="primary", use_container_width=True):
+                with st.spinner("Generating realistic data..."):
+                    try:
+                        generated = st.session_state.generator.generate_realistic_data(
+                            original_df=df,
+                            num_rows=num_rows,
+                            noise_level=noise
+                        )
+                        
+                        st.session_state.generated_data = generated
+                        st.success(f"✅ Generated {len(generated)} realistic rows!")
+                        st.balloons()
+                        
+                    except Exception as e:
+                        st.error(f"Generation failed: {str(e)}")
     
     with tab3:
         if st.session_state.generated_data is None:
-            st.info("⚙️ Please generate data in Step 2")
+            st.info("Generate data first")
         else:
-            st.markdown('<div class="step-card"><h3>Step 3: Download Your Data</h3></div>', unsafe_allow_html=True)
+            st.header("Download Your Data")
             
-            generated_df = st.session_state.generated_data
+            df_gen = st.session_state.generated_data
             
-            # Show quality metrics
-            st.subheader("📊 Quality Check")
-            
+            # Stats
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                # Check data types
-                int_cols = len([col for col in generated_df.columns 
-                              if generated_df[col].dtype in ['int64', 'int32']])
-                st.metric("Integer Columns", int_cols)
-            
+                st.metric("Rows", f"{len(df_gen):,}")
             with col2:
-                # Check for decimal prices
-                price_cols = [col for col in generated_df.columns if 'price' in col.lower() or 'amount' in col.lower()]
-                if price_cols:
-                    sample_price = generated_df[price_cols[0]].iloc[0]
-                    if isinstance(sample_price, float):
-                        st.metric("Price Format", "✓ 2 decimals")
-            
+                st.metric("Columns", len(df_gen.columns))
             with col3:
-                # Check for realistic names
-                name_cols = [col for col in generated_df.columns if 'name' in col.lower()]
-                if name_cols:
-                    sample_name = generated_df[name_cols[0]].iloc[0]
-                    if ' ' in str(sample_name) and len(str(sample_name).split()) >= 2:
-                        st.metric("Names", "✓ Realistic")
-            
+                # Check data quality
+                int_cols = len([c for c in df_gen.columns if df_gen[c].dtype in ['int64', 'int32']])
+                st.metric("Integer Columns", int_cols)
             with col4:
-                # Missing values
-                missing = generated_df.isna().sum().sum()
-                st.metric("Missing Values", missing)
+                # Check for realistic emails
+                email_cols = [c for c in df_gen.columns if 'email' in c.lower()]
+                if email_cols:
+                    sample_email = str(df_gen[email_cols[0]].iloc[0])
+                    if '@' in sample_email and '.' in sample_email.split('@')[1]:
+                        st.metric("Emails", "✅ Realistic")
             
-            # Data preview
-            st.subheader("📋 Generated Data Preview")
+            # Preview
+            st.subheader("Preview")
+            st.dataframe(df_gen.head(10))
             
-            preview_tab1, preview_tab2 = st.tabs(["First 10 Rows", "Sample Check"])
+            # Download buttons
+            st.subheader("Download")
             
-            with preview_tab1:
-                st.dataframe(generated_df.head(10), use_container_width=True)
-            
-            with preview_tab2:
-                # Show random sample
-                st.write("**Random Sample (5 rows):**")
-                sample = generated_df.sample(min(5, len(generated_df)))
-                st.dataframe(sample, use_container_width=True)
-                
-                # Check specific issues
-                st.write("**Data Quality Check:**")
-                
-                # Check order IDs
-                id_cols = [col for col in generated_df.columns if 'id' in col.lower()]
-                if id_cols:
-                    id_col = id_cols[0]
-                    ids = generated_df[id_col]
-                    if pd.api.types.is_integer_dtype(ids):
-                        st.success(f"✓ {id_col}: Integer type")
-                    else:
-                        st.warning(f"⚠ {id_col}: Not integer")
-                
-                # Check ages
-                age_cols = [col for col in generated_df.columns if 'age' in col.lower()]
-                if age_cols:
-                    age_col = age_cols[0]
-                    ages = generated_df[age_col]
-                    if pd.api.types.is_integer_dtype(ages):
-                        valid_ages = ((ages >= 0) & (ages <= 120)).all()
-                        if valid_ages:
-                            st.success(f"✓ {age_col}: Valid ages (0-120)")
-            
-            # Download options
-            st.subheader("💾 Download Options")
-            
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             
             with col1:
                 # CSV
-                csv = generated_df.to_csv(index=False)
+                csv = df_gen.to_csv(index=False)
                 st.download_button(
                     label="📥 Download CSV",
                     data=csv,
-                    file_name=f"synthetic_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name="synthetic_data.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
             
             with col2:
-                # Excel (if openpyxl available)
-                try:
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        generated_df.to_excel(writer, index=False, sheet_name='Data')
-                    excel_data = output.getvalue()
-                    
-                    st.download_button(
-                        label="📗 Download Excel",
-                        data=excel_data,
-                        file_name=f"synthetic_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                except:
-                    st.button("📗 Download Excel", disabled=True, 
-                            help="Install openpyxl: pip install openpyxl")
-            
-            with col3:
-                if st.button("🔄 Generate More", use_container_width=True):
-                    st.session_state.generated_data = None
-                    st.rerun()
+                # JSON
+                json_str = df_gen.to_json(orient='records', indent=2)
+                st.download_button(
+                    label="📄 Download JSON",
+                    data=json_str,
+                    file_name="synthetic_data.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
             
             # Reset
-            st.markdown("---")
-            if st.button("🔄 Start New Analysis", use_container_width=True):
-                st.session_state.uploaded_data = None
-                st.session_state.llm_rules = None
+            if st.button("🔄 Start Over", use_container_width=True):
+                st.session_state.original_data = None
                 st.session_state.generated_data = None
                 st.rerun()
 
-# Run the app
 if __name__ == "__main__":
     main()
