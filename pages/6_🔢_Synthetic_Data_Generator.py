@@ -1,4 +1,4 @@
-# pages/6_🔢_Synthetic_Data_Generator.py - UNIVERSAL RULE-BASED GENERATOR
+# pages/6_🔢_Synthetic_Data_Generator.py - FIXED VERSION
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -297,7 +297,11 @@ class RuleApplicationEngine:
         # Ensure same data types
         for col in original_df.columns:
             if col in synthetic_df.columns:
-                synthetic_df[col] = synthetic_df[col].astype(original_df[col].dtype)
+                try:
+                    synthetic_df[col] = synthetic_df[col].astype(original_df[col].dtype)
+                except:
+                    # If conversion fails, keep as object
+                    pass
         
         return synthetic_df
     
@@ -523,7 +527,7 @@ class RuleValidationEngine:
         return validation_report
 
 # =============================================================================
-# MAIN APPLICATION
+# MAIN APPLICATION - SIMPLIFIED
 # =============================================================================
 
 def main():
@@ -535,12 +539,6 @@ def main():
     
     st.title("⚡ Universal Rule-Based Data Generator")
     st.markdown("**LLM Discovers Rules → We Apply Rules Exactly → Perfect Synthetic Data**")
-    
-    # Check for Groq API key
-    if "GROQ_API_KEY" not in st.secrets:
-        st.error("❌ GROQ_API_KEY not found in secrets.toml")
-        st.info("Add to `.streamlit/secrets.toml`: GROQ_API_KEY = 'your-key-here'")
-        st.stop()
     
     # File upload
     uploaded_file = st.file_uploader("📤 Upload ANY CSV Dataset", type=['csv'])
@@ -557,14 +555,26 @@ def main():
         with st.expander("📋 Data Preview", expanded=True):
             st.dataframe(df.head(), use_container_width=True)
             
-            # Show column stats
-            col_info = pd.DataFrame({
-                "Column": df.columns,
-                "Type": df.dtypes.astype(str),
-                "Unique": [df[col].nunique() for col in df.columns],
-                "Null %": (df[col].isnull().sum() / len(df) * 100).round(1)
-            })
+            # Show column stats - FIXED THIS LINE
+            col_info_data = []
+            for col in df.columns:
+                null_pct = (df[col].isnull().sum() / len(df) * 100).round(1) if len(df) > 0 else 0
+                col_info_data.append({
+                    "Column": col,
+                    "Type": str(df[col].dtype),
+                    "Unique": df[col].nunique(),
+                    "Null %": null_pct
+                })
+            
+            col_info = pd.DataFrame(col_info_data)
             st.dataframe(col_info, use_container_width=True, hide_index=True)
+        
+        # Check for API key
+        if "GROQ_API_KEY" not in st.secrets:
+            st.error("❌ GROQ_API_KEY not found in secrets.toml")
+            st.info("Add this to `.streamlit/secrets.toml`:")
+            st.code("GROQ_API_KEY = 'your-api-key-here'")
+            st.stop()
         
         # Generation settings
         st.subheader("🎯 Generation Settings")
@@ -589,8 +599,12 @@ def main():
             
             # Step 1: Discover Rules
             with st.spinner("🔍 LLM discovering rules from your data..."):
-                rule_discoverer = RuleDiscoveryEngine(st.secrets["GROQ_API_KEY"])
-                rules = rule_discoverer.discover_rules(df)
+                try:
+                    rule_discoverer = RuleDiscoveryEngine(st.secrets["GROQ_API_KEY"])
+                    rules = rule_discoverer.discover_rules(df)
+                except Exception as e:
+                    st.error(f"Failed to discover rules: {e}")
+                    return
             
             # Display discovered rules
             st.subheader("📋 Discovered Rules")
@@ -599,12 +613,20 @@ def main():
             
             # Step 2: Apply Rules
             with st.spinner(f"⚡ Generating {num_rows} rows by applying rules..."):
-                synthetic_df = RuleApplicationEngine.generate_with_rules(df, rules, int(num_rows))
+                try:
+                    synthetic_df = RuleApplicationEngine.generate_with_rules(df, rules, int(num_rows))
+                except Exception as e:
+                    st.error(f"Failed to generate data: {e}")
+                    return
             
             # Step 3: Validate
             with st.spinner("✅ Validating rule compliance..."):
-                validator = RuleValidationEngine()
-                validation_report = validator.validate_rules(synthetic_df, rules)
+                try:
+                    validator = RuleValidationEngine()
+                    validation_report = validator.validate_rules(synthetic_df, rules)
+                except Exception as e:
+                    st.error(f"Failed to validate: {e}")
+                    validation_report = {"overall_score": 0, "summary": {"rules_checked": 0}}
             
             # Store results
             st.session_state.synthetic_data = synthetic_df
@@ -624,7 +646,7 @@ def main():
             st.subheader(f"✨ Generated {len(synthetic)} Rows")
             
             # Quality score
-            score = validation["overall_score"]
+            score = validation.get("overall_score", 0)
             score_color = "🟢" if score >= 95 else "🟡" if score >= 80 else "🔴"
             st.metric("Rule Compliance Score", f"{score_color} {score}%")
             
@@ -639,10 +661,11 @@ def main():
                 col1, col2 = st.columns(2)
                 with col1:
                     st.write("Original (sample):")
-                    st.dataframe(original[list(original.columns)[:3]].head(5))
+                    display_cols = list(original.columns)[:3]
+                    st.dataframe(original[display_cols].head(5) if len(display_cols) > 0 else original.head(5))
                 with col2:
                     st.write("Synthetic (sample):")
-                    st.dataframe(synthetic[list(synthetic.columns)[:3]].head(5))
+                    st.dataframe(synthetic[display_cols].head(5) if len(display_cols) > 0 else synthetic.head(5))
             
             with tab2:
                 st.write("**Applied Rules Summary**")
@@ -669,44 +692,53 @@ def main():
                 st.write("**Validation Report**")
                 
                 # Summary
-                summary = validation["summary"]
-                st.write(f"- Total rules checked: {summary['rules_checked']}")
-                st.write(f"- Rules violated: {summary['rules_violated']}")
-                st.write(f"- Compliance rate: {100 - summary['rules_violated']/max(1, summary['rules_checked'])*100:.1f}%")
+                summary = validation.get("summary", {})
+                st.write(f"- Total rules checked: {summary.get('rules_checked', 0)}")
+                st.write(f"- Rules violated: {summary.get('rules_violated', 0)}")
+                
+                if summary.get('rules_checked', 0) > 0:
+                    compliance_rate = 100 - summary.get('rules_violated', 0)/summary.get('rules_checked', 1)*100
+                    st.write(f"- Compliance rate: {compliance_rate:.1f}%")
                 
                 # Detailed violations
-                if validation["constraints_validation"]:
+                if validation.get("constraints_validation"):
                     st.write("**Constraint Violations:**")
                     for col, report in validation["constraints_validation"].items():
-                        if report["violations"] > 0:
-                            st.error(f"❌ {col}: {report['violations']} violations ({report['violation_percentage']:.1f}%)")
+                        if report.get("violations", 0) > 0:
+                            st.error(f"❌ {col}: {report['violations']} violations ({report.get('violation_percentage', 0):.1f}%)")
                 
                 # Mapping violations
-                if validation["value_mappings_validation"]:
+                if validation.get("value_mappings_validation"):
                     st.write("**Mapping Violations:**")
                     for mapping_report in validation["value_mappings_validation"]:
-                        if mapping_report["violations"] > 0:
-                            st.error(f"❌ {mapping_report['mapping']}: {mapping_report['violations']} violations")
+                        if mapping_report.get("violations", 0) > 0:
+                            st.error(f"❌ {mapping_report.get('mapping', 'unknown')}: {mapping_report['violations']} violations")
             
             with tab4:
-                csv = synthetic.to_csv(index=False)
-                st.download_button(
-                    "📥 Download Synthetic Data (CSV)",
-                    csv,
-                    f"rule_based_synthetic_{len(synthetic)}_rows.csv",
-                    "text/csv",
-                    use_container_width=True
-                )
+                try:
+                    csv = synthetic.to_csv(index=False)
+                    st.download_button(
+                        "📥 Download Synthetic Data (CSV)",
+                        csv,
+                        f"rule_based_synthetic_{len(synthetic)}_rows.csv",
+                        "text/csv",
+                        use_container_width=True
+                    )
+                except:
+                    st.error("Could not create CSV download")
                 
                 # Download rules
-                rules_json = json.dumps(rules, indent=2)
-                st.download_button(
-                    "📥 Download Rules (JSON)",
-                    rules_json,
-                    f"data_rules_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    "application/json",
-                    use_container_width=True
-                )
+                try:
+                    rules_json = json.dumps(rules, indent=2)
+                    st.download_button(
+                        "📥 Download Rules (JSON)",
+                        rules_json,
+                        f"data_rules.json",
+                        "application/json",
+                        use_container_width=True
+                    )
+                except:
+                    st.error("Could not create rules download")
                 
                 # Regenerate option
                 if st.button("🔄 Generate New Variation"):
@@ -718,7 +750,32 @@ def main():
         st.info("""
         ## ⚡ Universal Rule-Based Data Generator
         
+        ### **How It Works:**
+        1. **Upload ANY CSV** - Medical, Sales, HR, ANY data
+        2. **LLM analyzes** and discovers ALL rules automatically
+        3. **We apply EXACT same rules** to generate new data
+        4. **Validate** 100% rule compliance
         
+        ### **✨ Key Advantages over SDV:**
+        ✅ **Understands semantics** - Knows chest pain → cardiology
+        ✅ **Preserves EXACT relationships** - Not just statistical
+        ✅ **Works with small data** - 60 rows is enough
+        ✅ **Universal** - No domain knowledge needed
+        ✅ **Transparent** - See all discovered rules
+        ✅ **Validated** - Check rule compliance
+        
+        ### **📊 Rule Discovery Examples:**
+        - **Medical:** "Chest pain → Cardiology", "Dr. Sharma → Cardiology"
+        - **Sales:** "Product A → Category Electronics", "Price > 0"
+        - **HR:** "Manager → Department", "Salary within range"
+        
+        ### **🚀 Get Started:**
+        1. Upload your CSV (any structure)
+        2. LLM will discover ALL rules automatically
+        3. Generate 2x, 3x, 5x more data
+        4. Download perfect synthetic data
+        
+        **Upload your CSV to experience rule-based generation!**
         """)
 
 if __name__ == "__main__":
