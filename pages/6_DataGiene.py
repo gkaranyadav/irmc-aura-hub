@@ -818,14 +818,12 @@ class RuleValidationEngine:
 
 def main():
     st.set_page_config(
-        page_title="Enhanced Universal Data Generator",
+        page_title="iRMC DataGiene",
         page_icon="🚀",
         layout="wide"
     )
     
-    st.title("🚀 Enhanced Universal Data Generator")
-    st.markdown("**LLM + Statistical Analysis → Find EVERY Rule → Apply Perfectly**")
-    
+    st.title("iRMC DataGiene")
     # File upload
     uploaded_file = st.file_uploader("📤 Upload ANY CSV Dataset", type=['csv'])
     
@@ -1019,8 +1017,6 @@ def main():
     else:
         # Welcome screen
         st.info("""
-        ## 🚀 Enhanced Universal Data Generator
-       
         """)
 
 if __name__ == "__main__":
