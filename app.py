@@ -187,7 +187,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch GraphX", key="graph_btn", use_container_width=True):
-            st.switch_page("pages/3_🌐_Graph_RAG.py")
+            st.switch_page("pages/3_GraphX.py")
     
     # Row 2
     col1, col2 = st.columns(2)
@@ -202,7 +202,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch SQL_Assistant", key="sql_btn", use_container_width=True):
-            st.switch_page("pages/4_📊_SQL_Assistant.py")
+            st.switch_page("pages/4_SQL_Assistant.py")
     
     with col2:
         st.markdown("""
@@ -214,7 +214,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch QueryCraft", key="csv_btn", use_container_width=True):
-            st.switch_page("pages/5_📁_CSV_SQL_Assistant.py")
+            st.switch_page("pages/5_QueryCraft")
     
     # Row 3 - NEW APP
     col1, col2 = st.columns(2)
@@ -229,7 +229,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch DataGiene", key="research_btn", use_container_width=True):
-            st.switch_page("pages/6_🔢_Synthetic_Data_Generator.py")
+            st.switch_page("pages/6_DataGiene.py")
     
     with col2:
         st.markdown("""
