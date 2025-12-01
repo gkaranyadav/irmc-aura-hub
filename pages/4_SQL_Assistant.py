@@ -426,8 +426,7 @@ def main():
     # Header
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("📊 SQL Assistant - irmc Aura")
-        st.markdown("### Convert natural language to SQL queries")
+        st.title("iRMC SQL_Assistant")
     with col2:
         if st.button("🏠 Back to Home"):
             st.switch_page("app.py")
