@@ -25,3 +25,4 @@ pillow
 sdv
 rdt
 copulas
+requests
