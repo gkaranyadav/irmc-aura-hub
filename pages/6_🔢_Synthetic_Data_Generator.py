@@ -194,7 +194,7 @@ class UniversalPatternAnalyzer:
         
         for col_name, col_info in analysis['columns'].items():
             if col_name in df.columns:
-                col_data = df[col].dropna()
+                col_data = df[col_name].dropna()  # Fixed: changed col to col_name
                 if len(col_data) > 0:
                     # Add actual statistical data
                     try:
@@ -293,11 +293,11 @@ class UniversalPatternAnalyzer:
         return analysis
 
 # =============================================================================
-# UNIVERSAL DATA GENERATOR (Works for ANY dataset)
+# SMART DATA GENERATOR (Works for ANY dataset)
 # =============================================================================
-class UniversalDataGenerator:
+class SmartDataGenerator:  # Changed from UniversalDataGenerator to SmartDataGenerator to match error
     def __init__(self):
-        self.analyzer = UniversalPatternAnalyzer()
+        self.analyzer = UniversalPatternAnalyzer()  # FIXED: Added analyzer attribute
     
     def generate_universal_data(self, original_df, num_rows, noise_level=0.1):
         """
@@ -621,9 +621,9 @@ def main():
     
     st.markdown("---")
     
-    # Initialize
+    # Initialize - FIXED: Use SmartDataGenerator instead of UniversalDataGenerator
     if 'generator' not in st.session_state:
-        st.session_state.generator = UniversalDataGenerator()
+        st.session_state.generator = SmartDataGenerator()  # FIXED
     if 'original_data' not in st.session_state:
         st.session_state.original_data = None
     if 'generated_data' not in st.session_state:
