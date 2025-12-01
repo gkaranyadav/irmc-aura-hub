@@ -9,6 +9,24 @@ from groq import Groq
 from auth import check_session
 
 # =============================================================================
+# JSON SERIALIZATION HELPER
+# =============================================================================
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder for numpy types"""
+    def default(self, obj):
+        if isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+            return float(obj)
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+        elif isinstance(obj, pd.Timestamp):
+            return str(obj)
+        elif pd.isna(obj):
+            return None
+        return super().default(obj)
+
+# =============================================================================
 # SMART PATTERN ANALYZER
 # =============================================================================
 class SmartPatternAnalyzer:
@@ -19,7 +37,7 @@ class SmartPatternAnalyzer:
         except:
             self.llm_available = False
     
-    def analyze_patterns(self, df_sample):  # Fixed method name
+    def analyze_patterns(self, df_sample):
         """
         Let LLM analyze data and tell us what it is AND how to generate it
         """
@@ -34,7 +52,7 @@ class SmartPatternAnalyzer:
         Analyze this dataset and provide instructions for generating realistic synthetic data.
         
         DATA INFO:
-        {json.dumps(data_info, indent=2)}
+        {json.dumps(data_info, indent=2, cls=NumpyEncoder)}
         
         IMPORTANT: You need to:
         1. Identify what TYPE of data each column contains (ID, name, date, email, number, code, etc.)
@@ -110,7 +128,7 @@ class SmartPatternAnalyzer:
             return self._statistical_analysis(df_sample)
     
     def _prepare_data_info(self, df):
-        """Prepare comprehensive data info"""
+        """Prepare comprehensive data info with proper serialization"""
         data_info = {
             "shape": f"{len(df)} rows × {len(df.columns)} columns",
             "columns": {},
@@ -121,8 +139,18 @@ class SmartPatternAnalyzer:
         for col in df.columns:
             col_data = df[col].dropna()
             if len(col_data) > 0:
-                # Get samples
+                # Get samples (convert to native Python types)
                 samples = col_data.head(5).tolist()
+                python_samples = []
+                for sample in samples:
+                    if isinstance(sample, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                        python_samples.append(int(sample))
+                    elif isinstance(sample, (np.floating, np.float64, np.float32, np.float16)):
+                        python_samples.append(float(sample))
+                    elif pd.isna(sample):
+                        python_samples.append(None)
+                    else:
+                        python_samples.append(str(sample))
                 
                 # Basic stats
                 try:
@@ -132,7 +160,7 @@ class SmartPatternAnalyzer:
                             "min": float(numeric_data.min()),
                             "max": float(numeric_data.max()),
                             "mean": float(numeric_data.mean()),
-                            "unique_count": col_data.nunique(),
+                            "unique_count": int(col_data.nunique()),
                             "unique_ratio": float(col_data.nunique() / len(col_data))
                         }
                     else:
@@ -142,23 +170,35 @@ class SmartPatternAnalyzer:
                 
                 data_info["columns"][col] = {
                     "dtype": str(df[col].dtype),
-                    "samples": [str(x)[:100] for x in samples],
-                    "unique_values": col_data.nunique(),
-                    "null_count": df[col].isna().sum(),
+                    "samples": [str(x)[:100] for x in python_samples],
+                    "unique_values": int(col_data.nunique()),
+                    "null_count": int(df[col].isna().sum()),
                     "stats": stats
                 }
         
-        # Sample rows
+        # Sample rows (convert to native Python types)
         for idx, row in df.head(3).iterrows():
+            row_data = {}
+            for col in df.columns:
+                val = row[col]
+                if isinstance(val, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                    row_data[col] = int(val)
+                elif isinstance(val, (np.floating, np.float64, np.float32, np.float16)):
+                    row_data[col] = float(val)
+                elif pd.isna(val):
+                    row_data[col] = None
+                else:
+                    row_data[col] = str(val)[:100]
+            
             data_info["sample_data"].append({
-                "row": idx,
-                "data": {col: str(row[col])[:100] for col in df.columns}
+                "row": int(idx),
+                "data": row_data
             })
         
         return data_info
     
     def _enhance_with_real_stats(self, analysis, df):
-        """Add real statistical data to LLM analysis"""
+        """Add real statistical data to LLM analysis with proper serialization"""
         if 'columns' not in analysis:
             analysis['columns'] = {}
         
@@ -170,12 +210,12 @@ class SmartPatternAnalyzer:
             if len(col_data) > 0:
                 col_info = analysis['columns'][col]
                 
-                # Always add these stats
+                # Always add these stats (convert to native Python types)
                 col_info['real_stats'] = {
-                    'row_count': len(col_data),
-                    'unique_count': col_data.nunique(),
+                    'row_count': int(len(col_data)),
+                    'unique_count': int(col_data.nunique()),
                     'unique_ratio': float(col_data.nunique() / len(col_data)),
-                    'null_count': df[col].isna().sum()
+                    'null_count': int(df[col].isna().sum())
                 }
                 
                 # Try numeric analysis
@@ -185,12 +225,13 @@ class SmartPatternAnalyzer:
                         if 'numeric_stats' not in col_info:
                             col_info['numeric_stats'] = {}
                         
+                        # Convert numpy types to Python types
                         col_info['numeric_stats'].update({
                             'min': float(numeric_data.min()),
                             'max': float(numeric_data.max()),
                             'mean': float(numeric_data.mean()),
-                            'std': float(numeric_data.std()) if len(numeric_data) > 1 else 0,
-                            'is_integer': numeric_data.apply(lambda x: float(x).is_integer()).all()
+                            'std': float(numeric_data.std()) if len(numeric_data) > 1 else 0.0,
+                            'is_integer': bool(numeric_data.apply(lambda x: float(x).is_integer()).all())
                         })
                         
                         # Check decimal places
@@ -199,13 +240,24 @@ class SmartPatternAnalyzer:
                                 lambda x: len(str(x).split('.')[1]) if '.' in str(x) else 0
                             )
                             col_info['numeric_stats']['max_decimals'] = int(decimals.max())
-                            col_info['numeric_stats']['common_decimals'] = int(decimals.mode().iloc[0]) if len(decimals.mode()) > 0 else 2
-                except:
+                            mode_val = decimals.mode()
+                            col_info['numeric_stats']['common_decimals'] = int(mode_val.iloc[0]) if len(mode_val) > 0 else 2
+                except Exception as e:
                     pass
                 
                 # Text analysis
                 if len(col_data) > 0:
-                    samples = col_data.head(10).astype(str).tolist()
+                    samples = []
+                    for sample in col_data.head(10).tolist():
+                        if isinstance(sample, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+                            samples.append(str(int(sample)))
+                        elif isinstance(sample, (np.floating, np.float64, np.float32, np.float16)):
+                            samples.append(str(float(sample)))
+                        elif pd.isna(sample):
+                            samples.append("")
+                        else:
+                            samples.append(str(sample))
+                    
                     col_info['sample_patterns'] = samples
                     
                     # Length analysis
@@ -214,13 +266,13 @@ class SmartPatternAnalyzer:
                         'min': int(lengths.min()),
                         'max': int(lengths.max()),
                         'avg': float(lengths.mean()),
-                        'std': float(lengths.std()) if len(lengths) > 1 else 0
+                        'std': float(lengths.std()) if len(lengths) > 1 else 0.0
                     }
         
         return analysis
     
     def _statistical_analysis(self, df):
-        """Statistical fallback analysis"""
+        """Statistical fallback analysis with proper serialization"""
         analysis = {'columns': {}}
         
         for col in df.columns:
@@ -230,8 +282,8 @@ class SmartPatternAnalyzer:
                     'data_type': 'auto_detected',
                     'patterns_observed': 'Statistical patterns',
                     'real_stats': {
-                        'row_count': len(col_data),
-                        'unique_count': col_data.nunique(),
+                        'row_count': int(len(col_data)),
+                        'unique_count': int(col_data.nunique()),
                         'unique_ratio': float(col_data.nunique() / len(col_data))
                     }
                 }
@@ -247,13 +299,21 @@ class SmartPatternAnalyzer:
                             'min': float(numeric_data.min()),
                             'max': float(numeric_data.max()),
                             'mean': float(numeric_data.mean()),
-                            'is_integer': numeric_data.apply(lambda x: float(x).is_integer()).all()
+                            'is_integer': bool(numeric_data.apply(lambda x: float(x).is_integer()).all())
                         }
                     else:
                         col_info['data_type'] = 'text'
                         
                         # Check for common patterns
-                        samples = col_data.head(5).astype(str).tolist()
+                        samples = []
+                        for sample in col_data.head(5).tolist():
+                            if isinstance(sample, (np.integer, np.int64)):
+                                samples.append(str(int(sample)))
+                            elif isinstance(sample, (np.floating, np.float64)):
+                                samples.append(str(float(sample)))
+                            else:
+                                samples.append(str(sample))
+                        
                         col_info['sample_patterns'] = samples
                         
                         # Check for email pattern
@@ -265,7 +325,7 @@ class SmartPatternAnalyzer:
                         if any(re.match(p, str(s)) for p in date_patterns for s in samples[:2]):
                             col_info['data_type'] = 'date_like'
                 
-                except:
+                except Exception as e:
                     col_info['data_type'] = 'text'
                 
                 # Length stats
@@ -288,7 +348,7 @@ class SmartPatternAnalyzer:
 # =============================================================================
 class SmartDataGenerator:
     def __init__(self):
-        self.analyzer = SmartPatternAnalyzer()  # Fixed class name
+        self.analyzer = SmartPatternAnalyzer()
     
     def generate_data(self, original_df, num_rows, variation=0.1):
         """
@@ -380,7 +440,7 @@ class SmartDataGenerator:
             if prefix:
                 ids.append(f"{prefix}{start_id + i:06d}")
             else:
-                ids.append(f"{start_id + i}")
+                ids.append(str(start_id + i))
         
         return ids
     
@@ -459,16 +519,16 @@ class SmartDataGenerator:
                 # Integer data
                 data = np.random.normal(mean_val, std_val * (1 + variation), num_rows)
                 data = np.clip(data, min_val, max_val)
-                return np.round(data).astype(int)
+                return [int(x) for x in np.round(data)]
             else:
                 # Float data
                 data = np.random.normal(mean_val, std_val * (1 + variation), num_rows)
                 data = np.clip(data, min_val, max_val)
                 decimals = stats.get('common_decimals', 2)
-                return np.round(data, decimals)
+                return [float(round(x, decimals)) for x in data]
         else:
             # Fallback
-            return np.random.uniform(10, 1000, num_rows)
+            return [float(round(x, 2)) for x in np.random.uniform(10, 1000, num_rows)]
     
     def _generate_categorical(self, original_series, num_rows):
         """Generate categorical data"""
@@ -476,11 +536,11 @@ class SmartDataGenerator:
             unique_vals = original_series.dropna().unique()
             if len(unique_vals) > 0:
                 # Use original categories
-                return np.random.choice(unique_vals, num_rows)
+                return np.random.choice(unique_vals, num_rows).tolist()
         
         # Default categories
         categories = ['Active', 'Pending', 'Completed', 'Cancelled', 'Shipped', 'Processing']
-        return np.random.choice(categories, num_rows)
+        return np.random.choice(categories, num_rows).tolist()
     
     def _generate_prices(self, col_info, num_rows, variation):
         """Generate price-like data"""
@@ -498,19 +558,19 @@ class SmartDataGenerator:
                 
                 # Common price endings
                 if random.random() < 0.3:
-                    price = np.round(base) + 0.99  # .99 ending
+                    price = round(base) + 0.99  # .99 ending
                 elif random.random() < 0.2:
-                    price = np.round(base) + 0.50  # .50 ending
+                    price = round(base) + 0.50  # .50 ending
                 elif random.random() < 0.1:
-                    price = np.round(base)  # Whole number
+                    price = round(base)  # Whole number
                 else:
-                    price = np.round(base, 2)  # Random cents
+                    price = round(base, 2)  # Random cents
                 
                 prices.append(float(price))
             
             return prices
         else:
-            return np.round(np.random.uniform(1, 1000, num_rows), 2)
+            return [float(round(x, 2)) for x in np.random.uniform(1, 1000, num_rows)]
     
     def _generate_text(self, col_info, original_series, num_rows):
         """Generate text data"""
@@ -518,7 +578,7 @@ class SmartDataGenerator:
             # If few unique values, reuse them
             unique_vals = original_series.dropna().unique()
             if len(unique_vals) <= 15:
-                return np.random.choice(unique_vals, num_rows)
+                return np.random.choice(unique_vals, num_rows).tolist()
             
             # Generate based on patterns
             samples = original_series.head(10).astype(str).tolist()
@@ -556,11 +616,11 @@ class SmartDataGenerator:
         
         if method == 'sequential':
             start = details.get('parameters', {}).get('start', 1)
-            return list(range(start, start + num_rows))
+            return [str(start + i) for i in range(num_rows)]
         
         elif method == 'categorical':
             categories = details.get('parameters', {}).get('categories', ['A', 'B', 'C'])
-            return np.random.choice(categories, num_rows)
+            return np.random.choice(categories, num_rows).tolist()
         
         else:
             return [f"GEN_{i}" for i in range(num_rows)]
@@ -570,7 +630,7 @@ class SmartDataGenerator:
         if original_series is not None and len(original_series) > 0:
             unique_vals = original_series.dropna().unique()
             if len(unique_vals) > 0:
-                return np.random.choice(unique_vals, num_rows)
+                return np.random.choice(unique_vals, num_rows).tolist()
         
         return [f"DATA_{i:06d}" for i in range(num_rows)]
     
@@ -678,10 +738,6 @@ def main():
                                 st.write(f"**Data type:** {info.get('data_type', 'Unknown')}")
                                 st.write(f"**Patterns:** {info.get('patterns_observed', '')}")
                                 st.write(f"**Generation:** {info.get('generation_method', '')}")
-                                
-                                if 'real_stats' in info:
-                                    st.write("**Statistics:**")
-                                    st.json(info['real_stats'], expanded=False)
                 
                 # Generate button
                 if st.session_state.analysis:
@@ -715,19 +771,26 @@ def main():
                         with col1:
                             st.write("**Original Data**")
                             st.write(f"Rows: {len(df)}")
-                            st.write(f"Sample values:")
-                            for col in df.columns[:3]:
-                                st.write(f"- {col}: {df[col].iloc[0] if len(df) > 0 else 'N/A'}")
+                            if len(df) > 0:
+                                sample_row = df.iloc[0]
+                                for col in df.columns[:3]:
+                                    st.write(f"- {col}: {sample_row[col]}")
                         
                         with col2:
                             st.write("**Generated Data**")
                             st.write(f"Rows: {len(df_gen)}")
-                            st.write(f"Sample values:")
-                            for col in df_gen.columns[:3]:
-                                st.write(f"- {col}: {df_gen[col].iloc[0] if len(df_gen) > 0 else 'N/A'}")
+                            if len(df_gen) > 0:
+                                sample_row = df_gen.iloc[0]
+                                for col in df_gen.columns[:3]:
+                                    st.write(f"- {col}: {sample_row[col]}")
                     
                     with tab3:
-                        csv = df_gen.to_csv(index=False)
+                        # Convert all data to strings for CSV to avoid serialization issues
+                        df_gen_str = df_gen.copy()
+                        for col in df_gen_str.columns:
+                            df_gen_str[col] = df_gen_str[col].astype(str)
+                        
+                        csv = df_gen_str.to_csv(index=False)
                         st.download_button(
                             "📥 Download CSV",
                             csv,
@@ -736,22 +799,14 @@ def main():
                             key="download-csv"
                         )
                         
-                        # JSON download
-                        json_str = df_gen.to_json(orient='records', indent=2)
-                        st.download_button(
-                            "📥 Download JSON",
-                            json_str,
-                            "realistic_synthetic_data.json",
-                            "application/json",
-                            key="download-json"
-                        )
-                        
                         if st.button("🔄 Generate New Batch"):
                             st.session_state.generated_data = None
                             st.rerun()
         
         except Exception as e:
             st.error(f"Error: {str(e)}")
+            st.error("Full error details:")
+            st.exception(e)
 
 if __name__ == "__main__":
     main()
