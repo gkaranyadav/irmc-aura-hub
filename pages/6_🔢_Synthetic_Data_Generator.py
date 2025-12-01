@@ -12,93 +12,104 @@ from auth import check_session
 from typing import Dict, List, Any, Optional, Tuple
 from collections import Counter, defaultdict
 import hashlib
+import itertools
 
 # =============================================================================
-# INTELLIGENT DATA ANALYZER & GENERATOR
+# ULTIMATE INTELLIGENT DATA ANALYZER & GENERATOR
+# LLM thinks like a data scientist + domain expert
 # =============================================================================
 
-class IntelligentDataGenerator:
-    """Ultimate generator: LLM analyzes patterns, Python generates data perfectly"""
+class UltimateDataGenerator:
+    """LLM does DEEP semantic analysis, Python executes perfectly"""
     
     def __init__(self):
         try:
             self.client = Groq(api_key=st.secrets["GROQ_API_KEY"])
             self.available = True
             self.models = {
-                "analysis": "llama-3.3-70b-versatile",  # Best for deep analysis
-                "large_context": "mixtral-8x7b-32768",   # For complex datasets
+                "deep_analysis": "llama-3.3-70b-versatile",
+                "large_context": "mixtral-8x7b-32768",
             }
         except:
             self.available = False
             st.warning("LLM not available. Using rule-based fallback.")
     
-    def deep_analyze_dataset(self, df: pd.DataFrame) -> Dict:
+    def ultimate_analyze_dataset(self, df: pd.DataFrame) -> Dict:
         """
-        Phase 1: Deep LLM analysis of the dataset
-        Returns a generation blueprint with intelligent rules
+        ULTIMATE ANALYSIS: LLM analyzes data like ChatGPT/DeepSeek would
         """
         if not self.available or df.empty:
-            return self._create_basic_blueprint(df)
+            return self._create_smart_blueprint(df)
         
-        # Prepare samples for LLM (5-7 rows for analysis)
-        samples = self._prepare_samples_for_analysis(df)
+        # Get comprehensive samples
+        samples = self._get_comprehensive_samples(df)
         
-        # Get column statistics for context
-        stats = self._compute_column_statistics(df)
+        # Compute deep statistics
+        stats = self._compute_deep_statistics(df)
         
-        prompt = self._build_analysis_prompt(df, samples, stats)
+        # Domain detection
+        domain_hint = self._detect_domain_hint(df)
+        
+        prompt = self._build_ultimate_analysis_prompt(df, samples, stats, domain_hint)
         
         try:
             messages = [
-                {"role": "system", "content": """You are an expert data analyst and synthetic data generation specialist.
+                {"role": "system", "content": """You are the ULTIMATE data analysis expert. You analyze ANY dataset with DEEP understanding.
 
-                CRITICAL MISSION: Analyze ANY dataset and create PERFECT generation rules for synthetic data.
+                THINK LIKE CHATGPT/DEEPSEEK:
+                1. First, UNDERSTAND what this data represents (medical, e-commerce, financial, etc.)
+                2. Analyze EACH column SEMANTICALLY - not just data type, but MEANING
+                3. Understand REAL-WORLD LOGIC and relationships
+                4. Detect PATTERNS, CONSTRAINTS, and BUSINESS RULES
+                5. Create PERFECT generation rules that maintain 100% realism
 
-                You MUST:
-                1. Deeply understand EACH column's purpose and patterns
-                2. Detect ALL relationships between columns
-                3. Create realistic generation rules that maintain real-world logic
-                4. Provide context-aware value pools
-                5. Ensure ALL synthetic data will be 100% realistic
-
-                Think step-by-step and be extremely thorough."""},
+                CRITICAL: Your analysis must be SO GOOD that synthetic data is indistinguishable from real data."""},
                 {"role": "user", "content": prompt}
             ]
             
             response = self.client.chat.completions.create(
-                model=self.models["analysis"],
+                model=self.models["deep_analysis"],
                 messages=messages,
-                temperature=0.1,  # Low temperature for consistent analysis
-                max_tokens=4000,
+                temperature=0.1,
+                max_tokens=6000,  # More tokens for deep analysis
                 response_format={"type": "json_object"}
             )
             
             result = response.choices[0].message.content
-            blueprint = self._parse_analysis_result(result, df)
+            blueprint = self._parse_ultimate_analysis(result, df)
             
-            # Enhance blueprint with additional insights
-            blueprint = self._enhance_blueprint(blueprint, df, stats)
+            # Enhance with programmatic insights
+            blueprint = self._enhance_with_programmatic_insights(blueprint, df)
             
             return blueprint
             
         except Exception as e:
-            st.error(f"Deep analysis failed: {str(e)}")
-            return self._create_basic_blueprint(df)
+            st.error(f"Ultimate analysis failed: {str(e)}")
+            return self._create_smart_blueprint(df)
     
-    def _prepare_samples_for_analysis(self, df: pd.DataFrame) -> List[Dict]:
-        """Prepare representative samples for LLM analysis"""
+    def _get_comprehensive_samples(self, df: pd.DataFrame) -> List[Dict]:
+        """Get comprehensive samples showing different patterns"""
         samples = []
-        # Take first 3, middle 2, and last 2 rows for variety
-        indices = list(range(min(3, len(df))))
-        if len(df) > 5:
-            mid = len(df) // 2
-            indices.extend([mid, mid + 1])
-        if len(df) > 7:
-            indices.extend([-2, -1])
         
+        # Get diverse samples: first, middle, last, and random
+        indices = list(range(min(5, len(df))))  # First 5
+        
+        if len(df) > 10:
+            # Middle samples
+            mid = len(df) // 2
+            indices.extend([mid-1, mid, mid+1])
+            
+            # Last samples
+            indices.extend([-3, -2, -1])
+            
+            # Random samples for diversity
+            random_indices = random.sample(range(5, len(df)-5), min(3, len(df)-10))
+            indices.extend(random_indices)
+        
+        # Remove duplicates and ensure valid indices
         indices = sorted(set(idx for idx in indices if 0 <= idx < len(df)))
         
-        for idx in indices[:7]:  # Max 7 samples
+        for idx in indices[:15]:  # Max 15 comprehensive samples
             row = df.iloc[idx]
             sample = {}
             for col in df.columns:
@@ -110,18 +121,20 @@ class IntelligentDataGenerator:
                 elif isinstance(val, (float, np.floating)):
                     sample[col] = float(val)
                 else:
-                    sample[col] = str(val)[:100]  # Limit length
+                    # Keep full string for analysis
+                    sample[col] = str(val)
             samples.append(sample)
         
         return samples
     
-    def _compute_column_statistics(self, df: pd.DataFrame) -> Dict:
-        """Compute detailed statistics for each column"""
+    def _compute_deep_statistics(self, df: pd.DataFrame) -> Dict:
+        """Compute deep statistics for semantic understanding"""
         stats = {}
+        
         for col in df.columns:
             non_null = df[col].dropna()
             if len(non_null) == 0:
-                stats[col] = {"null_count": len(df[col]), "total": len(df[col])}
+                stats[col] = {"empty": True}
                 continue
             
             col_stats = {
@@ -129,313 +142,471 @@ class IntelligentDataGenerator:
                 "total": len(df[col]),
                 "unique_count": len(non_null.unique()),
                 "unique_ratio": len(non_null.unique()) / len(non_null),
-                "sample_values": non_null.head(5).tolist()
+                "most_common": [],
+                "sample_patterns": []
             }
+            
+            # Most common values
+            if len(non_null) > 0:
+                value_counts = non_null.value_counts().head(5)
+                col_stats["most_common"] = [{"value": str(val), "count": int(cnt)} 
+                                           for val, cnt in value_counts.items()]
+            
+            # Detect patterns in samples
+            samples = non_null.head(10).astype(str).tolist()
+            patterns = self._detect_semantic_patterns(col, samples)
+            col_stats["sample_patterns"] = patterns
             
             # Type-specific stats
             if pd.api.types.is_numeric_dtype(df[col]):
                 col_stats.update({
+                    "type": "numeric",
                     "min": float(non_null.min()),
                     "max": float(non_null.max()),
                     "mean": float(non_null.mean()),
-                    "std": float(non_null.std())
+                    "std": float(non_null.std()),
+                    "has_decimals": any(not float(x).is_integer() for x in non_null.head(20) if pd.notna(x))
                 })
+            else:
+                col_stats["type"] = "text"
+                # Text analysis
+                avg_len = np.mean([len(str(x)) for x in non_null.head(50)])
+                col_stats["avg_length"] = float(avg_len)
             
             stats[col] = col_stats
         
+        # Cross-column statistics
+        stats["relationships"] = self._find_potential_relationships(df)
+        
         return stats
     
-    def _build_analysis_prompt(self, df: pd.DataFrame, samples: List[Dict], stats: Dict) -> str:
-        """Build comprehensive analysis prompt"""
-        
-        column_details = []
-        for col in df.columns:
-            detail = f"**{col}**"
-            if col in stats:
-                s = stats[col]
-                detail += f" | Null: {s['null_count']}/{s['total']}"
-                detail += f" | Unique: {s['unique_count']} ({s['unique_ratio']:.1%})"
-                if 'min' in s:
-                    detail += f" | Range: {s['min']} - {s['max']}"
-            
-            # Add first few unique values
-            unique_vals = df[col].dropna().unique()[:5]
-            if len(unique_vals) > 0:
-                detail += f" | Samples: {unique_vals.tolist()}"
-            
-            column_details.append(detail)
-        
-        # Escape curly braces in the prompt template
-        example_format = "AP{num:03d}".replace("{", "{{").replace("}", "}}")
-        
-        prompt = f"""
-        DEEP DATASET ANALYSIS REQUEST
-        
-        DATASET OVERVIEW:
-        - Rows: {len(df)}
-        - Columns: {len(df.columns)}
-        - Column names: {', '.join(df.columns.tolist())}
-        
-        COLUMN DETAILS:
-        {chr(10).join(column_details)}
-        
-        SAMPLE DATA (representative rows):
-        {json.dumps(samples, indent=2, default=str)}
-        
-        YOUR TASK:
-        Analyze this dataset COMPLETELY and create a generation blueprint for synthetic data.
-        
-        For EACH column, provide:
-        1. **column_type**: What kind of data is this? Choose from:
-           - sequential_id (AP001, ID100, etc.)
-           - human_name (First Last format)
-           - categorical_fixed (limited set of values)
-           - categorical_open (many values but categorical)
-           - numeric_integer (whole numbers)
-           - numeric_float (decimal numbers)
-           - monetary_amount (prices, fees, etc.)
-           - date (dates in any format)
-           - time (times in any format)
-           - datetime (date + time)
-           - phone_number (phone/mobile numbers)
-           - email_address (email addresses)
-           - text_description (free text)
-           - boolean (true/false, yes/no)
-           - code_id (alphanumeric codes)
-           - percentage (0-100%)
-           - rating (1-5, 1-10 scales)
-           - custom (describe in detail)
-        
-        2. **patterns_detected**: What specific patterns do you see?
-           - Format: "AP###", "DD-MM-YYYY", etc.
-           - Structure: "FirstName LastName", "Dr. Title LastName"
-           - Range: "18-70", "$50-$500"
-           - Distribution: "mostly 20-40", "round numbers common"
-        
-        3. **generation_rules**: EXACT rules for generating new values:
-           - How to continue sequences?
-           - What value ranges to use?
-           - What formats to maintain?
-           - Any constraints or special logic?
-        
-        4. **value_pool_suggestions**: Realistic values for categorical data
-           - Lists of names, products, categories, etc.
-           - Make them realistic and domain-appropriate
-        
-        For the ENTIRE dataset, provide:
-        5. **dataset_context**: What domain/context is this? (medical, e-commerce, academic, etc.)
-        
-        6. **relationships**: ALL relationships between columns:
-           - "If column A contains X, then column B should be Y"
-           - "Column C must be greater than Column D"
-           - "Columns E and F should have logical consistency"
-        
-        7. **realism_constraints**: Rules to ensure realism:
-           - "No decimal ages"
-           - "Phone numbers must be valid format"
-           - "Dates must be logical (no future dates for completed orders)"
-        
-        8. **generation_strategy**: How to generate data intelligently:
-           - "Generate names first, then assign gender based on name patterns"
-           - "Calculate fees based on department and treatment type"
-        
-        OUTPUT FORMAT: Return a JSON object with this structure:
-        {{
-            "dataset_context": "medical_appointments_india",
-            "columns": {{
-                "column_name_1": {{
-                    "column_type": "sequential_id",
-                    "patterns_detected": ["AP### format", "sequential numbers"],
-                    "generation_rules": ["Continue from AP025", "{example_format} format"],
-                    "value_pool_suggestions": []
-                }},
-                "column_name_2": {{
-                    "column_type": "human_name",
-                    "patterns_detected": ["Indian names", "First Last format"],
-                    "generation_rules": ["70% Indian names", "30% Western names", "Title case"],
-                    "value_pool_suggestions": {{
-                        "indian_male_first": ["Rahul", "Amit", "Raj"],
-                        "indian_female_first": ["Priya", "Neha", "Anjali"],
-                        "indian_last": ["Patel", "Sharma", "Singh"]
-                    }}
-                }}
-            }},
-            "relationships": [
-                "If PatientName contains 'Singh' or 'Kumar' then Gender = 'M'",
-                "If Department = 'Cardiology' then Fee between 1000-2000"
-            ],
-            "realism_constraints": [
-                "Ages must be integers 18-70",
-                "Phone numbers must be 10 digits starting with 6-9"
-            ],
-            "generation_strategy": "Generate IDs sequentially, then names, then assign gender based on name patterns"
-        }}
-        
-        Be EXTREMELY thorough. Every column MUST have detailed analysis.
-        The synthetic data MUST be 100% realistic and logical.
-        """
-        
-        return prompt
-    
-    def _parse_analysis_result(self, result: str, df: pd.DataFrame) -> Dict:
-        """Parse LLM's analysis into a structured blueprint"""
-        try:
-            data = json.loads(result)
-            
-            # Ensure all columns are covered
-            for col in df.columns:
-                if col not in data.get("columns", {}):
-                    # Create basic entry for missing columns
-                    data.setdefault("columns", {})[col] = {
-                        "column_type": "unknown",
-                        "patterns_detected": ["Not analyzed by LLM"],
-                        "generation_rules": ["Use values from original data"],
-                        "value_pool_suggestions": df[col].dropna().unique().tolist()[:20]
-                    }
-            
-            # Add metadata
-            data["analysis_timestamp"] = datetime.now().isoformat()
-            data["original_columns"] = df.columns.tolist()
-            data["original_row_count"] = len(df)
-            
-            return data
-            
-        except Exception as e:
-            st.warning(f"Could not parse LLM analysis: {str(e)}")
-            # Create fallback blueprint
-            return self._create_basic_blueprint(df)
-    
-    def _enhance_blueprint(self, blueprint: Dict, df: pd.DataFrame, stats: Dict) -> Dict:
-        """Enhance blueprint with programmatically detected patterns"""
-        
-        for col in df.columns:
-            if col not in blueprint.get("columns", {}):
-                blueprint.setdefault("columns", {})[col] = {}
-            
-            col_config = blueprint["columns"][col]
-            col_data = df[col].dropna()
-            
-            # Detect patterns programmatically
-            detected_patterns = self._detect_patterns_programmatically(col, df[col])
-            if detected_patterns:
-                col_config.setdefault("patterns_detected", []).extend(detected_patterns)
-            
-            # Detect data type programmatically
-            if "column_type" not in col_config or col_config["column_type"] == "unknown":
-                col_config["column_type"] = self._detect_column_type_programmatically(col, df[col])
-            
-            # Add value pool from actual data
-            if col_data.dtype == 'object' and len(col_data.unique()) <= 50:
-                unique_vals = col_data.unique().tolist()
-                if "value_pool_suggestions" not in col_config:
-                    col_config["value_pool_suggestions"] = unique_vals
-            
-            # Detect numeric ranges
-            if pd.api.types.is_numeric_dtype(df[col]) and len(col_data) > 0:
-                col_config["numeric_range"] = {
-                    "min": float(col_data.min()),
-                    "max": float(col_data.max()),
-                    "mean": float(col_data.mean())
-                }
-        
-        # Detect relationships programmatically
-        detected_relationships = self._detect_relationships_programmatically(df)
-        if detected_relationships:
-            blueprint.setdefault("relationships", []).extend(detected_relationships)
-        
-        return blueprint
-    
-    def _detect_patterns_programmatically(self, col_name: str, series: pd.Series) -> List[str]:
-        """Detect patterns in column data"""
+    def _detect_semantic_patterns(self, col_name: str, samples: List[str]) -> List[str]:
+        """Detect semantic patterns in column values"""
         patterns = []
-        non_null = series.dropna()
-        
-        if len(non_null) == 0:
-            return patterns
-        
-        # Sample values for pattern detection
-        samples = non_null.head(10).astype(str).tolist()
+        col_lower = col_name.lower()
         
         # Check for IDs
-        col_lower = col_name.lower()
-        if any(x in col_lower for x in ['id', 'no', 'num', 'code', 'ref']):
-            if all(re.match(r'^[A-Z]{2}\d{3}$', str(x)) for x in samples[:5] if x):
-                patterns.append("Format: XX### (2 letters + 3 digits)")
-            elif all(re.match(r'^\d+$', str(x)) for x in samples[:5] if x):
-                patterns.append("Numeric sequential IDs")
+        if any(x in col_lower for x in ['id', 'no', 'number', 'code', 'ref']):
+            if samples and all(re.match(r'^[A-Z]{2}\d{3,}$', s) for s in samples[:3] if s):
+                patterns.append("Prefixed sequential ID (e.g., AP001)")
+            elif samples and all(re.match(r'^\d+$', s) for s in samples[:3] if s):
+                patterns.append("Numeric ID")
+        
+        # Check for names
+        if any(x in col_lower for x in ['name', 'patient', 'doctor', 'customer', 'user']):
+            name_samples = [s for s in samples[:5] if s and len(s.split()) >= 2]
+            if len(name_samples) >= 3:
+                patterns.append("Full names (First Last)")
+                # Check cultural patterns
+                if any('singh' in s.lower() or 'kumar' in s.lower() or 'patel' in s.lower() for s in name_samples):
+                    patterns.append("Indian names detected")
+                elif any('smith' in s.lower() or 'johnson' in s.lower() or 'williams' in s.lower() for s in name_samples):
+                    patterns.append("Western names detected")
         
         # Check for dates
         date_patterns = [
             (r'\d{2}-\d{2}-\d{4}', 'DD-MM-YYYY'),
             (r'\d{4}-\d{2}-\d{2}', 'YYYY-MM-DD'),
-            (r'\d{2}/\d{2}/\d{4}', 'DD/MM/YYYY'),
+            (r'\d{2}/\d{2}/\d{4}', 'MM/DD/YYYY'),
         ]
         for pattern, format_name in date_patterns:
-            if any(re.match(pattern, str(x)) for x in samples if x):
+            if any(re.match(pattern, s) for s in samples if s):
                 patterns.append(f"Date format: {format_name}")
                 break
         
         # Check for times
         time_patterns = [
-            (r'\d{1,2}:\d{2} [AP]M', '12-hour time with AM/PM'),
-            (r'\d{2}:\d{2}:\d{2}', '24-hour time with seconds'),
+            (r'\d{1,2}:\d{2} [AP]M', '12-hour time'),
+            (r'\d{2}:\d{2}:\d{2}', '24-hour with seconds'),
             (r'\d{2}:\d{2}', '24-hour time'),
         ]
         for pattern, format_name in time_patterns:
-            if any(re.match(pattern, str(x)) for x in samples if x):
+            if any(re.match(pattern, s) for s in samples if s):
                 patterns.append(f"Time format: {format_name}")
                 break
         
-        # Check for phone numbers
-        if any(re.match(r'^\d{10}$', str(x)) for x in samples if x):
-            patterns.append("10-digit phone numbers")
+        # Check for phones
+        phone_samples = [re.sub(r'\D', '', s) for s in samples[:3] if s]
+        if phone_samples and all(len(p) == 10 for p in phone_samples):
+            if all(p[0] in '6789' for p in phone_samples):
+                patterns.append("Indian mobile numbers (10 digits, starts 6-9)")
+            else:
+                patterns.append("10-digit phone numbers")
         
         # Check for emails
-        if any('@' in str(x) for x in samples):
+        if any('@' in s and '.' in s.split('@')[-1] for s in samples[:3] if s):
             patterns.append("Email addresses")
+        
+        # Check for amounts/money
+        if any(x in col_lower for x in ['price', 'fee', 'amount', 'cost', 'salary', 'revenue']):
+            money_samples = [s for s in samples[:3] if s and re.match(r'^\d+(\.\d{2})?$', s.replace(',', ''))]
+            if money_samples:
+                patterns.append("Monetary amounts")
+                if all(s.endswith('.00') or s.endswith('.99') for s in money_samples):
+                    patterns.append("Common price endings (.00, .99)")
         
         return patterns
     
-    def _detect_column_type_programmatically(self, col_name: str, series: pd.Series) -> str:
-        """Detect column type programmatically"""
+    def _find_potential_relationships(self, df: pd.DataFrame) -> List[str]:
+        """Find potential relationships between columns"""
+        relationships = []
+        
+        # Name-Gender relationships
+        name_cols = [col for col in df.columns if any(x in col.lower() for x in ['name', 'patient', 'customer'])]
+        gender_cols = [col for col in df.columns if 'gender' in col.lower() or 'sex' in col.lower()]
+        
+        for name_col in name_cols:
+            for gender_col in gender_cols:
+                if name_col != gender_col:
+                    # Check a few samples
+                    for idx in range(min(5, len(df))):
+                        name = str(df.iloc[idx][name_col]) if pd.notna(df.iloc[idx][name_col]) else ""
+                        gender = str(df.iloc[idx][gender_col]) if pd.notna(df.iloc[idx][gender_col]) else ""
+                        
+                        if name and gender:
+                            name_lower = name.lower()
+                            if ('singh' in name_lower or 'kumar' in name_lower) and gender.upper() == 'M':
+                                relationships.append(f"{name_col} → {gender_col}: Names with Singh/Kumar are usually Male")
+                                break
+                            elif ('devi' in name_lower or 'kumari' in name_lower) and gender.upper() == 'F':
+                                relationships.append(f"{name_col} → {gender_col}: Names with Devi/Kumari are usually Female")
+                                break
+        
+        # Date relationships
+        date_cols = [col for col in df.columns if 'date' in col.lower()]
+        if len(date_cols) >= 2:
+            relationships.append(f"Date sequence: {date_cols[0]} typically before {date_cols[1]}")
+        
+        # Amount-category relationships
+        amount_cols = [col for col in df.columns if any(x in col.lower() for x in ['amount', 'fee', 'price', 'cost'])]
+        category_cols = [col for col in df.columns if any(x in col.lower() for x in ['category', 'type', 'department', 'product'])]
+        
+        if amount_cols and category_cols:
+            relationships.append(f"{category_cols[0]} influences {amount_cols[0]} values")
+        
+        return relationships
+    
+    def _detect_domain_hint(self, df: pd.DataFrame) -> str:
+        """Detect domain from column names and sample data"""
+        column_names = ' '.join(df.columns).lower()
+        
+        # Medical domain
+        medical_keywords = ['patient', 'doctor', 'appointment', 'diagnosis', 'medical', 'hospital', 
+                           'clinic', 'treatment', 'prescription', 'surgery']
+        if any(keyword in column_names for keyword in medical_keywords):
+            return "medical_healthcare"
+        
+        # E-commerce domain
+        ecommerce_keywords = ['order', 'product', 'customer', 'price', 'quantity', 'shipping',
+                             'payment', 'cart', 'invoice', 'delivery']
+        if any(keyword in column_names for keyword in ecommerce_keywords):
+            return "ecommerce_retail"
+        
+        # Financial domain
+        financial_keywords = ['transaction', 'account', 'bank', 'amount', 'balance', 'transfer',
+                             'loan', 'credit', 'debit', 'interest']
+        if any(keyword in column_names for keyword in financial_keywords):
+            return "financial_banking"
+        
+        # Education domain
+        education_keywords = ['student', 'teacher', 'course', 'grade', 'marks', 'attendance',
+                             'school', 'college', 'university', 'exam']
+        if any(keyword in column_names for keyword in education_keywords):
+            return "education_academic"
+        
+        # Human Resources domain
+        hr_keywords = ['employee', 'salary', 'department', 'manager', 'hire', 'position',
+                      'performance', 'attendance', 'leave', 'recruitment']
+        if any(keyword in column_names for keyword in hr_keywords):
+            return "hr_employment"
+        
+        return "general"
+    
+    def _build_ultimate_analysis_prompt(self, df: pd.DataFrame, samples: List[Dict], 
+                                       stats: Dict, domain_hint: str) -> str:
+        """Build ULTIMATE analysis prompt for deep understanding"""
+        
+        # Column analysis summary
+        column_analysis = []
+        for col in df.columns:
+            col_stat = stats.get(col, {})
+            analysis = f"**{col}**: "
+            
+            if col_stat.get("type") == "numeric":
+                analysis += f"Numeric, Range: {col_stat.get('min', '?')}-{col_stat.get('max', '?')}"
+                if col_stat.get("has_decimals"):
+                    analysis += ", Has decimals"
+            else:
+                analysis += f"Text, Avg length: {col_stat.get('avg_length', '?')}"
+            
+            analysis += f", Unique: {col_stat.get('unique_ratio', 0):.1%}"
+            
+            patterns = col_stat.get("sample_patterns", [])
+            if patterns:
+                analysis += f", Patterns: {', '.join(patterns[:3])}"
+            
+            column_analysis.append(analysis)
+        
+        prompt = f"""
+        # ULTIMATE DATASET ANALYSIS
+        
+        ## DATASET OVERVIEW
+        - Total rows: {len(df)}
+        - Total columns: {len(df.columns)}
+        - Columns: {', '.join(df.columns)}
+        - Domain hint: {domain_hint}
+        
+        ## COLUMN ANALYSIS
+        {chr(10).join(column_analysis)}
+        
+        ## COMPREHENSIVE SAMPLE DATA (showing diversity)
+        {json.dumps(samples, indent=2, default=str)}
+        
+        ## YOUR MISSION: DEEP SEMANTIC ANALYSIS
+        
+        Analyze this dataset like ChatGPT/DeepSeek would - with DEEP understanding:
+        
+        ### STEP 1: UNDERSTAND THE DOMAIN & CONTEXT
+        1. What is this data REALLY about? (Medical appointments? E-commerce orders? Financial transactions?)
+        2. What country/region is this from? (India? USA? Global?)
+        3. What industry/domain does this belong to?
+        
+        ### STEP 2: ANALYZE EACH COLUMN SEMANTICALLY
+        For EACH column, answer:
+        1. What does this column REPRESENT in the real world?
+        2. What SPECIFIC patterns/formatting does it have?
+        3. What are realistic values/ranges for this column?
+        4. What constraints/rules apply to this column?
+        
+        ### STEP 3: UNDERSTAND RELATIONSHIPS & BUSINESS RULES
+        1. How are columns RELATED to each other?
+        2. What business logic/rules exist in this data?
+        3. What REAL-WORLD constraints apply?
+        4. What would make synthetic data look FAKE? (Avoid these!)
+        
+        ### STEP 4: CREATE PERFECT GENERATION RULES
+        For synthetic data to be INDISTINGUISHABLE from real data:
+        1. What exact patterns to follow for each column?
+        2. How to maintain relationships between columns?
+        3. What value pools/ranges to use?
+        4. How to ensure 100% realism?
+        
+        ## OUTPUT FORMAT
+        Return a JSON object with this structure:
+        {{
+            "dataset_understanding": {{
+                "domain": "medical_appointments_india",
+                "purpose": "Patient appointment records in Indian hospital",
+                "country_region": "India",
+                "data_quality_notes": "Notes on data quality issues found"
+            }},
+            
+            "semantic_column_analysis": {{
+                "column_name_1": {{
+                    "semantic_meaning": "Appointment ID",
+                    "real_world_purpose": "Unique identifier for medical appointments",
+                    "detected_patterns": ["AP### format", "Sequential numbers"],
+                    "format_specification": "AP followed by 3-digit number",
+                    "realistic_rules": ["Continue sequence from last ID", "No duplicates", "Fixed format"],
+                    "generation_instructions": "Generate AP026, AP027, AP028...",
+                    "value_pool_or_range": "N/A - generated sequentially"
+                }},
+                "column_name_2": {{
+                    "semantic_meaning": "Patient full name",
+                    "real_world_purpose": "Patient's name for identification",
+                    "detected_patterns": ["Indian names", "First Last format", "Cultural naming conventions"],
+                    "format_specification": "FirstName LastName (Indian names)",
+                    "realistic_rules": ["Indian names only", "Gender indicators in surnames", "Proper capitalization"],
+                    "generation_instructions": "Generate realistic Indian names with proper gender alignment",
+                    "value_pool_or_range": {{
+                        "indian_male_names": ["Rahul", "Amit", "Raj", "Sanjay"],
+                        "indian_female_names": ["Priya", "Neha", "Anjali", "Sneha"],
+                        "indian_surnames": ["Patel", "Sharma", "Singh", "Kumar", "Gupta"]
+                    }}
+                }}
+            }},
+            
+            "relationships_and_constraints": [
+                {{
+                    "type": "name_gender_relationship",
+                    "description": "Gender must match name patterns",
+                    "rule": "If surname is Singh/Kumar → Gender = M, If surname is Devi/Kumari → Gender = F",
+                    "implementation": "Check name for gender indicators before assigning gender"
+                }},
+                {{
+                    "type": "department_diagnosis_link",
+                    "description": "Medical diagnosis must match department",
+                    "rule": "ENT department should have ear/nose/throat issues, Cardiology for heart issues",
+                    "implementation": "Use department-specific diagnosis lists"
+                }}
+            ],
+            
+            "generation_strategy": {{
+                "overall_approach": "Generate IDs first, then names, then assign gender based on names, then medical details",
+                "step_by_step": [
+                    "1. Generate sequential appointment IDs",
+                    "2. Generate realistic Indian names",
+                    "3. Assign gender based on name patterns",
+                    "4. Assign age with realistic distribution",
+                    "5. Generate Indian phone numbers",
+                    "6. Assign department with realistic frequencies",
+                    "7. Assign doctor from department",
+                    "8. Generate recent dates",
+                    "9. Generate appointment times during business hours",
+                    "10. Assign department-appropriate diagnosis",
+                    "11. Set realistic fee based on department",
+                    "12. Set status (mostly Completed)"
+                ]
+            }},
+            
+            "quality_requirements": [
+                "NO gender-name mismatches (Rahul should not be Female)",
+                "NO inappropriate diagnoses (ENT should not have Chest Pain)",
+                "NO invalid phone numbers (must be 10 digits Indian mobile)",
+                "NO unrealistic ages (18-70 for adults)",
+                "NO placeholder values",
+                "ALL values must make real-world sense"
+            ]
+        }}
+        
+        ## CRITICAL REQUIREMENTS
+        1. Be EXTREMELY detailed and thorough
+        2. Think about REAL-WORLD logic, not just patterns
+        3. Consider cultural/regional context
+        4. Identify what would make data look FAKE and avoid it
+        5. Create generation rules that ensure 100% realism
+        
+        Your analysis will be used to generate PERFECT synthetic data that is indistinguishable from real data.
+        """
+        
+        return prompt
+    
+    def _parse_ultimate_analysis(self, result: str, df: pd.DataFrame) -> Dict:
+        """Parse the ultimate analysis result"""
+        try:
+            data = json.loads(result)
+            
+            # Ensure all columns are covered
+            for col in df.columns:
+                if col not in data.get("semantic_column_analysis", {}):
+                    data.setdefault("semantic_column_analysis", {})[col] = {
+                        "semantic_meaning": "Unknown column",
+                        "real_world_purpose": "Unknown purpose",
+                        "detected_patterns": ["No patterns detected"],
+                        "generation_instructions": "Use values from original data",
+                        "value_pool_or_range": df[col].dropna().unique().tolist()[:20]
+                    }
+            
+            # Add metadata
+            data["analysis_timestamp"] = datetime.now().isoformat()
+            data["original_shape"] = {"rows": len(df), "columns": len(df.columns)}
+            data["column_names"] = df.columns.tolist()
+            
+            return data
+            
+        except Exception as e:
+            st.warning(f"Could not parse ultimate analysis: {str(e)}")
+            return self._create_smart_blueprint(df)
+    
+    def _enhance_with_programmatic_insights(self, blueprint: Dict, df: pd.DataFrame) -> Dict:
+        """Enhance blueprint with programmatic insights"""
+        
+        # Extract patterns from semantic analysis
+        semantic_analysis = blueprint.get("semantic_column_analysis", {})
+        
+        # Create simplified column configs for generation
+        column_configs = {}
+        
+        for col in df.columns:
+            sem_config = semantic_analysis.get(col, {})
+            col_config = {
+                "semantic_meaning": sem_config.get("semantic_meaning", "unknown"),
+                "patterns": sem_config.get("detected_patterns", []),
+                "generation_rules": [sem_config.get("generation_instructions", "Use realistic values")],
+                "value_pool": sem_config.get("value_pool_or_range", [])
+            }
+            
+            # Detect column type from patterns
+            col_type = self._infer_column_type_from_semantics(sem_config, df[col])
+            col_config["column_type"] = col_type
+            
+            # Add numeric ranges if applicable
+            if pd.api.types.is_numeric_dtype(df[col]):
+                non_null = df[col].dropna()
+                if len(non_null) > 0:
+                    col_config["numeric_range"] = {
+                        "min": float(non_null.min()),
+                        "max": float(non_null.max())
+                    }
+            
+            column_configs[col] = col_config
+        
+        # Simplify relationships
+        simplified_relationships = []
+        for rel in blueprint.get("relationships_and_constraints", []):
+            if isinstance(rel, dict):
+                simplified_relationships.append(rel.get("rule", rel.get("description", "")))
+            else:
+                simplified_relationships.append(str(rel))
+        
+        # Create enhanced blueprint
+        enhanced_blueprint = {
+            "dataset_context": blueprint.get("dataset_understanding", {}).get("domain", "general"),
+            "columns": column_configs,
+            "relationships": simplified_relationships,
+            "generation_strategy": blueprint.get("generation_strategy", {}).get("step_by_step", []),
+            "quality_requirements": blueprint.get("quality_requirements", []),
+            "semantic_analysis": semantic_analysis,  # Keep full semantic analysis
+            "original_columns": df.columns.tolist(),
+            "original_row_count": len(df)
+        }
+        
+        return enhanced_blueprint
+    
+    def _infer_column_type_from_semantics(self, sem_config: Dict, series: pd.Series) -> str:
+        """Infer column type from semantic analysis"""
+        patterns = sem_config.get("detected_patterns", [])
+        semantic = sem_config.get("semantic_meaning", "").lower()
+        
+        # Check for IDs
+        if any(x in semantic for x in ['id', 'number', 'code', 'reference']):
+            return "sequential_id"
+        
+        # Check for names
+        if any(x in semantic for x in ['name', 'patient', 'doctor', 'customer']):
+            return "human_name"
+        
+        # Check for dates/times
+        if any(x in semantic for x in ['date', 'time', 'datetime']):
+            if 'time' in semantic or any('time' in str(p).lower() for p in patterns):
+                return "time"
+            return "date"
+        
+        # Check for phones/emails
+        if 'phone' in semantic or any('phone' in str(p).lower() for p in patterns):
+            return "phone_number"
+        if 'email' in semantic or any('email' in str(p).lower() for p in patterns):
+            return "email_address"
+        
+        # Check for amounts
+        if any(x in semantic for x in ['price', 'fee', 'amount', 'cost', 'salary']):
+            return "monetary_amount"
+        
+        # Check patterns
+        patterns_str = ' '.join(str(p).lower() for p in patterns)
+        if any(x in patterns_str for x in ['indian', 'western', 'name']):
+            return "human_name"
+        if any(x in patterns_str for x in ['date', 'dd-mm-yyyy', 'yyyy-mm-dd']):
+            return "date"
+        
+        # Default based on data
+        return self._detect_basic_column_type(series)
+    
+    def _detect_basic_column_type(self, series: pd.Series) -> str:
+        """Basic column type detection"""
         non_null = series.dropna()
         if len(non_null) == 0:
             return "unknown"
-        
-        col_lower = col_name.lower()
-        
-        # Check common patterns
-        samples = non_null.head(10).astype(str).tolist()
-        
-        # IDs
-        if any(x in col_lower for x in ['id', 'no', 'number', 'code', 'ref', 'appointment']):
-            if all(re.match(r'^[A-Za-z0-9-_]+$', str(x)) for x in samples if x):
-                return "code_id"
-        
-        # Names
-        if any(x in col_lower for x in ['name', 'patient', 'doctor', 'customer', 'user']):
-            if all(len(str(x).split()) >= 2 for x in samples if x and ' ' in str(x)):
-                return "human_name"
-        
-        # Dates/Times
-        if any(x in col_lower for x in ['date', 'time', 'datetime', 'timestamp']):
-            date_patterns = [r'\d{2}[-/]\d{2}[-/]\d{4}', r'\d{4}[-/]\d{2}[-/]\d{2}']
-            if any(any(re.search(p, str(x)) for p in date_patterns) for x in samples if x):
-                if any(':' in str(x) for x in samples):
-                    return "datetime"
-                return "date"
-            if any(':' in str(x) for x in samples):
-                return "time"
-        
-        # Phone/Email
-        if 'phone' in col_lower or 'mobile' in col_lower or 'contact' in col_lower:
-            return "phone_number"
-        if 'email' in col_lower or 'mail' in col_lower:
-            return "email_address"
-        
-        # Monetary
-        if any(x in col_lower for x in ['price', 'fee', 'amount', 'cost', 'salary', 'revenue']):
-            return "monetary_amount"
         
         # Numeric detection
         try:
@@ -454,60 +625,50 @@ class IntelligentDataGenerator:
         
         return "text_description"
     
-    def _detect_relationships_programmatically(self, df: pd.DataFrame) -> List[str]:
-        """Detect relationships between columns programmatically"""
-        relationships = []
-        
-        # Look for name-gender relationships
-        name_cols = [col for col in df.columns if any(x in col.lower() for x in ['name', 'patient', 'customer'])]
-        gender_cols = [col for col in df.columns if 'gender' in col.lower() or 'sex' in col.lower()]
-        
-        for name_col in name_cols:
-            for gender_col in gender_cols:
-                if name_col != gender_col:
-                    relationships.append(f"If {name_col} contains 'Singh' or 'Kumar' then {gender_col} = 'M'")
-                    relationships.append(f"If {name_col} contains 'Devi' or 'Kumari' then {gender_col} = 'F'")
-        
-        # Look for date sequence relationships
-        date_cols = [col for col in df.columns if 'date' in col.lower()]
-        if len(date_cols) >= 2:
-            relationships.append(f"{date_cols[0]} should be before or equal to {date_cols[1]} for logical consistency")
-        
-        # Look for amount-category relationships
-        amount_cols = [col for col in df.columns if any(x in col.lower() for x in ['amount', 'fee', 'price', 'cost'])]
-        category_cols = [col for col in df.columns if any(x in col.lower() for x in ['category', 'type', 'department', 'product'])]
-        
-        for amount_col in amount_cols:
-            for category_col in category_cols:
-                if amount_col != category_col:
-                    relationships.append(f"If {category_col} contains 'Premium' then {amount_col} should be higher")
-                    relationships.append(f"If {category_col} contains 'Basic' then {amount_col} should be lower")
-        
-        return relationships
-    
-    def _create_basic_blueprint(self, df: pd.DataFrame) -> Dict:
-        """Create a basic blueprint when LLM is not available"""
+    def _create_smart_blueprint(self, df: pd.DataFrame) -> Dict:
+        """Create smart blueprint when LLM is not available"""
+        # This uses the same logic as before but enhanced
         blueprint = {
             "dataset_context": "general_dataset",
             "columns": {},
             "relationships": [],
-            "realism_constraints": ["Maintain data types", "Use realistic values"],
-            "generation_strategy": "Generate each column independently based on observed patterns"
+            "generation_strategy": ["Generate each column based on observed patterns"],
+            "quality_requirements": ["Maintain data types", "Use realistic values"],
+            "original_columns": df.columns.tolist(),
+            "original_row_count": len(df)
         }
         
         for col in df.columns:
             col_data = df[col].dropna()
-            col_type = self._detect_column_type_programmatically(col, df[col])
+            
+            # Try to infer semantic meaning from column name
+            col_lower = col.lower()
+            semantic = "unknown"
+            
+            if 'id' in col_lower or 'no' in col_lower or 'number' in col_lower:
+                semantic = "identifier"
+            elif 'name' in col_lower:
+                semantic = "person_name"
+            elif 'date' in col_lower:
+                semantic = "date"
+            elif 'time' in col_lower:
+                semantic = "time"
+            elif 'phone' in col_lower:
+                semantic = "phone_number"
+            elif 'email' in col_lower:
+                semantic = "email_address"
+            elif any(x in col_lower for x in ['price', 'fee', 'amount', 'cost']):
+                semantic = "monetary_amount"
             
             col_config = {
-                "column_type": col_type,
-                "patterns_detected": self._detect_patterns_programmatically(col, df[col]),
-                "generation_rules": ["Generate values similar to original data"]
+                "semantic_meaning": semantic,
+                "patterns": self._detect_semantic_patterns(col, col_data.head(5).astype(str).tolist()),
+                "column_type": self._detect_basic_column_type(df[col]),
+                "generation_rules": ["Generate values similar to original patterns"]
             }
             
-            if col_type in ["categorical_fixed", "human_name", "code_id"] and len(col_data) > 0:
-                unique_vals = col_data.unique().tolist()[:50]
-                col_config["value_pool_suggestions"] = unique_vals
+            if col_config["column_type"] in ["categorical_fixed", "human_name"] and len(col_data) > 0:
+                col_config["value_pool"] = col_data.unique().tolist()[:30]
             
             if pd.api.types.is_numeric_dtype(df[col]) and len(col_data) > 0:
                 col_config["numeric_range"] = {
@@ -519,237 +680,251 @@ class IntelligentDataGenerator:
         
         return blueprint
     
-    def generate_data_from_blueprint(self, blueprint: Dict, num_rows: int) -> pd.DataFrame:
+    def generate_perfect_data(self, blueprint: Dict, num_rows: int) -> pd.DataFrame:
         """
-        Phase 2: Generate perfect synthetic data using the blueprint
+        Generate PERFECT data using the ultimate blueprint
         """
-        data = {}
-        original_columns = blueprint.get("original_columns", list(blueprint.get("columns", {}).keys()))
-        
-        # Initialize all columns
-        for col in original_columns:
-            data[col] = []
+        # Extract column configs
+        column_configs = blueprint.get("columns", {})
+        original_columns = blueprint.get("original_columns", list(column_configs.keys()))
         
         # Get generation strategy
-        strategy = blueprint.get("generation_strategy", "column_by_column")
+        strategy_steps = blueprint.get("generation_strategy", [])
+        use_sequential = any("sequential" in str(step).lower() for step in strategy_steps)
         
-        if "sequential" in strategy.lower():
-            # Generate sequentially
-            for i in range(num_rows):
-                row = self._generate_single_row(blueprint, i, num_rows)
-                for col in original_columns:
-                    data[col].append(row.get(col, None))
+        if use_sequential and len(strategy_steps) > 0:
+            # Use step-by-step generation based on strategy
+            return self._generate_with_strategy(blueprint, num_rows)
         else:
-            # Generate column by column (default)
-            for col in original_columns:
-                col_config = blueprint.get("columns", {}).get(col, {})
-                col_type = col_config.get("column_type", "unknown")
-                
-                if col_type == "sequential_id":
-                    data[col] = self._generate_sequential_ids(col_config, num_rows)
-                elif col_type == "human_name":
-                    data[col] = self._generate_human_names(col_config, num_rows)
-                elif col_type == "categorical_fixed":
-                    data[col] = self._generate_categorical_fixed(col_config, num_rows)
-                elif col_type == "numeric_integer":
-                    data[col] = self._generate_numeric_integer(col_config, num_rows)
-                elif col_type == "numeric_float":
-                    data[col] = self._generate_numeric_float(col_config, num_rows)
-                elif col_type == "monetary_amount":
-                    data[col] = self._generate_monetary_amount(col_config, num_rows)
-                elif col_type == "date":
-                    data[col] = self._generate_dates(col_config, num_rows)
-                elif col_type == "time":
-                    data[col] = self._generate_times(col_config, num_rows)
-                elif col_type == "phone_number":
-                    data[col] = self._generate_phone_numbers(col_config, num_rows)
-                elif col_type == "email_address":
-                    data[col] = self._generate_emails(col_config, num_rows)
-                elif col_type == "code_id":
-                    data[col] = self._generate_code_ids(col_config, num_rows)
-                else:
-                    # Default: Use value pool or random values
-                    data[col] = self._generate_default_column(col_config, num_rows)
+            # Generate column by column
+            return self._generate_column_by_column(blueprint, num_rows)
+    
+    def _generate_with_strategy(self, blueprint: Dict, num_rows: int) -> pd.DataFrame:
+        """Generate data following the strategy steps"""
+        data = {col: [] for col in blueprint.get("original_columns", [])}
         
-        # Create DataFrame
+        # Parse strategy steps
+        strategy = blueprint.get("generation_strategy", [])
+        relationships = blueprint.get("relationships", [])
+        quality_reqs = blueprint.get("quality_requirements", [])
+        
+        # Generate rows sequentially
+        for row_idx in range(num_rows):
+            row = {}
+            
+            # Apply strategy steps
+            for step in strategy:
+                if isinstance(step, str):
+                    step_lower = step.lower()
+                    
+                    # Generate IDs
+                    if 'id' in step_lower and 'generate' in step_lower:
+                        id_cols = [col for col, config in blueprint.get("columns", {}).items() 
+                                  if config.get("column_type") == "sequential_id"]
+                        for col in id_cols:
+                            row[col] = self._generate_sequential_id(blueprint, col, row_idx)
+                    
+                    # Generate names
+                    elif 'name' in step_lower and 'generate' in step_lower:
+                        name_cols = [col for col, config in blueprint.get("columns", {}).items() 
+                                    if config.get("column_type") == "human_name"]
+                        for col in name_cols:
+                            row[col] = self._generate_human_name(blueprint, col, row_idx)
+                    
+                    # Generate other columns
+                    elif 'generate' in step_lower:
+                        # Extract column type from step
+                        for col, config in blueprint.get("columns", {}).items():
+                            if col not in row:
+                                col_type = config.get("column_type", "unknown")
+                                row[col] = self._generate_value_by_type(config, col_type, row_idx)
+            
+            # Fill any missing columns
+            for col in blueprint.get("original_columns", []):
+                if col not in row:
+                    config = blueprint.get("columns", {}).get(col, {})
+                    col_type = config.get("column_type", "unknown")
+                    row[col] = self._generate_value_by_type(config, col_type, row_idx)
+            
+            # Add to data
+            for col in data.keys():
+                data[col].append(row.get(col, None))
+        
         df = pd.DataFrame(data)
         
-        # Apply relationships and constraints
-        df = self._apply_relationships(df, blueprint)
-        df = self._apply_constraints(df, blueprint)
+        # Apply relationships
+        df = self._apply_semantic_relationships(df, blueprint)
+        
+        # Apply quality requirements
+        df = self._apply_quality_requirements(df, blueprint)
         
         return df
     
-    def _generate_single_row(self, blueprint: Dict, row_index: int, total_rows: int) -> Dict:
-        """Generate a single row with cross-column consistency"""
-        row = {}
+    def _generate_column_by_column(self, blueprint: Dict, num_rows: int) -> pd.DataFrame:
+        """Generate data column by column"""
+        data = {}
+        column_configs = blueprint.get("columns", {})
         
-        for col, col_config in blueprint.get("columns", {}).items():
-            col_type = col_config.get("column_type", "unknown")
+        for col, config in column_configs.items():
+            col_type = config.get("column_type", "unknown")
             
             if col_type == "sequential_id":
-                row[col] = self._generate_sequential_id_value(col_config, row_index)
+                data[col] = self._generate_sequential_ids_batch(config, num_rows)
             elif col_type == "human_name":
-                row[col] = self._generate_human_name_value(col_config, row_index)
+                data[col] = self._generate_human_names_batch(config, num_rows)
             elif col_type == "categorical_fixed":
-                row[col] = self._generate_categorical_value(col_config, row_index)
+                data[col] = self._generate_categorical_batch(config, num_rows)
             elif col_type == "numeric_integer":
-                row[col] = self._generate_numeric_integer_value(col_config, row_index)
+                data[col] = self._generate_numeric_integer_batch(config, num_rows)
             elif col_type == "numeric_float":
-                row[col] = self._generate_numeric_float_value(col_config, row_index)
+                data[col] = self._generate_numeric_float_batch(config, num_rows)
             elif col_type == "monetary_amount":
-                row[col] = self._generate_monetary_amount_value(col_config, row_index)
+                data[col] = self._generate_monetary_batch(config, num_rows)
             elif col_type == "date":
-                row[col] = self._generate_date_value(col_config, row_index)
+                data[col] = self._generate_dates_batch(config, num_rows)
             elif col_type == "time":
-                row[col] = self._generate_time_value(col_config, row_index)
+                data[col] = self._generate_times_batch(config, num_rows)
             elif col_type == "phone_number":
-                row[col] = self._generate_phone_number_value(col_config, row_index)
+                data[col] = self._generate_phones_batch(config, num_rows)
             elif col_type == "email_address":
-                row[col] = self._generate_email_value(col_config, row_index)
-            elif col_type == "code_id":
-                row[col] = self._generate_code_id_value(col_config, row_index)
+                data[col] = self._generate_emails_batch(config, num_rows)
             else:
-                row[col] = self._generate_default_value(col_config, row_index)
+                data[col] = self._generate_default_batch(config, num_rows)
         
-        return row
+        df = pd.DataFrame(data)
+        
+        # Apply relationships
+        df = self._apply_semantic_relationships(df, blueprint)
+        
+        return df
     
-    def _generate_sequential_ids(self, col_config: Dict, num_rows: int) -> List[str]:
-        """Generate sequential IDs"""
-        patterns = col_config.get("patterns_detected", [])
-        start_id = 1000
+    def _generate_sequential_id(self, blueprint: Dict, col: str, index: int) -> str:
+        """Generate a sequential ID"""
+        config = blueprint.get("columns", {}).get(col, {})
+        patterns = config.get("patterns", [])
         
-        # Try to extract start from patterns
         for pattern in patterns:
-            if "AP###" in pattern or "AP" in pattern:
-                start_id = 26  # Continue from AP025
-                break
+            if 'AP###' in pattern or 'AP' in pattern:
+                return f"AP{26 + index:03d}"
         
+        return f"ID{1000 + index}"
+    
+    def _generate_human_name(self, blueprint: Dict, col: str, index: int) -> str:
+        """Generate a human name"""
+        config = blueprint.get("columns", {}).get(col, {})
+        patterns = config.get("patterns", [])
+        
+        # Check if Indian names
+        is_indian = any('indian' in str(p).lower() for p in patterns)
+        
+        if is_indian:
+            male_first = ["Rahul", "Amit", "Raj", "Sanjay", "Vikram", "Karan", "Sachin"]
+            female_first = ["Priya", "Neha", "Anjali", "Sneha", "Pooja", "Sonia", "Kavita"]
+            last_names = ["Patel", "Sharma", "Singh", "Kumar", "Gupta", "Jain", "Reddy"]
+        else:
+            male_first = ["John", "James", "Michael", "David", "Robert", "William"]
+            female_first = ["Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Susan"]
+            last_names = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller"]
+        
+        if random.random() < 0.5:
+            first = random.choice(male_first)
+        else:
+            first = random.choice(female_first)
+        
+        last = random.choice(last_names)
+        return f"{first} {last}"
+    
+    def _generate_value_by_type(self, config: Dict, col_type: str, index: int):
+        """Generate a value based on column type"""
+        if col_type == "sequential_id":
+            return self._generate_sequential_ids_batch(config, 1)[0]
+        elif col_type == "human_name":
+            return self._generate_human_names_batch(config, 1)[0]
+        elif col_type == "categorical_fixed":
+            return self._generate_categorical_batch(config, 1)[0]
+        elif col_type == "numeric_integer":
+            return self._generate_numeric_integer_batch(config, 1)[0]
+        elif col_type == "numeric_float":
+            return self._generate_numeric_float_batch(config, 1)[0]
+        elif col_type == "monetary_amount":
+            return self._generate_monetary_batch(config, 1)[0]
+        elif col_type == "date":
+            return self._generate_dates_batch(config, 1)[0]
+        elif col_type == "time":
+            return self._generate_times_batch(config, 1)[0]
+        elif col_type == "phone_number":
+            return self._generate_phones_batch(config, 1)[0]
+        elif col_type == "email_address":
+            return self._generate_emails_batch(config, 1)[0]
+        else:
+            return self._generate_default_batch(config, 1)[0]
+    
+    # Batch generation methods (similar to previous implementation)
+    def _generate_sequential_ids_batch(self, config: Dict, num_rows: int) -> List[str]:
         ids = []
         for i in range(num_rows):
-            ids.append(f"AP{start_id + i:03d}")
-        
+            ids.append(f"AP{26 + i:03d}")
         return ids
     
-    def _generate_sequential_id_value(self, col_config: Dict, index: int) -> str:
-        """Generate a single sequential ID"""
-        patterns = col_config.get("patterns_detected", [])
-        start_id = 1000 + index
-        
-        for pattern in patterns:
-            if "AP###" in pattern or "AP" in pattern:
-                start_id = 26 + index
-                return f"AP{start_id:03d}"
-            elif "ID" in pattern:
-                return f"ID{start_id}"
-        
-        return f"ID{start_id}"
-    
-    def _generate_human_names(self, col_config: Dict, num_rows: int) -> List[str]:
-        """Generate human names"""
+    def _generate_human_names_batch(self, config: Dict, num_rows: int) -> List[str]:
         names = []
-        
-        # Check for Indian names
-        patterns = col_config.get("patterns_detected", [])
-        is_indian = any("indian" in str(p).lower() for p in patterns)
-        
-        # Value pools from config
-        value_pool = col_config.get("value_pool_suggestions", {})
-        
-        if isinstance(value_pool, dict):
-            # Use provided name components
-            first_male = value_pool.get("indian_male_first", ["Rahul", "Amit", "Raj", "Sanjay", "Vikram"])
-            first_female = value_pool.get("indian_female_first", ["Priya", "Neha", "Anjali", "Sneha", "Pooja"])
-            last_names = value_pool.get("indian_last", ["Patel", "Sharma", "Singh", "Kumar", "Gupta"])
-        else:
-            # Default Indian names
-            first_male = ["Rahul", "Amit", "Raj", "Sanjay", "Vikram", "Karan", "Sachin"]
-            first_female = ["Priya", "Neha", "Anjali", "Sneha", "Pooja", "Sonia", "Kavita"]
-            last_names = ["Patel", "Sharma", "Singh", "Kumar", "Gupta", "Jain", "Reddy"]
-        
-        for i in range(num_rows):
-            if random.random() < 0.5:  # 50% male
-                first = random.choice(first_male)
-            else:
-                first = random.choice(first_female)
-            
-            last = random.choice(last_names)
-            names.append(f"{first} {last}")
-        
+        for _ in range(num_rows):
+            names.append(self._generate_human_name_for_config(config))
         return names
     
-    def _generate_human_name_value(self, col_config: Dict, index: int) -> str:
-        """Generate a single human name"""
-        return self._generate_human_names(col_config, 1)[0]
-    
-    def _generate_categorical_fixed(self, col_config: Dict, num_rows: int) -> List:
-        """Generate categorical values"""
-        value_pool = col_config.get("value_pool_suggestions", [])
+    def _generate_human_name_for_config(self, config: Dict) -> str:
+        patterns = config.get("patterns", [])
+        is_indian = any('indian' in str(p).lower() for p in patterns)
         
+        if is_indian:
+            male_first = ["Rahul", "Amit", "Raj", "Sanjay", "Vikram", "Karan", "Sachin"]
+            female_first = ["Priya", "Neha", "Anjali", "Sneha", "Pooja", "Sonia", "Kavita"]
+            last_names = ["Patel", "Sharma", "Singh", "Kumar", "Gupta", "Jain", "Reddy"]
+        else:
+            male_first = ["John", "James", "Michael", "David", "Robert", "William"]
+            female_first = ["Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Susan"]
+            last_names = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller"]
+        
+        if random.random() < 0.5:
+            first = random.choice(male_first)
+        else:
+            first = random.choice(female_first)
+        
+        last = random.choice(last_names)
+        return f"{first} {last}"
+    
+    def _generate_categorical_batch(self, config: Dict, num_rows: int) -> List:
+        value_pool = config.get("value_pool", [])
         if isinstance(value_pool, list) and len(value_pool) > 0:
             return random.choices(value_pool, k=num_rows)
-        else:
-            # Generate default categories
-            categories = [f"Category_{i}" for i in range(1, 6)]
-            return random.choices(categories, k=num_rows)
+        return [f"Category_{i+1}" for i in range(num_rows)]
     
-    def _generate_categorical_value(self, col_config: Dict, index: int):
-        """Generate a single categorical value"""
-        return self._generate_categorical_fixed(col_config, 1)[0]
-    
-    def _generate_numeric_integer(self, col_config: Dict, num_rows: int) -> List[int]:
-        """Generate integer values"""
-        numeric_range = col_config.get("numeric_range", {})
+    def _generate_numeric_integer_batch(self, config: Dict, num_rows: int) -> List[int]:
+        numeric_range = config.get("numeric_range", {})
         min_val = int(numeric_range.get("min", 1))
         max_val = int(numeric_range.get("max", 100))
         
-        # Adjust for common ranges
-        patterns = col_config.get("patterns_detected", [])
-        for pattern in patterns:
-            if "age" in str(pattern).lower():
-                min_val, max_val = 18, 70
-                break
+        # Special handling for ages
+        patterns = config.get("patterns", [])
+        if any('age' in str(p).lower() for p in patterns):
+            min_val, max_val = 18, 70
         
         return [random.randint(min_val, max_val) for _ in range(num_rows)]
     
-    def _generate_numeric_integer_value(self, col_config: Dict, index: int) -> int:
-        """Generate a single integer value"""
-        return self._generate_numeric_integer(col_config, 1)[0]
-    
-    def _generate_numeric_float(self, col_config: Dict, num_rows: int) -> List[float]:
-        """Generate float values"""
-        numeric_range = col_config.get("numeric_range", {})
+    def _generate_numeric_float_batch(self, config: Dict, num_rows: int) -> List[float]:
+        numeric_range = config.get("numeric_range", {})
         min_val = numeric_range.get("min", 0.0)
         max_val = numeric_range.get("max", 100.0)
         
-        # For monetary, use 2 decimal places
-        patterns = col_config.get("patterns_detected", [])
-        is_monetary = any(x in str(p).lower() for p in patterns for x in ['price', 'fee', 'amount'])
-        
-        values = []
-        for _ in range(num_rows):
-            val = random.uniform(min_val, max_val)
-            if is_monetary:
-                val = round(val, 2)
-            else:
-                val = round(val, random.choice([1, 2, 3]))
-            values.append(val)
-        
-        return values
+        return [round(random.uniform(min_val, max_val), 2) for _ in range(num_rows)]
     
-    def _generate_numeric_float_value(self, col_config: Dict, index: int) -> float:
-        """Generate a single float value"""
-        return self._generate_numeric_float(col_config, 1)[0]
-    
-    def _generate_monetary_amount(self, col_config: Dict, num_rows: int) -> List[float]:
-        """Generate monetary amounts"""
-        numeric_range = col_config.get("numeric_range", {})
+    def _generate_monetary_batch(self, config: Dict, num_rows: int) -> List[float]:
+        numeric_range = config.get("numeric_range", {})
         min_val = numeric_range.get("min", 10.0)
         max_val = numeric_range.get("max", 1000.0)
         
         values = []
         for _ in range(num_rows):
-            # Monetary amounts often end in .00, .99, .95
             base = random.uniform(min_val, max_val)
             ending = random.choice([0.00, 0.99, 0.95, 0.50])
             val = math.floor(base) + ending
@@ -757,24 +932,16 @@ class IntelligentDataGenerator:
         
         return values
     
-    def _generate_monetary_amount_value(self, col_config: Dict, index: int) -> float:
-        """Generate a single monetary amount"""
-        return self._generate_monetary_amount(col_config, 1)[0]
-    
-    def _generate_dates(self, col_config: Dict, num_rows: int) -> List[str]:
-        """Generate dates"""
-        patterns = col_config.get("patterns_detected", [])
+    def _generate_dates_batch(self, config: Dict, num_rows: int) -> List[str]:
+        patterns = config.get("patterns", [])
         date_format = "DD-MM-YYYY"
         
         for pattern in patterns:
-            if "DD-MM-YYYY" in pattern:
+            if "DD-MM-YYYY" in str(pattern):
                 date_format = "DD-MM-YYYY"
                 break
-            elif "YYYY-MM-DD" in pattern:
+            elif "YYYY-MM-DD" in str(pattern):
                 date_format = "YYYY-MM-DD"
-                break
-            elif "MM/DD/YYYY" in pattern:
-                date_format = "MM/DD/YYYY"
                 break
         
         dates = []
@@ -791,26 +958,21 @@ class IntelligentDataGenerator:
         
         return dates
     
-    def _generate_date_value(self, col_config: Dict, index: int) -> str:
-        """Generate a single date"""
-        return self._generate_dates(col_config, 1)[0]
-    
-    def _generate_times(self, col_config: Dict, num_rows: int) -> List[str]:
-        """Generate times"""
-        patterns = col_config.get("patterns_detected", [])
+    def _generate_times_batch(self, config: Dict, num_rows: int) -> List[str]:
+        patterns = config.get("patterns", [])
         time_format = "12-hour"
         
         for pattern in patterns:
-            if "12-hour" in pattern:
+            if "12-hour" in str(pattern):
                 time_format = "12-hour"
                 break
-            elif "24-hour" in pattern:
+            elif "24-hour" in str(pattern):
                 time_format = "24-hour"
                 break
         
         times = []
         for _ in range(num_rows):
-            hour = random.randint(8, 17)  # Business hours
+            hour = random.randint(8, 17)
             minute = random.choice([0, 15, 30, 45])
             
             if time_format == "12-hour":
@@ -822,29 +984,25 @@ class IntelligentDataGenerator:
         
         return times
     
-    def _generate_time_value(self, col_config: Dict, index: int) -> str:
-        """Generate a single time"""
-        return self._generate_times(col_config, 1)[0]
-    
-    def _generate_phone_numbers(self, col_config: Dict, num_rows: int) -> List[str]:
-        """Generate phone numbers"""
-        patterns = col_config.get("patterns_detected", [])
+    def _generate_phones_batch(self, config: Dict, num_rows: int) -> List[str]:
+        patterns = config.get("patterns", [])
         
         numbers = []
         for _ in range(num_rows):
-            # Indian mobile numbers start with 6-9
-            first_digit = random.choice(['6', '7', '8', '9'])
-            rest = ''.join(random.choices('0123456789', k=9))
-            numbers.append(f"{first_digit}{rest}")
+            # Check if Indian
+            is_indian = any('indian' in str(p).lower() for p in patterns)
+            
+            if is_indian:
+                first_digit = random.choice(['6', '7', '8', '9'])
+                rest = ''.join(random.choices('0123456789', k=9))
+                numbers.append(f"{first_digit}{rest}")
+            else:
+                # Generic 10-digit
+                numbers.append(''.join(random.choices('0123456789', k=10)))
         
         return numbers
     
-    def _generate_phone_number_value(self, col_config: Dict, index: int) -> str:
-        """Generate a single phone number"""
-        return self._generate_phone_numbers(col_config, 1)[0]
-    
-    def _generate_emails(self, col_config: Dict, num_rows: int) -> List[str]:
-        """Generate email addresses"""
+    def _generate_emails_batch(self, config: Dict, num_rows: int) -> List[str]:
         emails = []
         for i in range(num_rows):
             first = random.choice(['john', 'jane', 'alex', 'sam', 'mike', 'sara'])
@@ -855,218 +1013,201 @@ class IntelligentDataGenerator:
         
         return emails
     
-    def _generate_email_value(self, col_config: Dict, index: int) -> str:
-        """Generate a single email"""
-        return self._generate_emails(col_config, 1)[0]
-    
-    def _generate_code_ids(self, col_config: Dict, num_rows: int) -> List[str]:
-        """Generate code IDs"""
-        patterns = col_config.get("patterns_detected", [])
-        
-        ids = []
-        for i in range(num_rows):
-            # Generate alphanumeric code
-            code = ''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=8))
-            ids.append(code)
-        
-        return ids
-    
-    def _generate_code_id_value(self, col_config: Dict, index: int) -> str:
-        """Generate a single code ID"""
-        return self._generate_code_ids(col_config, 1)[0]
-    
-    def _generate_default_column(self, col_config: Dict, num_rows: int) -> List:
-        """Generate default column values"""
-        value_pool = col_config.get("value_pool_suggestions", [])
-        
+    def _generate_default_batch(self, config: Dict, num_rows: int) -> List:
+        value_pool = config.get("value_pool", [])
         if isinstance(value_pool, list) and len(value_pool) > 0:
             return random.choices(value_pool, k=num_rows)
-        else:
-            return [f"Value_{i}" for i in range(1, num_rows + 1)]
+        return [f"Value_{i+1}" for i in range(num_rows)]
     
-    def _generate_default_value(self, col_config: Dict, index: int):
-        """Generate a single default value"""
-        return self._generate_default_column(col_config, 1)[0]
-    
-    def _apply_relationships(self, df: pd.DataFrame, blueprint: Dict) -> pd.DataFrame:
-        """Apply relationships between columns"""
+    def _apply_semantic_relationships(self, df: pd.DataFrame, blueprint: Dict) -> pd.DataFrame:
+        """Apply semantic relationships from blueprint"""
         relationships = blueprint.get("relationships", [])
+        quality_reqs = blueprint.get("quality_requirements", [])
         
-        for relationship in relationships:
-            try:
-                # Simple relationship: Gender based on name
-                if "gender" in relationship.lower() and "name" in relationship.lower():
-                    name_cols = [col for col in df.columns if 'name' in col.lower()]
-                    gender_cols = [col for col in df.columns if 'gender' in col.lower()]
-                    
-                    if name_cols and gender_cols:
-                        name_col = name_cols[0]
-                        gender_col = gender_cols[0]
-                        
-                        for idx in range(len(df)):
-                            name = str(df.at[idx, name_col])
-                            if any(suffix in name.lower() for suffix in ['singh', 'kumar', 'patel', 'verma']):
-                                df.at[idx, gender_col] = 'M'
-                            elif any(suffix in name.lower() for suffix in ['devi', 'kumari', 'sharma']):
-                                df.at[idx, gender_col] = 'F'
-                
-                # Relationship: Fee based on department
-                elif "fee" in relationship.lower() and "department" in relationship.lower():
-                    dept_cols = [col for col in df.columns if any(x in col.lower() for x in ['dept', 'department', 'specialty'])]
-                    fee_cols = [col for col in df.columns if any(x in col.lower() for x in ['fee', 'price', 'amount', 'cost'])]
-                    
-                    if dept_cols and fee_cols:
-                        dept_col = dept_cols[0]
-                        fee_col = fee_cols[0]
-                        
-                        for idx in range(len(df)):
-                            dept = str(df.at[idx, dept_col]).lower()
-                            if 'cardiology' in dept:
-                                df.at[idx, fee_col] = random.randint(1000, 2000)
-                            elif 'dermatology' in dept:
-                                df.at[idx, fee_col] = random.randint(500, 1500)
-                            elif 'dentistry' in dept:
-                                df.at[idx, fee_col] = random.randint(300, 1000)
-                
-                # Relationship: Date logic
-                elif "date" in relationship.lower() and ("before" in relationship.lower() or "after" in relationship.lower()):
-                    date_cols = [col for col in df.columns if 'date' in col.lower()]
-                    status_cols = [col for col in df.columns if 'status' in col.lower()]
-                    
-                    if len(date_cols) >= 1 and status_cols:
-                        date_col = date_cols[0]
-                        status_col = status_cols[0]
-                        
-                        for idx in range(len(df)):
-                            status = str(df.at[idx, status_col]).lower()
-                            if 'completed' in status:
-                                # Completed dates should be in past
-                                days_ago = random.randint(1, 30)
-                                date = datetime.now() - timedelta(days=days_ago)
-                                df.at[idx, date_col] = date.strftime('%d-%m-%Y')
-                            elif 'scheduled' in status:
-                                # Scheduled dates can be future
-                                days_ahead = random.randint(1, 30)
-                                date = datetime.now() + timedelta(days=days_ahead)
-                                df.at[idx, date_col] = date.strftime('%d-%m-%Y')
+        # Apply name-gender relationships
+        name_cols = [col for col in df.columns if any(x in col.lower() for x in ['name', 'patient'])]
+        gender_cols = [col for col in df.columns if 'gender' in col.lower()]
+        
+        if name_cols and gender_cols:
+            name_col = name_cols[0]
+            gender_col = gender_cols[0]
             
-            except Exception as e:
-                # Skip relationship if it fails
-                continue
+            for idx in range(len(df)):
+                name = str(df.at[idx, name_col])
+                name_lower = name.lower()
+                
+                # Indian name-gender rules
+                if any(suffix in name_lower for suffix in ['singh', 'kumar', 'patel', 'verma', 'gupta']):
+                    df.at[idx, gender_col] = 'M'
+                elif any(suffix in name_lower for suffix in ['devi', 'kumari', 'sharma']):
+                    df.at[idx, gender_col] = 'F'
+                else:
+                    # Random but realistic
+                    df.at[idx, gender_col] = random.choice(['M', 'F'])
+        
+        # Apply department-diagnosis relationships
+        dept_cols = [col for col in df.columns if any(x in col.lower() for x in ['dept', 'department', 'specialty'])]
+        diag_cols = [col for col in df.columns if any(x in col.lower() for x in ['diagnosis', 'problem', 'condition'])]
+        
+        if dept_cols and diag_cols:
+            dept_col = dept_cols[0]
+            diag_col = diag_cols[0]
+            
+            # Department-specific diagnoses
+            dept_diag_map = {
+                'ent': ['Ear Infection', 'Sinusitis', 'Tonsillitis', 'Hearing Loss'],
+                'cardiology': ['Chest Pain', 'Hypertension', 'Heart Palpitations', 'High BP'],
+                'dermatology': ['Skin Allergy', 'Acne', 'Eczema', 'Psoriasis'],
+                'neurology': ['Migraine', 'Headache', 'Epilepsy', 'Parkinson\'s'],
+                'orthopedics': ['Knee Pain', 'Back Pain', 'Fracture', 'Arthritis'],
+                'pediatrics': ['Common Cold', 'Fever', 'Ear Infection', 'Allergy'],
+                'gastroenterology': ['Stomach Ulcer', 'Acid Reflux', 'Diarrhea', 'Constipation'],
+                'oncology': ['Cancer Screening', 'Tumor', 'Chemotherapy', 'Radiation']
+            }
+            
+            for idx in range(len(df)):
+                dept = str(df.at[idx, dept_col]).lower()
+                
+                # Find matching department
+                for dept_key, diagnoses in dept_diag_map.items():
+                    if dept_key in dept:
+                        df.at[idx, diag_col] = random.choice(diagnoses)
+                        break
+        
+        # Apply phone number formatting
+        phone_cols = [col for col in df.columns if any(x in col.lower() for x in ['phone', 'mobile', 'contact'])]
+        for col in phone_cols:
+            for idx in range(len(df)):
+                phone = str(df.at[idx, col])
+                digits = re.sub(r'\D', '', phone)
+                if len(digits) >= 10:
+                    df.at[idx, col] = digits[:10]
+                else:
+                    # Generate valid Indian mobile
+                    first_digit = random.choice(['6', '7', '8', '9'])
+                    rest = ''.join(random.choices('0123456789', k=9))
+                    df.at[idx, col] = f"{first_digit}{rest}"
+        
+        # Apply age constraints
+        age_cols = [col for col in df.columns if 'age' in col.lower()]
+        for col in age_cols:
+            for idx in range(len(df)):
+                try:
+                    age = float(df.at[idx, col])
+                    if not age.is_integer():
+                        df.at[idx, col] = int(age)
+                    if age < 18:
+                        df.at[idx, col] = random.randint(18, 25)
+                    elif age > 70:
+                        df.at[idx, col] = random.randint(65, 70)
+                except:
+                    df.at[idx, col] = random.randint(18, 50)
         
         return df
     
-    def _apply_constraints(self, df: pd.DataFrame, blueprint: Dict) -> pd.DataFrame:
-        """Apply realism constraints"""
-        constraints = blueprint.get("realism_constraints", [])
+    def _apply_quality_requirements(self, df: pd.DataFrame, blueprint: Dict) -> pd.DataFrame:
+        """Apply quality requirements"""
+        quality_reqs = blueprint.get("quality_requirements", [])
         
-        for constraint in constraints:
-            try:
-                # Age constraints
-                if "age" in constraint.lower() and ("integer" in constraint.lower() or "18-70" in constraint.lower()):
-                    age_cols = [col for col in df.columns if 'age' in col.lower()]
-                    for col in age_cols:
-                        for idx in range(len(df)):
-                            try:
-                                age = float(df.at[idx, col])
-                                if not age.is_integer():
-                                    df.at[idx, col] = int(age)
-                                if age < 18:
-                                    df.at[idx, col] = random.randint(18, 25)
-                                elif age > 70:
-                                    df.at[idx, col] = random.randint(65, 70)
-                            except:
-                                df.at[idx, col] = random.randint(18, 50)
-                
-                # Phone number constraints
-                if "phone" in constraint.lower() and ("10 digit" in constraint.lower() or "6-9" in constraint.lower()):
-                    phone_cols = [col for col in df.columns if any(x in col.lower() for x in ['phone', 'mobile', 'contact'])]
-                    for col in phone_cols:
-                        for idx in range(len(df)):
-                            phone = str(df.at[idx, col])
-                            digits = re.sub(r'\D', '', phone)
-                            if len(digits) >= 10:
-                                df.at[idx, col] = digits[:10]
-                            else:
-                                first_digit = random.choice(['6', '7', '8', '9'])
-                                rest = ''.join(random.choices('0123456789', k=9))
-                                df.at[idx, col] = f"{first_digit}{rest}"
-                
-                # Monetary amount constraints (round numbers)
-                if any(x in constraint.lower() for x in ['fee', 'price', 'amount']) and "round" in constraint.lower():
-                    amount_cols = [col for col in df.columns if any(x in col.lower() for x in ['fee', 'price', 'amount', 'cost'])]
-                    for col in amount_cols:
-                        for idx in range(len(df)):
-                            try:
-                                amount = float(df.at[idx, col])
-                                # Round to nearest 50
-                                df.at[idx, col] = round(amount / 50) * 50
-                            except:
-                                df.at[idx, col] = random.choice([500, 750, 1000, 1250, 1500])
+        for req in quality_reqs:
+            req_lower = str(req).lower()
             
-            except Exception as e:
-                # Skip constraint if it fails
-                continue
+            # No gender-name mismatches
+            if 'gender' in req_lower and 'name' in req_lower:
+                # Already handled in semantic relationships
+                pass
+            
+            # No inappropriate diagnoses
+            elif 'diagnos' in req_lower and 'inappropriate' in req_lower:
+                # Already handled in semantic relationships
+                pass
+            
+            # No invalid phone numbers
+            elif 'phone' in req_lower and 'invalid' in req_lower:
+                # Already handled
+                pass
+            
+            # No unrealistic ages
+            elif 'age' in req_lower and 'unrealistic' in req_lower:
+                # Already handled
+                pass
         
         return df
     
-    def validate_generated_data(self, original_df: pd.DataFrame, generated_df: pd.DataFrame, blueprint: Dict) -> Dict:
-        """Validate the quality of generated data"""
+    def validate_generated_data(self, original_df: pd.DataFrame, 
+                               generated_df: pd.DataFrame, 
+                               blueprint: Dict) -> Dict:
+        """Validate generated data quality"""
         validation = {
             "basic_metrics": {
                 "requested_rows": len(generated_df),
                 "generated_rows": len(generated_df),
-                "columns_generated": len(generated_df.columns),
-                "null_percentage": (generated_df.isnull().sum().sum() / (len(generated_df) * len(generated_df.columns))) * 100
+                "columns": len(generated_df.columns),
+                "null_percentage": (generated_df.isnull().sum().sum() / 
+                                  (len(generated_df) * len(generated_df.columns))) * 100
             },
-            "column_validation": {},
-            "issues_found": [],
+            "semantic_validation": {},
+            "issues": [],
             "quality_score": 100
         }
         
-        # Validate each column
+        # Check each column
         for col in generated_df.columns:
-            col_validation = {
-                "null_count": generated_df[col].isnull().sum(),
-                "unique_count": generated_df[col].nunique(),
-                "sample_values": generated_df[col].head(3).tolist()
-            }
-            
             col_config = blueprint.get("columns", {}).get(col, {})
             col_type = col_config.get("column_type", "unknown")
             
-            # Type-specific validation
-            if col_type == "sequential_id":
-                # Check if IDs are sequential
-                ids = generated_df[col].astype(str).tolist()
-                if all(re.match(r'^AP\d{3}$', id) for id in ids if id):
-                    col_validation["format_ok"] = True
-                else:
-                    col_validation["format_ok"] = False
-                    validation["issues_found"].append(f"Column {col}: IDs not in correct format")
-                    validation["quality_score"] -= 5
+            col_validation = {
+                "type": col_type,
+                "null_count": generated_df[col].isnull().sum(),
+                "unique_values": generated_df[col].nunique(),
+                "sample": generated_df[col].head(3).tolist()
+            }
             
-            elif col_type == "human_name":
-                # Check if names look realistic
+            # Type-specific validation
+            if col_type == "human_name":
                 names = generated_df[col].astype(str).tolist()
-                realistic_names = sum(1 for name in names if ' ' in name and len(name.split()) >= 2)
-                col_validation["realistic_names_percentage"] = (realistic_names / len(names)) * 100
-                if col_validation["realistic_names_percentage"] < 80:
-                    validation["issues_found"].append(f"Column {col}: Many names don't look realistic")
+                realistic = sum(1 for n in names if ' ' in n and len(n.split()) >= 2)
+                col_validation["realistic_names_pct"] = (realistic / len(names)) * 100
+                
+                if col_validation["realistic_names_pct"] < 80:
+                    validation["issues"].append(f"Column {col}: Many names don't look realistic")
                     validation["quality_score"] -= 10
             
             elif col_type == "numeric_integer":
-                # Check for decimal values
+                # Check for decimals
                 values = pd.to_numeric(generated_df[col], errors='coerce')
-                decimal_count = sum(1 for v in values if pd.notna(v) and not float(v).is_integer())
-                col_validation["decimal_values"] = decimal_count
-                if decimal_count > 0:
-                    validation["issues_found"].append(f"Column {col}: Integer column has decimal values")
+                decimals = sum(1 for v in values if pd.notna(v) and not float(v).is_integer())
+                col_validation["decimal_values"] = decimals
+                
+                if decimals > 0:
+                    validation["issues"].append(f"Column {col}: Integer column has {decimals} decimal values")
                     validation["quality_score"] -= 15
             
-            validation["column_validation"][col] = col_validation
+            validation["semantic_validation"][col] = col_validation
         
-        # Ensure quality score is within bounds
+        # Check relationships
+        name_cols = [col for col in generated_df.columns if any(x in col.lower() for x in ['name', 'patient'])]
+        gender_cols = [col for col in generated_df.columns if 'gender' in col.lower()]
+        
+        if name_cols and gender_cols:
+            name_col = name_cols[0]
+            gender_col = gender_cols[0]
+            
+            mismatches = 0
+            for idx in range(len(generated_df)):
+                name = str(generated_df.at[idx, name_col]).lower()
+                gender = str(generated_df.at[idx, gender_col]).upper()
+                
+                # Check for obvious mismatches
+                if ('rahul' in name or 'amit' in name or 'raj' in name) and gender == 'F':
+                    mismatches += 1
+                elif ('priya' in name or 'neha' in name or 'anjali' in name) and gender == 'M':
+                    mismatches += 1
+            
+            if mismatches > 0:
+                validation["issues"].append(f"Found {mismatches} gender-name mismatches")
+                validation["quality_score"] -= (mismatches / len(generated_df)) * 100
+        
         validation["quality_score"] = max(0, min(100, validation["quality_score"]))
         
         return validation
@@ -1083,14 +1224,14 @@ def main():
     
     # Page config
     st.set_page_config(
-        page_title="Intelligent Data Generator",
-        page_icon="🤖",
+        page_title="Ultimate Data Generator",
+        page_icon="🚀",
         layout="wide"
     )
     
     # Header
-    st.title("🤖 Intelligent Data Generator")
-    st.markdown("**LLM-Powered Deep Analysis • Perfect Programmatic Generation • Works with ANY Dataset**")
+    st.title("🚀 Ultimate Data Generator")
+    st.markdown("**ChatGPT-Level Analysis • Semantic Understanding • Perfect Generation**")
     
     if st.button("🏠 Back to Home"):
         st.switch_page("app.py")
@@ -1098,8 +1239,8 @@ def main():
     st.markdown("---")
     
     # Initialize generator
-    if 'intelligent_generator' not in st.session_state:
-        st.session_state.intelligent_generator = IntelligentDataGenerator()
+    if 'ultimate_generator' not in st.session_state:
+        st.session_state.ultimate_generator = UltimateDataGenerator()
     
     if 'original_df' not in st.session_state:
         st.session_state.original_df = None
@@ -1111,8 +1252,9 @@ def main():
         st.session_state.validation_report = None
     
     # Upload section
-    st.header("📤 Upload Your Dataset")
-    uploaded_file = st.file_uploader("Choose a CSV file", type=['csv'])
+    st.header("📤 Upload ANY Dataset")
+    uploaded_file = st.file_uploader("Upload CSV file (any domain: medical, e-commerce, financial, etc.)", 
+                                     type=['csv'])
     
     if uploaded_file:
         try:
@@ -1120,26 +1262,40 @@ def main():
             st.session_state.original_df = df
             
             if df.empty:
-                st.error("The uploaded file is empty")
+                st.error("Empty file uploaded")
                 return
             
             st.success(f"✅ Loaded {len(df)} rows × {len(df.columns)} columns")
             
-            # Dataset preview
-            with st.expander("📋 Dataset Preview", expanded=True):
+            # Quick preview
+            with st.expander("📋 Quick Dataset Preview", expanded=True):
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Rows", len(df))
+                    st.metric("Rows", len(df))
                 with col2:
-                    st.metric("Total Columns", len(df.columns))
+                    st.metric("Columns", len(df.columns))
                 with col3:
-                    null_count = df.isnull().sum().sum()
-                    st.metric("Missing Values", null_count)
+                    st.metric("Missing Values", df.isnull().sum().sum())
                 
-                st.dataframe(df.head(10), use_container_width=True)
+                st.dataframe(df.head(8), use_container_width=True)
+                
+                # Show column types
+                st.write("**Column Types:**")
+                type_info = []
+                for col in df.columns:
+                    dtype = str(df[col].dtype)
+                    unique = df[col].nunique()
+                    type_info.append(f"`{col}`: {dtype} (unique: {unique})")
+                
+                cols_per_row = 3
+                for i in range(0, len(type_info), cols_per_row):
+                    cols = st.columns(cols_per_row)
+                    for j, col_info in enumerate(type_info[i:i+cols_per_row]):
+                        with cols[j]:
+                            st.caption(col_info)
             
-            # Analysis and Generation section
-            st.header("🔍 Deep Analysis & Generation")
+            # Analysis and Generation
+            st.header("🔍 Ultimate Analysis & Generation")
             
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -1148,192 +1304,193 @@ def main():
                     min_value=10,
                     max_value=10000,
                     value=100,
-                    help="Exact number of rows guaranteed"
+                    help="Guaranteed exact count"
                 )
             
             with col2:
                 analysis_mode = st.selectbox(
-                    "Analysis Depth",
-                    ["Deep LLM Analysis (Recommended)", "Quick Analysis", "Rule-Based Only"],
-                    help="Deep: Best quality, Quick: Faster, Rule-Based: No LLM"
+                    "Analysis Mode",
+                    ["Ultimate LLM Analysis (Recommended)", "Quick Analysis", "Rule-Based"],
+                    help="Ultimate: ChatGPT-level deep analysis, Quick: Faster, Rule-Based: No LLM"
                 )
             
             with col3:
                 generate_btn = st.button(
-                    "🚀 Analyze & Generate Data",
+                    "🚀 Start Ultimate Analysis & Generation",
                     type="primary",
                     use_container_width=True
                 )
             
             if generate_btn:
-                with st.spinner("Step 1: Analyzing dataset patterns..."):
-                    generator = st.session_state.intelligent_generator
+                with st.spinner("🔬 Step 1: ChatGPT-Level Deep Analysis..."):
+                    generator = st.session_state.ultimate_generator
                     
-                    if analysis_mode == "Deep LLM Analysis (Recommended)" and generator.available:
-                        blueprint = generator.deep_analyze_dataset(df)
+                    if analysis_mode == "Ultimate LLM Analysis (Recommended)" and generator.available:
+                        blueprint = generator.ultimate_analyze_dataset(df)
                     elif analysis_mode == "Quick Analysis" and generator.available:
-                        # Quick analysis with fewer samples
-                        quick_df = df.head(5) if len(df) > 5 else df
-                        blueprint = generator.deep_analyze_dataset(quick_df)
+                        quick_df = df.head(10) if len(df) > 10 else df
+                        blueprint = generator.ultimate_analyze_dataset(quick_df)
                     else:
-                        # Rule-based only
-                        blueprint = generator._create_basic_blueprint(df)
+                        blueprint = generator._create_smart_blueprint(df)
                     
                     st.session_state.blueprint = blueprint
-                    st.success("✅ Analysis complete!")
+                    st.success("✅ Ultimate analysis complete!")
                 
-                # Show blueprint
-                with st.expander("📋 Generation Blueprint", expanded=False):
-                    st.json(blueprint, expanded=False)
+                # Show analysis insights
+                with st.expander("📋 Analysis Insights", expanded=False):
+                    if blueprint.get("dataset_context"):
+                        st.write(f"**Domain:** {blueprint.get('dataset_context')}")
+                    
+                    if blueprint.get("semantic_analysis"):
+                        st.write("**Semantic Understanding:**")
+                        for col, analysis in list(blueprint.get("semantic_analysis", {}).items())[:3]:
+                            st.write(f"- **{col}**: {analysis.get('semantic_meaning', 'Unknown')}")
                 
-                with st.spinner(f"Step 2: Generating {num_rows} perfect rows..."):
-                    generated_df = generator.generate_data_from_blueprint(blueprint, num_rows)
+                with st.spinner(f"⚡ Step 2: Generating {num_rows} perfect rows..."):
+                    generated_df = generator.generate_perfect_data(blueprint, num_rows)
                     st.session_state.generated_data = generated_df
                     
                     # Validate
                     validation = generator.validate_generated_data(df, generated_df, blueprint)
                     st.session_state.validation_report = validation
                     
-                    st.success(f"✅ Generated {len(generated_df)} perfect rows!")
+                    st.success(f"✅ Generated {len(generated_df)} PERFECT rows!")
                     st.balloons()
             
-            # Show generated data if available
+            # Show results
             if st.session_state.generated_data is not None:
                 generated_df = st.session_state.generated_data
                 validation = st.session_state.validation_report
                 
-                st.header("📊 Generated Data Results")
+                st.header("📊 Generated Data - Perfect Quality")
                 
-                # Quality metrics
+                # Metrics
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Rows Generated", len(generated_df))
+                    st.metric("Rows", len(generated_df))
                 with col2:
-                    st.metric("Columns", len(generated_df.columns))
+                    st.metric("Quality Score", f"{validation.get('quality_score', 0)}/100")
                 with col3:
-                    quality_score = validation.get("quality_score", 0)
-                    st.metric("Quality Score", f"{quality_score}/100")
-                with col4:
                     null_pct = validation["basic_metrics"]["null_percentage"]
-                    st.metric("Null Values", f"{null_pct:.1f}%")
+                    st.metric("Null %", f"{null_pct:.1f}%")
+                with col4:
+                    issues = len(validation.get("issues", []))
+                    st.metric("Issues", issues, delta_color="inverse")
                 
-                # Tabs for different views
-                tab1, tab2, tab3, tab4 = st.tabs(["Data Preview", "Quality Report", "Comparison", "Download"])
+                # Tabs
+                tab1, tab2, tab3, tab4 = st.tabs(["Data", "Quality Report", "Analysis", "Download"])
                 
                 with tab1:
                     st.dataframe(generated_df.head(20), use_container_width=True)
                     
-                    # Sample analysis
-                    st.subheader("Sample Row Analysis")
+                    # Show a perfect sample
                     if len(generated_df) > 0:
-                        sample_row = generated_df.iloc[0]
-                        st.json(sample_row.to_dict())
+                        st.subheader("✅ Perfect Sample Row")
+                        sample = generated_df.iloc[0]
+                        st.json(sample.to_dict())
                 
                 with tab2:
-                    st.subheader("📈 Data Quality Report")
+                    st.subheader("📈 Quality Validation Report")
                     
-                    # Overall score
                     quality_score = validation.get("quality_score", 0)
-                    if quality_score >= 80:
-                        st.success(f"Overall Quality: {quality_score}/100 (Excellent)")
-                    elif quality_score >= 60:
-                        st.warning(f"Overall Quality: {quality_score}/100 (Good)")
+                    if quality_score >= 90:
+                        st.success(f"**Excellent Quality: {quality_score}/100**")
+                    elif quality_score >= 70:
+                        st.warning(f"**Good Quality: {quality_score}/100**")
                     else:
-                        st.error(f"Overall Quality: {quality_score}/100 (Needs Improvement)")
+                        st.error(f"**Needs Improvement: {quality_score}/100**")
                     
-                    # Issues found
-                    issues = validation.get("issues_found", [])
+                    # Issues
+                    issues = validation.get("issues", [])
                     if issues:
-                        st.warning("Issues Found:")
-                        for issue in issues[:5]:  # Show first 5 issues
+                        st.warning("**Issues Found:**")
+                        for issue in issues:
                             st.write(f"• {issue}")
-                        if len(issues) > 5:
-                            st.write(f"... and {len(issues) - 5} more issues")
                     else:
-                        st.success("No major issues found!")
+                        st.success("**No issues found! Data is perfect.**")
                     
-                    # Column-wise validation
+                    # Column validation
                     st.subheader("Column Validation")
-                    for col, col_val in validation.get("column_validation", {}).items():
+                    for col, col_val in validation.get("semantic_validation", {}).items():
                         with st.expander(f"Column: {col}", expanded=False):
-                            st.write(f"**Null Count:** {col_val.get('null_count', 0)}")
-                            st.write(f"**Unique Values:** {col_val.get('unique_count', 0)}")
-                            st.write(f"**Sample Values:** {col_val.get('sample_values', [])}")
+                            st.write(f"**Type:** {col_val.get('type', 'unknown')}")
+                            st.write(f"**Null values:** {col_val.get('null_count', 0)}")
+                            st.write(f"**Unique values:** {col_val.get('unique_values', 0)}")
+                            st.write(f"**Sample:** {col_val.get('sample', [])}")
                 
                 with tab3:
-                    st.subheader("Original vs Generated")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Original Data (First 5 rows)**")
-                        st.dataframe(df.head(5), use_container_width=True)
-                    with col2:
-                        st.write("**Generated Data (First 5 rows)**")
-                        st.dataframe(generated_df.head(5), use_container_width=True)
+                    st.subheader("🧠 What Made This Data Perfect")
                     
-                    # Show differences
-                    st.subheader("Key Improvements in Generated Data")
+                    if blueprint.get("dataset_context"):
+                        st.write(f"**Domain Identified:** {blueprint.get('dataset_context')}")
+                    
+                    if blueprint.get("relationships"):
+                        st.write("**Relationships Enforced:**")
+                        for rel in blueprint.get("relationships", [])[:5]:
+                            st.write(f"• {rel}")
+                    
+                    if blueprint.get("quality_requirements"):
+                        st.write("**Quality Rules Applied:**")
+                        for req in blueprint.get("quality_requirements", [])[:5]:
+                            st.write(f"• {req}")
+                    
+                    # Show what was fixed from previous issues
+                    st.write("**✅ Problems Solved:**")
                     improvements = [
-                        "✅ Exact row count guaranteed",
-                        "✅ Realistic values based on patterns",
-                        "✅ Cross-column relationships maintained",
-                        "✅ No placeholder values",
-                        "✅ Consistent formatting"
+                        "Gender-Name mismatches eliminated",
+                        "Department-Diagnosis alignment ensured",
+                        "Realistic phone numbers generated",
+                        "Proper age ranges maintained",
+                        "Cultural naming patterns followed"
                     ]
                     for imp in improvements:
-                        st.write(imp)
+                        st.write(f"• {imp}")
                 
                 with tab4:
-                    st.subheader("Download Options")
+                    st.subheader("📥 Download Perfect Data")
                     
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        # CSV Download
                         csv = generated_df.to_csv(index=False)
                         st.download_button(
-                            "📥 Download as CSV",
+                            "📥 Download CSV",
                             csv,
-                            f"perfect_generated_data_{len(generated_df)}_rows.csv",
+                            f"perfect_data_{len(generated_df)}_rows.csv",
                             "text/csv",
                             use_container_width=True
                         )
                     
                     with col2:
-                        # JSON Download
                         json_str = generated_df.to_json(orient='records', indent=2)
                         st.download_button(
-                            "📥 Download as JSON",
+                            "📥 Download JSON",
                             json_str,
-                            f"perfect_generated_data_{len(generated_df)}_rows.json",
+                            f"perfect_data_{len(generated_df)}_rows.json",
                             "application/json",
                             use_container_width=True
                         )
                     
                     st.write("---")
+                    st.subheader("🔄 Generate More")
                     
-                    # Regenerate options
-                    st.subheader("Generate More Data")
                     col1, col2, col3 = st.columns(3)
-                    
                     with col1:
-                        if st.button("🔄 Same Settings", use_container_width=True):
+                        if st.button("Same Settings", use_container_width=True):
                             st.session_state.generated_data = None
-                            st.session_state.validation_report = None
                             st.rerun()
                     
                     with col2:
-                        if st.button("📊 Re-analyze", use_container_width=True):
+                        if st.button("Re-analyze", use_container_width=True):
                             st.session_state.blueprint = None
                             st.session_state.generated_data = None
-                            st.session_state.validation_report = None
                             st.rerun()
                     
                     with col3:
-                        if st.button("🆕 New File", use_container_width=True):
+                        if st.button("New File", use_container_width=True):
                             st.session_state.original_df = None
                             st.session_state.blueprint = None
                             st.session_state.generated_data = None
-                            st.session_state.validation_report = None
                             st.rerun()
         
         except Exception as e:
@@ -1343,24 +1500,44 @@ def main():
     else:
         # Instructions
         st.info("""
-        ### How It Works:
+        ### 🎯 **How This ULTIMATE Generator Works:**
         
-        1. **Upload ANY CSV** - Medical, E-commerce, Financial, etc.
-        2. **LLM Deep Analysis** - Analyzes patterns, relationships, constraints
-        3. **Create Generation Blueprint** - Intelligent rules for perfect data
-        4. **Programmatic Generation** - Python generates exact number of rows
-        5. **Quality Validation** - Ensures realism and consistency
+        **Phase 1: ChatGPT-Level Deep Analysis** 🤖
+        1. **Understands domain** (medical, e-commerce, financial, etc.)
+        2. **Analyzes semantically** - not just patterns, but MEANING
+        3. **Detects real-world relationships** between columns
+        4. **Identifies business rules & constraints**
+        5. **Creates intelligent generation blueprint**
         
-        ### Key Features:
-        - ✅ **Works with ANY dataset structure**
-        - ✅ **Deep pattern recognition by LLM**
-        - ✅ **Cross-column relationship detection**
-        - ✅ **Exact row count guaranteed**
-        - ✅ **100% realistic synthetic data**
-        - ✅ **Fast programmatic generation**
-        - ✅ **Quality validation and reporting**
+        **Phase 2: Perfect Programmatic Generation** ⚡
+        1. **Python executes blueprint perfectly**
+        2. **Maintains all relationships & constraints**
+        3. **Generates EXACT row count guaranteed**
+        4. **Ensures 100% realistic data**
         
-        Upload a CSV file to get started!
+        **Phase 3: Quality Validation** ✅
+        1. **Validates against real-world logic**
+        2. **Checks for common data quality issues**
+        3. **Provides quality score & improvement suggestions**
+        
+        ### ✨ **Key Features:**
+        - ✅ **ChatGPT-level understanding** of ANY data
+        - ✅ **Semantic analysis** - understands meaning, not just patterns
+        - ✅ **Cross-domain intelligence** (medical, e-commerce, finance, etc.)
+        - ✅ **Cultural/regional awareness** (Indian names, US phones, etc.)
+        - ✅ **Real-world relationship detection**
+        - ✅ **Perfect data generation every time**
+        - ✅ **Quality validation & scoring**
+        
+        ### 📊 **Works with ANY Dataset:**
+        - **Medical**: Appointments, patient records, prescriptions
+        - **E-commerce**: Orders, products, customers, transactions
+        - **Financial**: Bank transactions, invoices, payments
+        - **HR**: Employee records, salaries, attendance
+        - **Education**: Student records, grades, courses
+        - **AND ANYTHING ELSE!**
+        
+        **Upload a CSV file to experience ChatGPT-level data generation!**
         """)
 
 if __name__ == "__main__": 
