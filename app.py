@@ -92,17 +92,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def login_page():
-    st.markdown('<div class="main-header">🔮 IRMC aura</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">IRMC aura</div>', unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["**🔐 Login**", "**✨ Sign Up**"])
+    tab1, tab2 = st.tabs(["**Login**", "**Sign Up**"])
     
     with tab1:
         st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Welcome Back</h3>', unsafe_allow_html=True)
         
         with st.form("login_form"):
-            email = st.text_input("**Email Address**", placeholder="your.email@example.com")
+            email = st.text_input("**Email Address**", placeholder="Enter your email")
             password = st.text_input("**Password**", type="password", placeholder="Enter your password")
-            login_btn = st.form_submit_button("**🚀 Login to Dashboard**")
+            login_btn = st.form_submit_button("**Login**")
             
             if login_btn:
                 if email and password:
@@ -118,10 +118,10 @@ def login_page():
         st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Create Account</h3>', unsafe_allow_html=True)
         
         with st.form("signup_form"):
-            new_email = st.text_input("**Email Address**", placeholder="your.email@example.com")
+            new_email = st.text_input("**Email Address**", placeholder="Enter your email")
             new_password = st.text_input("**Password**", type="password", placeholder="Create a password (min 4 chars)")
             confirm_password = st.text_input("**Confirm Password**", type="password", placeholder="Re-enter your password")
-            signup_btn = st.form_submit_button("**⭐ Create Account**")
+            signup_btn = st.form_submit_button("**Create Account**")
             
             if signup_btn:
                 if new_email and new_password and confirm_password:
@@ -152,7 +152,7 @@ def home_page():
         """.format(st.session_state.email), unsafe_allow_html=True)
     
     with col2:
-        if st.button("**🚪 Logout**", use_container_width=True):
+        if st.button("** Logout**", use_container_width=True):
             logout_user()
             st.rerun()
     
@@ -169,7 +169,7 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📄 Doc RAG Chat</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>Chatbot</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>Chat with your documents using advanced AI technology.</p>
             </div>
         </div>
@@ -181,7 +181,7 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🌐 Graph RAG</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'> GraphX</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>Advanced document analysis with knowledge graphs.</p>
             </div>
         </div>
@@ -196,7 +196,7 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>💬 English to SQL</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>SQL_Assistant</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>Convert English to SQL queries instantly.</p>
             </div>
         </div>
@@ -208,7 +208,7 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📁 CSV SQL Assistant</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>QueryCraft</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>Query and analyze CSV files with natural language.</p>
             </div>
         </div>
@@ -223,7 +223,7 @@ def home_page():
         st.markdown("""
         <div class="app-box">
             <div>
-                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🔍 AI Research Assistant</h4>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>DataGiene</h4>
                 <p style='color: #555; margin: 0; font-size: 0.9rem;'>Research paper analysis, summarization and Q&A.</p>
             </div>
         </div>
