@@ -174,7 +174,7 @@ def home_page():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Launch RAG Chat", key="rag_btn", use_container_width=True):
+        if st.button("Launch Chatbot", key="rag_btn", use_container_width=True):
             st.switch_page("pages/2_📄_RAG_Chat.py")
     
     with col2:
@@ -186,7 +186,7 @@ def home_page():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Explore Graph RAG", key="graph_btn", use_container_width=True):
+        if st.button("Launch GraphX", key="graph_btn", use_container_width=True):
             st.switch_page("pages/3_🌐_Graph_RAG.py")
     
     # Row 2
@@ -213,7 +213,7 @@ def home_page():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Explore CSV SQL", key="csv_btn", use_container_width=True):
+        if st.button("Launch QueryCraft", key="csv_btn", use_container_width=True):
             st.switch_page("pages/5_📁_CSV_SQL_Assistant.py")
     
     # Row 3 - NEW APP
@@ -228,7 +228,7 @@ def home_page():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Launch Research Assistant", key="research_btn", use_container_width=True):
+        if st.button("Launch DataGiene", key="research_btn", use_container_width=True):
             st.switch_page("pages/6_🔢_Synthetic_Data_Generator.py")
     
     with col2:
