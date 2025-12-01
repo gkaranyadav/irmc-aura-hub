@@ -589,7 +589,7 @@ class KnowledgeGraphVisualizer:
 def main():
     # page configuration
     st.set_page_config(
-        page_title="GraphX",
+        page_title="iRMC GraphX",
         page_icon="",
         layout="wide"
     )
