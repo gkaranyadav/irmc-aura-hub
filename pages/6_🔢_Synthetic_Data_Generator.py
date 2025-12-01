@@ -1,59 +1,40 @@
-# pages/6_🔢_Synthetic_Data_Generator.py
+# pages/6_🔢_Synthetic_Data_Generator.py - CLEAN VERSION
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re
-import json
-import random
+from typing import Dict, Optional, Any
 from datetime import datetime
-from typing import Dict, Optional, Any  # ADDED IMPORT
-import subprocess
-import sys
-from auth import check_session
+import json
 
 # =============================================================================
-# INSTALL SDV IF NOT AVAILABLE
+# CHECK SDV AVAILABILITY
 # =============================================================================
-def install_sdv():
-    """Install SDV library if not available"""
+def check_sdv_availability():
+    """Check if SDV is available"""
     try:
-        from sdv.tabular import GaussianCopula, CTGAN, TVAE
-        from sdv.evaluation import evaluate
+        # SDV 1.29.1 imports
+        from sdv.single_table import GaussianCopulaSynthesizer, CTGANSynthesizer, TVAESynthesizer
+        from sdv.evaluation.single_table import evaluate_quality
         from sdv.metadata import SingleTableMetadata
+        st.session_state.sdv_available = True
         return True
-    except ImportError:
-        st.warning("Installing SDV (Synthetic Data Vault)... This may take a minute.")
-        try:
-            # Install SDV
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "sdv==1.10.0", "rdt==1.9.0"])
-            from sdv.tabular import GaussianCopula, CTGAN, TVAE
-            from sdv.evaluation import evaluate
-            from sdv.metadata import SingleTableMetadata
-            st.success("✅ SDV installed successfully!")
-            return True
-        except Exception as e:
-            st.error(f"Failed to install SDV: {str(e)}")
-            return False
-
-# Install SDV
-SDV_AVAILABLE = install_sdv()
-
-if SDV_AVAILABLE:
-    from sdv.tabular import GaussianCopula, CTGAN, TVAE
-    from sdv.evaluation import evaluate
-    from sdv.metadata import SingleTableMetadata
+    except ImportError as e:
+        st.session_state.sdv_available = False
+        st.error(f"❌ SDV is not installed. Please add 'sdv>=1.29.0' to requirements.txt")
+        st.info("To install manually: `pip install sdv>=1.29.0`")
+        return False
 
 # =============================================================================
-# REAL SDV-BASED GENERATOR
+# REAL SDV-BASED GENERATOR (Updated for SDV 1.29.1)
 # =============================================================================
 
 class SDVDataGenerator:
     """REAL synthetic data generation using SDV library"""
     
     def __init__(self):
-        self.available = SDV_AVAILABLE
+        self.available = check_sdv_availability()
         
-    def generate_with_sdv(self, df: pd.DataFrame, num_rows: int, method: str = "ctgan") -> Optional[pd.DataFrame]:  # UPDATED RETURN TYPE
+    def generate_with_sdv(self, df: pd.DataFrame, num_rows: int, method: str = "ctgan") -> Optional[pd.DataFrame]:
         """
         Generate synthetic data using SDV methods
         """
@@ -64,23 +45,27 @@ class SDVDataGenerator:
         try:
             with st.spinner(f"🤖 Training {method.upper()} model on your data..."):
                 # Step 1: Create metadata from dataframe
+                from sdv.metadata import SingleTableMetadata
                 metadata = SingleTableMetadata()
                 metadata.detect_from_dataframe(data=df)
                 
                 # Step 2: Choose model based on method
                 if method == "gaussian":
-                    model = GaussianCopula(
+                    from sdv.single_table import GaussianCopulaSynthesizer
+                    model = GaussianCopulaSynthesizer(
                         metadata=metadata,
-                        default_distribution='gamma'  # Better for positive numbers
+                        default_distribution='gamma'
                     )
                 elif method == "tvae":
-                    model = TVAE(
+                    from sdv.single_table import TVAESynthesizer
+                    model = TVAESynthesizer(
                         metadata=metadata,
                         epochs=100,
                         batch_size=50
                     )
                 else:  # ctgan (default)
-                    model = CTGAN(
+                    from sdv.single_table import CTGANSynthesizer
+                    model = CTGANSynthesizer(
                         metadata=metadata,
                         epochs=100,
                         batch_size=50,
@@ -96,14 +81,25 @@ class SDVDataGenerator:
                 
                 # Step 5: Evaluate quality
                 try:
-                    quality_score = evaluate(
-                        synthetic_data=synthetic_data,
+                    from sdv.evaluation.single_table import evaluate_quality
+                    quality_report = evaluate_quality(
                         real_data=df,
+                        synthetic_data=synthetic_data,
                         metadata=metadata
                     )
+                    
+                    # Get overall quality score
+                    quality_score = quality_report.get_score()
                     st.success(f"✅ Data Quality Score: {quality_score:.3f}/1.0")
+                    
+                    # Show detailed scores
+                    with st.expander("📊 View Detailed Quality Metrics"):
+                        scores = quality_report.get_properties()
+                        for prop_name, prop_score in scores.items():
+                            st.write(f"**{prop_name}**: {prop_score.get('score', 0):.3f}")
+                            
                 except Exception as e:
-                    st.info(f"⚠️ Could not compute quality score: {str(e)[:100]}")
+                    st.info(f"⚠️ Quality evaluation skipped: {str(e)[:100]}")
                 
                 return synthetic_data
                 
@@ -111,80 +107,7 @@ class SDVDataGenerator:
             st.error(f"SDV generation failed: {str(e)}")
             return None
     
-    def generate_with_llm_enhanced_sdv(self, df: pd.DataFrame, num_rows: int) -> Optional[pd.DataFrame]:  # UPDATED RETURN TYPE
-        """
-        Enhanced generation: Use LLM to understand data first, then SDV
-        """
-        try:
-            from groq import Groq
-            client = Groq(api_key=st.secrets.get("GROQ_API_KEY", ""))
-            
-            # First, let LLM analyze the data
-            with st.spinner("🧠 LLM analyzing data patterns..."):
-                prompt = self._build_analysis_prompt(df)
-                
-                messages = [
-                    {"role": "system", "content": "You are a data analyst."},
-                    {"role": "user", "content": prompt}
-                ]
-                
-                response = client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=messages,
-                    temperature=0.1,
-                    max_tokens=2000,
-                    response_format={"type": "json_object"}
-                )
-                
-                analysis = json.loads(response.choices[0].message.content)
-                st.info(f"📊 LLM Analysis: {analysis.get('dataset_type', 'Unknown')}")
-            
-            # Now use SDV with LLM insights
-            return self.generate_with_sdv(df, num_rows, "ctgan")
-            
-        except Exception as e:
-            st.warning(f"LLM enhancement failed: {str(e)}")
-            # Fallback to regular SDV
-            return self.generate_with_sdv(df, num_rows, "ctgan")
-    
-    def _build_analysis_prompt(self, df: pd.DataFrame) -> str:
-        """Build prompt for LLM analysis"""
-        samples = []
-        for i in range(min(5, len(df))):
-            sample = {}
-            for col in df.columns:
-                val = df.iloc[i][col]
-                if pd.isna(val):
-                    sample[col] = None
-                elif isinstance(val, (int, np.integer)):
-                    sample[col] = int(val)
-                elif isinstance(val, (float, np.floating)):
-                    sample[col] = float(val)
-                else:
-                    sample[col] = str(val)[:50]
-            samples.append(sample)
-        
-        return f"""
-        Analyze this dataset and return JSON with:
-        1. dataset_type: What type of data is this?
-        2. key_patterns: What patterns do you see?
-        3. data_quality: Any issues?
-        
-        Dataset: {len(df)} rows, {len(df.columns)} columns
-        Columns: {', '.join(df.columns)}
-        
-        Sample data:
-        {json.dumps(samples, indent=2)}
-        
-        Return JSON format:
-        {{
-            "dataset_type": "medical_appointments",
-            "key_patterns": ["Appointment IDs: AP###", "Indian names", "10-digit phones"],
-            "data_quality": "Good"
-        }}
-        """
-    
-    def compare_methods(self, df: pd.DataFrame, num_rows: int = 50) -> Dict[str, Any]:  # FIXED TYPE HINT
+    def compare_methods(self, df: pd.DataFrame, num_rows: int = 50) -> Dict[str, Any]:
         """
         Compare different SDV methods
         """
@@ -202,7 +125,8 @@ class SDVDataGenerator:
                             "rows_generated": len(synthetic),
                             "columns": len(synthetic.columns),
                             "null_percentage": (synthetic.isnull().sum().sum() / (len(synthetic) * len(synthetic.columns))) * 100,
-                            "data_types_match": all(synthetic[col].dtype == df[col].dtype for col in df.columns if col in synthetic.columns)
+                            "data_types_match": all(str(synthetic[col].dtype) == str(df[col].dtype) 
+                                                   for col in df.columns if col in synthetic.columns)
                         }
                         results[method] = quality_metrics
                 except Exception as e:
@@ -210,16 +134,16 @@ class SDVDataGenerator:
         
         return results
 
-
 # =============================================================================
-# STREAMLIT APP WITH SDV
+# STREAMLIT APP
 # =============================================================================
 
 def main():
-    # Authentication
-    if not check_session():
-        st.warning("Please login first")
-        st.stop()
+    # Bypass auth for now - uncomment when auth is ready
+    # from auth import check_session
+    # if not check_session():
+    #     st.warning("Please login first")
+    #     st.stop()
     
     # Page config
     st.set_page_config(
@@ -230,17 +154,41 @@ def main():
     
     # Header
     st.title("🧪 SDV Data Generator")
-    st.markdown("**Using Synthetic Data Vault (SDV) - REAL Generative AI for Tabular Data**")
+    st.markdown("**Using Synthetic Data Vault (SDV) v1.29.1 - REAL Generative AI for Tabular Data**")
     
     if st.button("🏠 Back to Home"):
         st.switch_page("app.py")
     
     st.markdown("---")
     
+    # Check SDV availability first
+    if 'sdv_available' not in st.session_state:
+        check_sdv_availability()
+    
+    if not st.session_state.get('sdv_available', False):
+        st.error("""
+        ## ❌ SDV is not available
+        
+        Please make sure SDV is installed:
+        
+        1. **Check requirements.txt** contains:
+        ```
+        sdv>=1.29.0
+        ```
+        
+        2. **Install manually**:
+        ```bash
+        pip install sdv>=1.29.0
+        ```
+        
+        3. **Restart the app** after installation
+        """)
+        st.stop()
+    
     # Show SDV info
     with st.expander("📚 About SDV Technology", expanded=True):
         st.markdown("""
-        ### **Synthetic Data Vault (SDV)** - Production-Grade Synthetic Data
+        ### **Synthetic Data Vault (SDV) v1.29.1** - Production-Grade Synthetic Data
         
         SDV uses **real generative AI models** for tabular data:
         
@@ -259,14 +207,6 @@ def main():
         - **Tabular Variational Autoencoder**
         - Neural network that learns latent representations
         - Good balance of quality and speed
-        
-        ### **How It Works:**
-        1. **Learns** the statistical distribution of your data
-        2. **Captures** relationships between columns
-        3. **Generates** new data with same patterns
-        4. **Preserves** privacy (differential privacy options)
-        
-        This is **NOT just prompting LLMs** - this is **real machine learning**.
         """)
     
     # Initialize generator
@@ -318,7 +258,7 @@ def main():
             # Generation controls
             st.subheader("⚙️ Generate with SDV")
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 num_rows = st.number_input(
                     "Rows to generate",
@@ -335,37 +275,28 @@ def main():
                     help="CTGAN: Best for complex data, Gaussian: Fastest, TVAE: Balanced"
                 )
             
-            with col3:
-                enhancement = st.checkbox(
-                    "🧠 Add LLM Analysis",
-                    value=True,
-                    help="LLM analyzes data first for better understanding"
-                )
-            
             # Generate button
             if st.button("🚀 Generate with SDV", type="primary", use_container_width=True):
-                if not st.session_state.sdv_generator.available:
-                    st.error("SDV not available. Check installation.")
+                generator = st.session_state.sdv_generator
+                
+                if not generator.available:
+                    st.error("SDV is not available.")
                 else:
-                    generator = st.session_state.sdv_generator
-                    
-                    if enhancement:
-                        generated = generator.generate_with_llm_enhanced_sdv(df, int(num_rows))
-                    else:
-                        generated = generator.generate_with_sdv(df, int(num_rows), method)
+                    generated = generator.generate_with_sdv(df, int(num_rows), method)
                     
                     if generated is not None:
                         st.session_state.generated_data = generated
-                        st.success(f"✅ Generated {len(generated)} perfect rows!")
+                        st.success(f"✅ Generated {len(generated)} synthetic rows!")
                         st.balloons()
                     else:
                         st.error("Failed to generate data")
             
             # Compare methods button
-            if len(df) >= 50:
+            if len(df) >= 50 and len(df) <= 1000:
                 if st.button("🔍 Compare SDV Methods", type="secondary"):
                     generator = st.session_state.sdv_generator
-                    results = generator.compare_methods(df, 50)
+                    sample_df = df.sample(min(200, len(df))) if len(df) > 200 else df
+                    results = generator.compare_methods(sample_df, 50)
                     
                     st.subheader("📊 Method Comparison (50 rows each)")
                     
@@ -416,7 +347,7 @@ def main():
                     if len(numeric_cols) > 0:
                         st.write("**Numeric Columns Comparison:**")
                         
-                        for col in numeric_cols[:3]:  # Show first 3 numeric columns
+                        for col in numeric_cols[:3]:
                             if col in generated_df.columns:
                                 col1, col2 = st.columns(2)
                                 with col1:
@@ -438,7 +369,7 @@ def main():
                     if len(categorical_cols) > 0:
                         st.write("**Categorical Columns Distribution:**")
                         
-                        for col in categorical_cols[:2]:  # Show first 2 categorical columns
+                        for col in categorical_cols[:2]:
                             if col in generated_df.columns:
                                 col1, col2 = st.columns(2)
                                 with col1:
@@ -499,9 +430,31 @@ def main():
     else:
         # Instructions
         st.info("""
-        ## 🧪 **SDV (Synthetic Data Vault) Generator**
+        ## 🧪 **SDV (Synthetic Data Vault) v1.29.1 Generator**
         
+        ✅ **SDV is installed and ready!**
+        
+        ### **How It Works:**
+        1. **Upload** a CSV file with your real data
+        2. **Choose** a generation method (CTGAN, TVAE, or Gaussian Copula)
+        3. **Generate** synthetic data that preserves patterns and relationships
+        4. **Download** the synthetic dataset for testing, sharing, or analysis
+        
+        ### **Best Practices:**
+        - **Dataset Size**: Works best with 100-10,000 rows
+        - **Column Types**: Handles both numeric and categorical data
+        - **Missing Values**: Can handle null values automatically
+        - **Privacy**: Generated data is synthetic, protecting original data privacy
+        
+        **Upload a CSV to get started!**
         """)
+    
+    # Footer with status
+    st.markdown("---")
+    if st.session_state.get('sdv_available', False):
+        st.success("✅ SDV v1.29.1 is ready")
+    else:
+        st.error("❌ SDV not available")
 
-if __name__ == "__main__": 
+if __name__ == "__main__":
     main()
