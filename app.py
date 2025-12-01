@@ -1,3 +1,4 @@
+# app.py (updated with 5th app)
 import streamlit as st
 from auth import login_user, signup_user, logout_user, check_session
 from database import init_database
@@ -160,6 +161,8 @@ def home_page():
     # App boxes
     st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Your AI Applications</h3>', unsafe_allow_html=True)
     
+    # Create 3 rows for apps (2 apps in each row)
+    # Row 1
     col1, col2 = st.columns(2)
     
     with col1:
@@ -173,7 +176,8 @@ def home_page():
         """, unsafe_allow_html=True)
         if st.button("Launch RAG Chat", key="rag_btn", use_container_width=True):
             st.switch_page("pages/2_📄_RAG_Chat.py")
-        
+    
+    with col2:
         st.markdown("""
         <div class="app-box">
             <div>
@@ -185,7 +189,10 @@ def home_page():
         if st.button("Explore Graph RAG", key="graph_btn", use_container_width=True):
             st.switch_page("pages/3_🌐_Graph_RAG.py")
     
-    with col2:
+    # Row 2
+    col1, col2 = st.columns(2)
+    
+    with col1:
         st.markdown("""
         <div class="app-box">
             <div>
@@ -196,17 +203,45 @@ def home_page():
         """, unsafe_allow_html=True)
         if st.button("Generate SQL", key="sql_btn", use_container_width=True):
             st.switch_page("pages/4_📊_SQL_Assistant.py")
-        
+    
+    with col2:
         st.markdown("""
         <div class="app-box">
             <div>
                 <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>📁 CSV SQL Assistant</h4>
-                <p style='color: #555; margin: 0; font-size: 0.9rem;'>New AI tools coming soon.</p>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>Query and analyze CSV files with natural language.</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Explore", key="new_btn", use_container_width=True):
+        if st.button("Explore CSV SQL", key="csv_btn", use_container_width=True):
             st.switch_page("pages/5_📁_CSV_SQL_Assistant.py")
+    
+    # Row 3 - NEW APP
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class="app-box">
+            <div>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🔍 AI Research Assistant</h4>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>Research paper analysis, summarization and Q&A.</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Launch Research Assistant", key="research_btn", use_container_width=True):
+            st.switch_page("pages/6_🔍_Research_Assistant.py")
+    
+    with col2:
+        st.markdown("""
+        <div class="app-box">
+            <div>
+                <h4 style='color: #175CFF; margin: 0 0 0.5rem 0;'>🚀 Coming Soon</h4>
+                <p style='color: #555; margin: 0; font-size: 0.9rem;'>More AI tools and applications in development.</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Explore More", key="more_btn", use_container_width=True, disabled=True):
+            pass
 
 def main():
     # Check if user is logged in
