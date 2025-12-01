@@ -25,7 +25,3 @@ pdf2image==1.17.0
 pillow==10.4.0
 faker
 openpyxl
-# Synthetic Data Generation
-sdv
-rdt
-mimesis
