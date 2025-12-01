@@ -229,7 +229,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch Research Assistant", key="research_btn", use_container_width=True):
-            st.switch_page("pages/6_🔍_Research_Assistant.py")
+            st.switch_page("pages/6_🔢_Synthetic_Data_Generator.py")
     
     with col2:
         st.markdown("""
