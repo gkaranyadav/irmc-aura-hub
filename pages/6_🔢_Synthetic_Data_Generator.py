@@ -2,16 +2,14 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 import re
 import json
-import io
 import random
 from groq import Groq
 from auth import check_session
 
 # =============================================================================
-# UNIVERSAL PATTERN ANALYZER (Works for ANY dataset)
+# TRULY UNIVERSAL GENERATOR (NO CODE ASSUMPTIONS)
 # =============================================================================
 class UniversalPatternAnalyzer:
     def __init__(self):
@@ -21,103 +19,50 @@ class UniversalPatternAnalyzer:
         except:
             self.llm_available = False
     
-    def analyze_universal_patterns(self, df_sample):
+    def analyze_patterns(self, df_sample):
         """
-        Analyze ANY dataset and create generation rules
-        WITHOUT predefining what data represents
+        Let LLM analyze - code doesn't predefine anything
         """
         if not self.llm_available or df_sample.empty:
-            return self._analyze_patterns_statistically(df_sample)
+            return self._fallback_analysis(df_sample)
         
-        # Create COMPACT representation (save tokens)
-        compact_data = self._create_compact_representation(df_sample)
+        # Prepare data for LLM
+        data_info = {
+            "columns": {},
+            "sample_rows": []
+        }
         
-        # UNIVERSAL PROMPT (no assumptions about data)
+        # Add column info
+        for col in df_sample.columns[:15]:  # Limit columns
+            col_data = df_sample[col].dropna().head(10)
+            if len(col_data) > 0:
+                samples = [str(x)[:100] for x in col_data.tolist()]
+                data_info["columns"][col] = {
+                    "samples": samples,
+                    "unique_count": col_data.nunique(),
+                    "sample_count": len(col_data)
+                }
+        
+        # Add sample rows
+        for idx, row in df_sample.head(5).iterrows():
+            data_info["sample_rows"].append(row.to_dict())
+        
+        # Universal prompt - NO constraints on LLM
         prompt = f"""
-        Analyze this dataset and create rules for generating similar synthetic data.
+        Analyze this dataset and describe how to generate similar synthetic data.
         
-        DATA SUMMARY:
-        {json.dumps(compact_data, indent=2)}
+        Data Info:
+        {json.dumps(data_info, indent=2)}
         
-        IMPORTANT: DO NOT assume what the data represents. 
-        DO NOT use pre-defined categories like "age", "email", "price".
+        Analyze each column and provide generation rules.
+        Focus on patterns, formats, and distributions.
         
-        Your task: Analyze the PATTERNS and FORMATS only.
-        
-        For EACH column, provide:
-        1. DATA PATTERN ANALYSIS: What patterns do you see?
-        2. FORMAT RULES: What format should generated data follow?
-        3. VALUE CONSTRAINTS: Any constraints on values?
-        4. GENERATION STRATEGY: How to generate similar data?
-        
-        Think CRITICALLY about what makes sense:
-        - If values look like IDs, they should be integers/sequential
-        - If values have decimal points, how many decimals make sense?
-        - If values are text, what patterns exist?
-        - If values are dates/times, what format?
-        
-        Return ONLY JSON:
-        {{
-            "columns": {{
-                "column_name": {{
-                    "pattern_analysis": "description of patterns found",
-                    "detected_format": "integer|float|string|date|id_like|code_like|mixed",
-                    "format_details": {{
-                        "is_numeric": true/false,
-                        "is_integer_like": true/false,
-                        "has_decimal_points": true/false,
-                        "decimal_places": 0|2|...,
-                        "is_sequential": true/false,
-                        "is_unique": true/false,
-                        "text_pattern": "regex_pattern_if_applicable",
-                        "length_range": [min, max],
-                        "character_set": "description of allowed characters"
-                    }},
-                    "value_constraints": {{
-                        "min_value": number or null,
-                        "max_value": number or null,
-                        "must_be_positive": true/false,
-                        "common_endings": [".99", ".00"] or null,
-                        "allowed_values": ["list"] or null
-                    }},
-                    "generation_strategy": "reuse_values|pattern_based|sequential|random_within_range"
-                }}
-            }},
-            "overall_patterns": ["patterns across dataset"],
-            "generation_advice": "advice for realistic generation"
-        }}
-        
-        Example response for column with values ["001", "002", "003"]:
-        {{
-            "column_name": {{
-                "pattern_analysis": "Sequential numeric codes with leading zeros",
-                "detected_format": "id_like",
-                "format_details": {{
-                    "is_numeric": true,
-                    "is_integer_like": true,
-                    "has_decimal_points": false,
-                    "decimal_places": 0,
-                    "is_sequential": true,
-                    "is_unique": true,
-                    "text_pattern": "^\d{{3}}$",
-                    "length_range": [3, 3],
-                    "character_set": "digits only"
-                }},
-                "value_constraints": {{
-                    "min_value": 1,
-                    "max_value": 999,
-                    "must_be_positive": true,
-                    "common_endings": null,
-                    "allowed_values": null
-                }},
-                "generation_strategy": "sequential"
-            }}
-        }}
+        Return JSON with generation instructions.
         """
         
         try:
             messages = [
-                {"role": "system", "content": "You are a pattern analysis expert. Analyze data patterns without assuming meaning."},
+                {"role": "system", "content": "You are a data pattern analyst."},
                 {"role": "user", "content": prompt}
             ]
             
@@ -125,7 +70,7 @@ class UniversalPatternAnalyzer:
                 model="llama-3.3-70b-versatile",
                 messages=messages,
                 temperature=0.1,
-                max_tokens=2500
+                max_tokens=2000
             )
             
             analysis_text = response.choices[0].message.content
@@ -135,466 +80,245 @@ class UniversalPatternAnalyzer:
                 json_match = re.search(r'\{.*\}', analysis_text, re.DOTALL)
                 if json_match:
                     analysis = json.loads(json_match.group())
-                    
-                    # Validate and enhance analysis
-                    analysis = self._validate_and_enhance_analysis(analysis, df_sample)
-                    
-                    return analysis
-            except json.JSONDecodeError as e:
-                st.warning(f"JSON parse error: {e}")
+                    return self._enhance_with_stats(analysis, df_sample)
+            except:
+                pass
             
-            return self._analyze_patterns_statistically(df_sample)
+            return self._fallback_analysis(df_sample)
             
         except Exception as e:
             st.warning(f"LLM analysis failed: {str(e)}")
-            return self._analyze_patterns_statistically(df_sample)
+            return self._fallback_analysis(df_sample)
     
-    def _create_compact_representation(self, df):
-        """Create compact data representation to save tokens"""
-        compact = {
-            "row_count": len(df),
-            "column_count": len(df.columns),
-            "columns": []
-        }
+    def _enhance_with_stats(self, analysis, df):
+        """Add statistical facts to LLM analysis"""
+        if 'columns' not in analysis:
+            analysis['columns'] = {}
         
-        for col in df.columns[:20]:  # Limit to 20 columns
+        for col in df.columns:
+            if col not in analysis['columns']:
+                analysis['columns'][col] = {}
+            
             col_data = df[col].dropna()
             if len(col_data) > 0:
-                # Take 3 samples, trimmed
-                samples = [str(x)[:50] for x in col_data.head(3).tolist()]
+                col_info = analysis['columns'][col]
                 
-                # Basic stats
+                # Add actual stats
                 try:
-                    numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
-                    if len(numeric_data) > 0:
-                        stats = {
-                            "min": float(numeric_data.min()),
-                            "max": float(numeric_data.max()),
-                            "mean": float(numeric_data.mean())
-                        }
-                    else:
-                        stats = None
-                except:
-                    stats = None
+                    # Check if can be numeric
+                    numeric_vals = pd.to_numeric(col_data, errors='coerce').dropna()
+                    if len(numeric_vals) > 0:
+                        if 'numeric_stats' not in col_info:
+                            col_info['numeric_stats'] = {}
+                        col_info['numeric_stats']['min'] = float(numeric_vals.min())
+                        col_info['numeric_stats']['max'] = float(numeric_vals.max())
+                        col_info['numeric_stats']['mean'] = float(numeric_vals.mean())
+                        col_info['numeric_stats']['std'] = float(numeric_vals.std()) if len(numeric_vals) > 1 else 0
+                        
+                        # Check decimal places
+                        if not numeric_vals.apply(lambda x: float(x).is_integer()).all():
+                            decimals = numeric_vals.apply(
+                                lambda x: len(str(x).split('.')[1]) if '.' in str(x) else 0
+                            )
+                            col_info['numeric_stats']['max_decimals'] = int(decimals.max())
+                            col_info['numeric_stats']['common_decimals'] = int(decimals.mode().iloc[0]) if len(decimals.mode()) > 0 else 2
                 
-                compact["columns"].append({
-                    "name": col,
-                    "dtype": str(df[col].dtype),
-                    "samples": samples,
-                    "unique_count": col_data.nunique(),
-                    "stats": stats
-                })
-        
-        return compact
-    
-    def _validate_and_enhance_analysis(self, analysis, df):
-        """Add statistical validation to LLM analysis"""
-        if 'columns' not in analysis:
-            return analysis
-        
-        for col_name, col_info in analysis['columns'].items():
-            if col_name in df.columns:
-                col_data = df[col_name].dropna()  # Fixed: changed col to col_name
+                except:
+                    pass
+                
+                # Always add these
+                col_info['actual_unique_ratio'] = float(col_data.nunique() / len(col_data))
+                col_info['actual_sample_count'] = len(col_data)
+                
+                # Character analysis
                 if len(col_data) > 0:
-                    # Add actual statistical data
-                    try:
-                        # Check if numeric
-                        numeric_series = pd.to_numeric(col_data, errors='coerce')
-                        numeric_data = numeric_series.dropna()
-                        
-                        if 'format_details' not in col_info:
-                            col_info['format_details'] = {}
-                        
-                        if len(numeric_data) > 0:
-                            col_info['format_details']['is_numeric'] = True
-                            col_info['format_details']['actual_min'] = float(numeric_data.min())
-                            col_info['format_details']['actual_max'] = float(numeric_data.max())
-                            
-                            # Check if all are integers
-                            if numeric_data.apply(lambda x: float(x).is_integer()).all():
-                                col_info['format_details']['is_integer_like'] = True
-                            else:
-                                # Check decimal places
-                                decimal_counts = numeric_data.apply(
-                                    lambda x: len(str(x).split('.')[1]) if '.' in str(x) else 0
-                                )
-                                if decimal_counts.max() > 0:
-                                    col_info['format_details']['has_decimal_points'] = True
-                                    col_info['format_details']['typical_decimal_places'] = int(decimal_counts.mode().iloc[0] if len(decimal_counts.mode()) > 0 else 0)
-                        
-                        # Check for sequential pattern
-                        if len(numeric_data) > 2:
-                            sorted_vals = sorted(numeric_data.unique()[:10])
-                            diffs = np.diff(sorted_vals)
-                            if len(diffs) > 0 and np.allclose(diffs, diffs[0], rtol=0.1):
-                                col_info['format_details']['is_sequential'] = True
-                        
-                        # Check uniqueness
-                        unique_ratio = col_data.nunique() / len(col_data)
-                        col_info['format_details']['uniqueness_ratio'] = float(unique_ratio)
-                        if unique_ratio > 0.95:
-                            col_info['format_details']['is_unique'] = True
-                        
-                    except Exception as e:
-                        pass
+                    samples = col_data.head(5).astype(str).tolist()
+                    col_info['sample_patterns'] = samples
         
         return analysis
     
-    def _analyze_patterns_statistically(self, df):
-        """Statistical pattern analysis without LLM"""
-        analysis = {
-            'columns': {},
-            'overall_patterns': ['Statistical pattern analysis'],
-            'generation_advice': 'Generate based on statistical distributions'
-        }
+    def _fallback_analysis(self, df):
+        """Statistical analysis without assumptions"""
+        analysis = {'columns': {}}
         
         for col in df.columns:
             col_data = df[col].dropna()
             if len(col_data) > 0:
                 col_info = {
-                    'pattern_analysis': 'Statistical pattern detected',
-                    'detected_format': 'auto_detect',
-                    'format_details': {},
-                    'value_constraints': {},
-                    'generation_strategy': 'statistical'
+                    'generation_type': 'auto_detect',
+                    'actual_stats': {}
                 }
                 
-                # Try numeric analysis
+                # Check patterns statistically
+                sample = str(col_data.iloc[0]) if len(col_data) > 0 else ""
+                
+                # Check character composition
+                chars = set(''.join(col_data.head(10).astype(str).tolist()))
+                digit_count = sum(1 for c in chars if c.isdigit())
+                alpha_count = sum(1 for c in chars if c.isalpha())
+                
+                col_info['character_analysis'] = {
+                    'has_digits': digit_count > 0,
+                    'has_letters': alpha_count > 0,
+                    'has_symbols': len(chars) > (digit_count + alpha_count),
+                    'common_symbols': [c for c in ['-', '_', '@', '.', '/', ' '] if any(c in str(x) for x in col_data.head(5))]
+                }
+                
+                # Check if numeric-like
                 try:
                     numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
-                    if len(numeric_data) > 0:
-                        col_info['detected_format'] = 'numeric'
-                        col_info['format_details']['is_numeric'] = True
-                        col_info['format_details']['actual_min'] = float(numeric_data.min())
-                        col_info['format_details']['actual_max'] = float(numeric_data.max())
-                        col_info['format_details']['actual_mean'] = float(numeric_data.mean())
+                    if len(numeric_data) > len(col_data) * 0.7:  # Mostly numeric
+                        col_info['generation_type'] = 'numeric'
+                        col_info['actual_stats']['min'] = float(numeric_data.min())
+                        col_info['actual_stats']['max'] = float(numeric_data.max())
+                        col_info['actual_stats']['mean'] = float(numeric_data.mean())
                         
-                        # Check if integers
                         if numeric_data.apply(lambda x: float(x).is_integer()).all():
-                            col_info['format_details']['is_integer_like'] = True
+                            col_info['actual_stats']['is_integer'] = True
                         else:
-                            # Check decimal places
-                            decimal_counts = numeric_data.apply(
-                                lambda x: len(str(x).split('.')[1]) if '.' in str(x) else 0
-                            )
-                            if decimal_counts.max() > 0:
-                                col_info['format_details']['has_decimal_points'] = True
-                                col_info['format_details']['typical_decimal_places'] = int(decimal_counts.mode().iloc[0] if len(decimal_counts.mode()) > 0 else 2)
+                            col_info['actual_stats']['is_float'] = True
                 except:
-                    col_info['detected_format'] = 'text'
-                    col_info['format_details']['is_numeric'] = False
+                    pass
                 
-                # Check unique values
-                unique_ratio = col_data.nunique() / len(col_data)
-                col_info['format_details']['uniqueness_ratio'] = float(unique_ratio)
+                # Check length patterns
+                lengths = col_data.astype(str).str.len()
+                col_info['length_stats'] = {
+                    'min': int(lengths.min()),
+                    'max': int(lengths.max()),
+                    'avg': float(lengths.mean())
+                }
+                
+                # Check uniqueness
+                col_info['uniqueness'] = float(col_data.nunique() / len(col_data))
                 
                 analysis['columns'][col] = col_info
         
         return analysis
 
 # =============================================================================
-# SMART DATA GENERATOR (Works for ANY dataset)
+# UNIVERSAL DATA GENERATOR
 # =============================================================================
-class SmartDataGenerator:  # Changed from UniversalDataGenerator to SmartDataGenerator to match error
+class UniversalDataGenerator:
     def __init__(self):
-        self.analyzer = UniversalPatternAnalyzer()  # FIXED: Added analyzer attribute
+        self.analyzer = UniversalPatternAnalyzer()
     
-    def generate_universal_data(self, original_df, num_rows, noise_level=0.1):
+    def generate_data(self, original_df, num_rows):
         """
-        Generate synthetic data for ANY dataset
+        Generate synthetic data - NO assumptions about what data is
         """
         if original_df.empty:
             return pd.DataFrame()
         
-        # Step 1: Analyze patterns (ONE LLM CALL)
-        with st.spinner("🔍 Analyzing data patterns..."):
-            analysis = self.analyzer.analyze_universal_patterns(original_df.head(50))
+        # Step 1: Analyze patterns
+        with st.spinner("🔍 Analyzing patterns..."):
+            analysis = self.analyzer.analyze_patterns(original_df.head(50))
         
-        # Step 2: Generate each column based on patterns
+        # Step 2: Generate each column
         generated_data = {}
         
         for col in original_df.columns:
             if col in analysis.get('columns', {}):
-                col_info = analysis['columns'][col]
-                generated_data[col] = self._generate_column_by_pattern(
+                generated_data[col] = self._generate_column(
                     col_name=col,
-                    col_info=col_info,
-                    original_series=original_df[col] if col in original_df.columns else None,
+                    col_info=analysis['columns'][col],
+                    original_data=original_df[col] if col in original_df.columns else None,
                     num_rows=num_rows
                 )
             else:
-                # Fallback: Use original samples
-                generated_data[col] = self._generate_fallback(original_df[col], num_rows)
+                # Simple fallback
+                generated_data[col] = self._simple_generate(original_df[col], num_rows)
         
-        # Step 3: Create DataFrame
-        df_generated = pd.DataFrame(generated_data)
-        
-        # Step 4: Apply post-processing for realism
-        df_generated = self._apply_smart_post_processing(df_generated, analysis)
-        
-        # Step 5: Add controlled noise
-        if noise_level > 0:
-            df_generated = self._add_intelligent_noise(df_generated, noise_level, analysis)
-        
-        return df_generated
+        # Create DataFrame
+        return pd.DataFrame(generated_data)
     
-    def _generate_column_by_pattern(self, col_name, col_info, original_series, num_rows):
-        """Generate data based on detected patterns"""
-        format_details = col_info.get('format_details', {})
-        value_constraints = col_info.get('value_constraints', {})
-        strategy = col_info.get('generation_strategy', 'statistical')
+    def _generate_column(self, col_name, col_info, original_data, num_rows):
+        """Generate based on pattern analysis"""
         
-        # Strategy 1: Reuse existing values
-        if strategy == 'reuse_values' and original_series is not None:
-            unique_vals = original_series.dropna().unique()
-            if len(unique_vals) > 0:
+        # Check what type of generation
+        gen_type = col_info.get('generation_type', 'auto_detect')
+        
+        # If we have actual samples, sometimes reuse patterns
+        if original_data is not None and len(original_data) > 0:
+            unique_vals = original_data.dropna().unique()
+            if len(unique_vals) <= 20:  # Limited unique values
                 return np.random.choice(unique_vals, num_rows)
         
-        # Strategy 2: Generate based on format
-        if format_details.get('is_numeric', False):
-            return self._generate_numeric_by_pattern(format_details, value_constraints, num_rows, original_series)
-        else:
-            return self._generate_text_by_pattern(format_details, original_series, num_rows)
-    
-    def _generate_numeric_by_pattern(self, format_details, constraints, num_rows, original_series=None):
-        """Generate numeric data with intelligence"""
+        # Check character patterns
+        char_analysis = col_info.get('character_analysis', {})
         
-        # Determine range
-        min_val = constraints.get('min_value') or format_details.get('actual_min', 0)
-        max_val = constraints.get('max_value') or format_details.get('actual_max', 100)
-        
-        # Adjust based on original if available
-        if original_series is not None:
-            try:
-                numeric_data = pd.to_numeric(original_series, errors='coerce').dropna()
-                if len(numeric_data) > 0:
-                    mean_val = float(numeric_data.mean())
-                    std_val = float(numeric_data.std()) if len(numeric_data) > 1 else (max_val - min_val) / 4
-                else:
-                    mean_val = (min_val + max_val) / 2
-                    std_val = (max_val - min_val) / 4
-            except:
-                mean_val = (min_val + max_val) / 2
-                std_val = (max_val - min_val) / 4
-        else:
-            mean_val = (min_val + max_val) / 2
-            std_val = (max_val - min_val) / 4
-        
-        # Generate data
-        if format_details.get('is_sequential', False):
-            # Sequential numbers
-            start = int(min_val) if pd.notnull(min_val) else 1000
-            data = list(range(start, start + num_rows))
-        
-        elif format_details.get('is_integer_like', False):
-            # Integer data
-            data = np.random.normal(mean_val, std_val, num_rows)
-            data = np.clip(data, min_val, max_val).astype(int)
+        # If numeric-like
+        if gen_type == 'numeric' or ('actual_stats' in col_info and 'min' in col_info['actual_stats']):
+            stats = col_info.get('actual_stats', {})
+            min_val = stats.get('min', 0)
+            max_val = stats.get('max', 100)
             
-            # Ensure positive if required
-            if constraints.get('must_be_positive', False):
-                data = np.abs(data)
-        
-        else:
-            # Float data with decimal places
-            decimal_places = format_details.get('typical_decimal_places', 2)
-            
-            # Generate with normal distribution
-            data = np.random.normal(mean_val, std_val, num_rows)
-            data = np.clip(data, min_val, max_val)
-            
-            # Apply decimal places
-            data = np.round(data, decimal_places)
-            
-            # Apply common endings if specified
-            common_endings = constraints.get('common_endings')
-            if common_endings and decimal_places == 2:
-                for i in range(num_rows):
-                    if np.random.random() < 0.3:  # 30% chance
-                        integer_part = int(data[i])
-                        ending = np.random.choice(common_endings)
-                        data[i] = integer_part + float(ending)
-        
-        return data
-    
-    def _generate_text_by_pattern(self, format_details, original_series, num_rows):
-        """Generate text data based on patterns"""
-        if original_series is not None:
-            samples = original_series.dropna().astype(str).head(50).tolist()
-            
-            if len(samples) > 0:
-                # Strategy 1: If few unique values, reuse them
-                unique_vals = original_series.dropna().unique()
-                if len(unique_vals) <= 10:
-                    return np.random.choice(unique_vals, num_rows)
+            if stats.get('is_integer', False):
+                # Generate integers
+                data = np.random.randint(int(min_val), int(max_val) + 1, num_rows)
+            else:
+                # Generate floats
+                mean_val = stats.get('mean', (min_val + max_val) / 2)
+                std_val = stats.get('std', (max_val - min_val) / 4)
                 
-                # Strategy 2: Detect and replicate patterns
-                pattern = self._detect_text_pattern(samples)
-                if pattern:
-                    return self._generate_by_pattern(pattern, num_rows)
+                data = np.random.normal(mean_val, std_val, num_rows)
+                data = np.clip(data, min_val, max_val)
                 
-                # Strategy 3: Mix and match parts
-                return self._mix_and_match_generate(samples, num_rows)
+                # Apply decimal places if specified
+                if stats.get('is_float', False):
+                    decimals = stats.get('common_decimals', 2)
+                    data = np.round(data, decimals)
+            
+            return data
         
-        # Fallback: Generate placeholder text
-        return [f"Sample_{i}" for i in range(num_rows)]
-    
-    def _detect_text_pattern(self, samples):
-        """Detect patterns in text samples"""
-        if not samples:
-            return None
-        
-        # Check for alphanumeric codes
-        first = samples[0]
-        
-        # Pattern 1: Codes with separators (ABC-123)
-        if any(sep in first for sep in ['-', '_', '.']):
-            parts = re.split(r'[-_.]+', first)
-            pattern_parts = []
-            for part in parts:
-                if part.isdigit():
-                    pattern_parts.append('#' * len(part))
-                elif part.isalpha():
-                    pattern_parts.append('@' * len(part))
-                else:
-                    pattern_parts.append(part)
-            separator = first[re.search(r'[-_.]+', first).start()]
-            return separator.join(pattern_parts)
-        
-        # Pattern 2: Email-like
-        if '@' in first and '.' in first:
-            return 'email'
-        
-        # Pattern 3: Date-like
-        date_patterns = [r'\d{4}-\d{2}-\d{2}', r'\d{2}/\d{2}/\d{4}']
-        for pattern in date_patterns:
-            if re.match(pattern, first):
-                return 'date'
-        
-        return None
-    
-    def _generate_by_pattern(self, pattern, num_rows):
-        """Generate data based on pattern"""
-        if pattern == 'email':
-            domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'company.com']
-            return [f"user{i}@{random.choice(domains)}" for i in range(num_rows)]
-        
-        elif pattern == 'date':
-            start = datetime.now() - timedelta(days=365)
-            return [(start + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(num_rows)]
-        
+        # Text-like generation
         else:
-            # Generic pattern with separators
+            # Get length patterns
+            length_stats = col_info.get('length_stats', {'min': 5, 'max': 20, 'avg': 10})
+            
+            # Check character sets to use
+            use_digits = char_analysis.get('has_digits', True)
+            use_letters = char_analysis.get('has_letters', True)
+            
+            # Get common symbols
+            common_symbols = char_analysis.get('common_symbols', [])
+            
+            # Generate text
             generated = []
             for _ in range(num_rows):
-                item = ''
-                for char in pattern:
-                    if char == '#':
-                        item += str(random.randint(0, 9))
-                    elif char == '@':
-                        item += random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                # Determine length
+                length = int(np.random.normal(length_stats['avg'], 2))
+                length = max(length_stats['min'], min(length_stats['max'], length))
+                
+                # Build characters
+                chars = []
+                for _ in range(length):
+                    # Choose character type
+                    if common_symbols and np.random.random() < 0.1:  # 10% chance symbol
+                        chars.append(random.choice(common_symbols))
+                    elif use_digits and use_letters:
+                        # Mix digits and letters
+                        if np.random.random() < 0.5:
+                            chars.append(random.choice('0123456789'))
+                        else:
+                            chars.append(random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))
+                    elif use_digits:
+                        chars.append(random.choice('0123456789'))
                     else:
-                        item += char
-                generated.append(item)
+                        chars.append(random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))
+                
+                generated.append(''.join(chars))
+            
             return generated
     
-    def _mix_and_match_generate(self, samples, num_rows):
-        """Generate by mixing parts of existing samples"""
-        if not samples:
-            return [f"Item_{i}" for i in range(num_rows)]
-        
-        # Split samples into parts
-        parts_list = []
-        for sample in samples[:20]:  # Use first 20
-            # Split by common separators
-            parts = re.split(r'[\s\-_\.]+', sample)
-            parts_list.append(parts)
-        
-        # Generate by combining random parts
-        generated = []
-        for _ in range(num_rows):
-            parts = []
-            for i in range(len(parts_list[0])):
-                available = [p[i] for p in parts_list if i < len(p)]
-                if available:
-                    parts.append(random.choice(available))
-            generated.append('_'.join(parts))
-        
-        return generated
-    
-    def _generate_fallback(self, original_series, num_rows):
-        """Fallback generation"""
+    def _simple_generate(self, original_series, num_rows):
+        """Simple fallback generation"""
         if original_series is not None and len(original_series) > 0:
             unique_vals = original_series.dropna().unique()
             if len(unique_vals) > 0:
                 return np.random.choice(unique_vals, num_rows)
         
-        return [f"Data_{i}" for i in range(num_rows)]
-    
-    def _apply_smart_post_processing(self, df, analysis):
-        """Apply intelligent post-processing"""
-        
-        for col in df.columns:
-            if col in analysis.get('columns', {}):
-                col_info = analysis['columns'][col]
-                format_details = col_info.get('format_details', {})
-                
-                # Fix integer columns
-                if format_details.get('is_integer_like', False):
-                    try:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                        df[col] = df[col].round().astype('Int64')
-                    except:
-                        pass
-                
-                # Ensure positive values if required
-                constraints = col_info.get('value_constraints', {})
-                if constraints.get('must_be_positive', False):
-                    try:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                        df[col] = df[col].abs()
-                    except:
-                        pass
-                
-                # Apply decimal places
-                decimal_places = format_details.get('typical_decimal_places')
-                if decimal_places is not None:
-                    try:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                        df[col] = df[col].round(decimal_places)
-                    except:
-                        pass
-        
-        return df
-    
-    def _add_intelligent_noise(self, df, noise_level, analysis):
-        """Add intelligent noise"""
-        for col in df.columns:
-            if col in analysis.get('columns', {}):
-                col_info = analysis['columns'][col]
-                format_details = col_info.get('format_details', {})
-                
-                if format_details.get('is_numeric', False) and noise_level > 0:
-                    try:
-                        col_data = pd.to_numeric(df[col], errors='coerce')
-                        
-                        # Calculate noise based on range
-                        if 'actual_min' in format_details and 'actual_max' in format_details:
-                            data_range = format_details['actual_max'] - format_details['actual_min']
-                            if data_range > 0:
-                                noise = np.random.uniform(-noise_level, noise_level, len(df)) * data_range
-                                df[col] = col_data + noise
-                                
-                                # Re-apply constraints
-                                if format_details.get('is_integer_like', False):
-                                    df[col] = df[col].round().astype('Int64')
-                                else:
-                                    decimal_places = format_details.get('typical_decimal_places', 2)
-                                    df[col] = df[col].round(decimal_places)
-                    except:
-                        pass
-        
-        return df
+        # Generate random strings as last resort
+        return [f"VAL_{i:06d}" for i in range(num_rows)]
 
 # =============================================================================
 # MAIN APP
@@ -614,16 +338,16 @@ def main():
     
     # Header
     st.title("🔢 Universal Synthetic Data Generator")
-    st.markdown("Generate realistic synthetic data for **ANY dataset**")
+    st.markdown("Generate synthetic data for ANY dataset - **No assumptions about data meaning**")
     
     if st.button("🏠 Back to Home"):
         st.switch_page("app.py")
     
     st.markdown("---")
     
-    # Initialize - FIXED: Use SmartDataGenerator instead of UniversalDataGenerator
+    # Initialize
     if 'generator' not in st.session_state:
-        st.session_state.generator = SmartDataGenerator()  # FIXED
+        st.session_state.generator = UniversalDataGenerator()
     if 'original_data' not in st.session_state:
         st.session_state.original_data = None
     if 'generated_data' not in st.session_state:
@@ -646,77 +370,88 @@ def main():
                 st.success(f"✅ Loaded {len(df)} rows × {len(df.columns)} columns")
                 
                 # Preview
-                with st.expander("📋 Data Preview", expanded=True):
+                with st.expander("📋 Original Data Preview", expanded=True):
                     st.dataframe(df.head(10))
                 
-                # Analyze button
-                if st.button("🔍 Analyze Patterns (One-time LLM)", type="primary"):
-                    with st.spinner("Analyzing patterns with LLM..."):
-                        analysis = st.session_state.generator.analyzer.analyze_universal_patterns(df.head(50))
-                        st.session_state.analysis = analysis
-                        
-                        st.success("✅ Pattern analysis complete!")
-                        
-                        # Show analysis
-                        with st.expander("📊 Pattern Analysis Results", expanded=True):
-                            for col, info in analysis.get('columns', {}).items():
-                                st.write(f"**{col}**:")
-                                st.json(info, expanded=False)
+                # Analysis section
+                st.subheader("🔍 Pattern Analysis")
                 
-                # Generate section
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("Analyze Data Patterns", type="primary"):
+                        with st.spinner("Analyzing patterns..."):
+                            analysis = st.session_state.generator.analyzer.analyze_patterns(df.head(50))
+                            st.session_state.analysis = analysis
+                            
+                            st.success("✅ Analysis complete!")
+                
+                with col2:
+                    num_rows = st.number_input("Rows to generate", min_value=10, max_value=10000, value=1000, step=100)
+                
+                # Show analysis if available
                 if st.session_state.analysis:
-                    st.subheader("⚙️ Generate Synthetic Data")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        num_rows = st.select_slider(
-                            "Rows to generate",
-                            options=[100, 500, 1000, 5000, 10000],
-                            value=1000
-                        )
-                    
-                    with col2:
-                        noise = st.slider("Variation", 0.0, 0.5, 0.1, 0.05,
-                                        help="Adds realistic variation")
-                    
-                    if st.button("🚀 Generate Realistic Data", type="primary"):
-                        with st.spinner("Generating..."):
-                            generated = st.session_state.generator.generate_universal_data(
+                    with st.expander("📊 Pattern Analysis Results", expanded=False):
+                        for col, info in st.session_state.analysis.get('columns', {}).items():
+                            st.write(f"**{col}**:")
+                            if 'generation_type' in info:
+                                st.write(f"Generation type: `{info['generation_type']}`")
+                            if 'character_analysis' in info:
+                                st.write(f"Characters: {info['character_analysis']}")
+                            if 'actual_stats' in info and info['actual_stats']:
+                                st.write(f"Stats: {info['actual_stats']}")
+                            st.write("---")
+                
+                # Generation
+                if st.session_state.analysis:
+                    if st.button("🚀 Generate Synthetic Data", type="primary"):
+                        with st.spinner("Generating synthetic data..."):
+                            generated = st.session_state.generator.generate_data(
                                 original_df=df,
-                                num_rows=num_rows,
-                                noise_level=noise
+                                num_rows=int(num_rows)
                             )
                             
                             st.session_state.generated_data = generated
-                            st.success(f"✅ Generated {len(generated)} rows!")
+                            st.success(f"✅ Generated {len(generated)} synthetic rows!")
                             st.balloons()
                 
-                # Download section
+                # Results
                 if st.session_state.generated_data is not None:
-                    st.subheader("💾 Download Results")
+                    st.subheader("📋 Generated Data")
                     
                     df_gen = st.session_state.generated_data
                     
                     # Preview
-                    st.dataframe(df_gen.head(10))
+                    st.dataframe(df_gen.head(20))
                     
-                    # Download buttons
-                    col1, col2 = st.columns(2)
+                    # Stats comparison
+                    with st.expander("📊 Statistics Comparison", expanded=False):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Original Data**")
+                            st.write(f"Rows: {len(df)}")
+                            st.write(f"Columns: {len(df.columns)}")
+                        
+                        with col2:
+                            st.write("**Generated Data**")
+                            st.write(f"Rows: {len(df_gen)}")
+                            st.write(f"Columns: {len(df_gen.columns)}")
                     
-                    with col1:
-                        csv = df_gen.to_csv(index=False)
-                        st.download_button(
-                            "📥 Download CSV",
-                            csv,
-                            "synthetic_data.csv",
-                            "text/csv"
-                        )
+                    # Download
+                    st.subheader("💾 Download")
                     
-                    with col2:
-                        if st.button("🔄 Generate More"):
-                            st.session_state.generated_data = None
-                            st.rerun()
+                    csv = df_gen.to_csv(index=False)
+                    st.download_button(
+                        "📥 Download CSV",
+                        csv,
+                        "synthetic_data.csv",
+                        "text/csv"
+                    )
+                    
+                    if st.button("🔄 Generate New Set"):
+                        st.session_state.generated_data = None
+                        st.rerun()
         
         except Exception as e:
             st.error(f"Error: {str(e)}")
