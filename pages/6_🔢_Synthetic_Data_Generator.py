@@ -586,9 +586,10 @@ def main():
     
     st.markdown("---")
     
-    # Initialize
-    if 'generator' not in st.session_state:
-        st.session_state.generator = UltimateLLMGenerator()
+    # Initialize generator
+    if 'ultimate_generator' not in st.session_state:
+        st.session_state.ultimate_generator = UltimateLLMGenerator()
+    
     if 'generated_data' not in st.session_state:
         st.session_state.generated_data = None
     
@@ -627,11 +628,13 @@ def main():
                 
                 with col3:
                     if st.button("🚀 Generate PERFECT Data", type="primary"):
-                        if not st.session_state.generator.available:
+                        if not st.session_state.ultimate_generator.available:
                             st.error("LLM not available. Check API key.")
                         else:
                             with st.spinner("Generating PERFECT realistic data..."):
-                                generated = st.session_state.generator.generate_perfect_data(df, int(num_rows))
+                                # FIX: Use the correct generator instance
+                                generator = st.session_state.ultimate_generator
+                                generated = generator.generate_perfect_data(df, int(num_rows))
                                 st.session_state.generated_data = generated
                                 if generated is not None:
                                     st.success(f"✅ Generated {len(generated)} PERFECT rows!")
@@ -748,5 +751,5 @@ def main():
         except Exception as e:
             st.error(f"Error: {str(e)}")
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     main()
