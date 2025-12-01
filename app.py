@@ -159,7 +159,7 @@ def home_page():
     st.markdown("---")
     
     # App boxes
-    st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Your AI Applications</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 style="color: #175CFF; text-align: center; margin-bottom: 2rem;">Aura AI Applications</h3>', unsafe_allow_html=True)
     
     # Create 3 rows for apps (2 apps in each row)
     # Row 1
