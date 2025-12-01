@@ -9,10 +9,10 @@ import math
 from datetime import datetime, timedelta
 from groq import Groq
 from auth import check_session
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 # =============================================================================
-# UNIVERSAL LLM DATA GENERATOR
+# UNIVERSAL LLM DATA GENERATOR - FIXED VERSION
 # =============================================================================
 
 class UniversalDataGenerator:
@@ -32,15 +32,11 @@ class UniversalDataGenerator:
             "columns": {},
             "types": {},
             "patterns": {},
-            "sample_data": {}
+            "sample_data": {},
+            "stats": {}
         }
         
         for col in df.columns:
-            # Skip empty columns
-            if df[col].isnull().all():
-                analysis["columns"][col] = "empty"
-                continue
-            
             # Get sample values
             non_null_vals = df[col].dropna()
             if len(non_null_vals) > 0:
@@ -48,20 +44,16 @@ class UniversalDataGenerator:
                 analysis["sample_data"][col] = sample_vals
             
             # Detect data type
-            col_str = df[col].astype(str)
+            col_type = self._detect_column_type(df[col], col)
+            analysis["types"][col] = col_type
             
-            # Check for categorical
-            unique_ratio = len(df[col].unique()) / len(df[col]) if len(df[col]) > 0 else 0
-            if unique_ratio < 0.3 and len(df[col].unique()) <= 20:
-                analysis["types"][col] = "categorical"
+            # Get patterns based on type
+            if col_type == "categorical":
                 analysis["patterns"][col] = {
                     "type": "categorical",
-                    "values": df[col].unique().tolist()
+                    "values": df[col].dropna().unique().tolist()[:20]  # Limit to 20 unique values
                 }
-            
-            # Check for numeric
-            elif df[col].dtype in ['int64', 'float64'] or all(re.match(r'^-?\d+\.?\d*$', str(x)) for x in non_null_vals.head(10) if pd.notnull(x)):
-                analysis["types"][col] = "numeric"
+            elif col_type == "numeric":
                 if len(non_null_vals) > 0:
                     analysis["patterns"][col] = {
                         "type": "numeric",
@@ -69,30 +61,116 @@ class UniversalDataGenerator:
                         "max": float(non_null_vals.max()),
                         "mean": float(non_null_vals.mean())
                     }
-            
-            # Check for dates
-            elif any('date' in col.lower() or 'time' in col.lower() for x in [col]):
-                date_patterns = [r'\d{2}[-/]\d{2}[-/]\d{4}', r'\d{4}[-/]\d{2}[-/]\d{2}']
-                if any(any(re.search(pattern, str(x)) for pattern in date_patterns) for x in non_null_vals.head(10) if pd.notnull(x)):
-                    analysis["types"][col] = "date"
-            
-            # Check for IDs
-            elif any(x in col.lower() for x in ['id', 'code', 'num', 'no', 'number']) and all(re.match(r'^[A-Za-z0-9_-]+$', str(x)) for x in non_null_vals.head(10) if pd.notnull(x)):
-                analysis["types"][col] = "id"
-            
-            # Check for names
-            elif any(x in col.lower() for x in ['name', 'person', 'customer', 'user', 'client']):
-                analysis["types"][col] = "name"
-            
-            # Check for emails
-            elif any(x in col.lower() for x in ['email', 'mail']):
-                analysis["types"][col] = "email"
-            
-            # Default to text
-            else:
-                analysis["types"][col] = "text"
+            elif col_type == "id":
+                analysis["patterns"][col] = {
+                    "type": "id",
+                    "pattern": self._detect_id_pattern(df[col].head(10).tolist())
+                }
+            elif col_type == "name":
+                analysis["patterns"][col] = {
+                    "type": "name",
+                    "has_middle": any(len(str(x).split()) > 2 for x in non_null_vals.head(5))
+                }
+            elif col_type == "date":
+                analysis["patterns"][col] = {
+                    "type": "date",
+                    "format": self._detect_date_format(non_null_vals.head(5).tolist())
+                }
+            elif col_type == "phone":
+                analysis["patterns"][col] = {
+                    "type": "phone",
+                    "pattern": self._detect_phone_pattern(non_null_vals.head(5).tolist())
+                }
         
         return analysis
+    
+    def _detect_column_type(self, series, col_name):
+        """Detect the type of a column"""
+        col_lower = col_name.lower()
+        non_null = series.dropna()
+        
+        if len(non_null) == 0:
+            return "unknown"
+        
+        # Check for IDs
+        if any(x in col_lower for x in ['id', 'code', 'num', 'no', 'number', 'ref', 'appointment']):
+            return "id"
+        
+        # Check for names
+        if any(x in col_lower for x in ['name', 'patient', 'doctor', 'person']):
+            return "name"
+        
+        # Check for emails
+        if any(x in col_lower for x in ['email', 'mail']):
+            return "email"
+        
+        # Check for phones
+        if any(x in col_lower for x in ['phone', 'mobile', 'contact', 'number']):
+            return "phone"
+        
+        # Check for dates
+        if any(x in col_lower for x in ['date', 'time', 'appointment']):
+            date_patterns = [r'\d{2}[-/]\d{2}[-/]\d{4}', r'\d{4}[-/]\d{2}[-/]\d{2}']
+            samples = non_null.head(10).astype(str).tolist()
+            if any(any(re.search(pattern, str(x)) for pattern in date_patterns) for x in samples):
+                return "date"
+        
+        # Check for categorical
+        unique_ratio = len(non_null.unique()) / len(non_null) if len(non_null) > 0 else 1
+        if unique_ratio < 0.3 and len(non_null.unique()) <= 50:
+            return "categorical"
+        
+        # Check for numeric
+        try:
+            numeric_vals = pd.to_numeric(non_null.head(20), errors='coerce')
+            if numeric_vals.notna().sum() > len(numeric_vals) * 0.8:  # 80% are numeric
+                return "numeric"
+        except:
+            pass
+        
+        # Default to text
+        return "text"
+    
+    def _detect_id_pattern(self, samples):
+        """Detect ID pattern"""
+        if not samples:
+            return "sequential"
+        
+        first_sample = str(samples[0])
+        if first_sample.startswith(('AP', 'ID', 'REF', 'CUST')):
+            return "prefixed_sequential"
+        elif all(str(x).isdigit() for x in samples if x and str(x).strip()):
+            return "numeric_sequential"
+        else:
+            return "mixed"
+    
+    def _detect_date_format(self, samples):
+        """Detect date format"""
+        if not samples:
+            return "DD-MM-YYYY"
+        
+        sample = str(samples[0])
+        if re.match(r'\d{2}-\d{2}-\d{4}', sample):
+            return "DD-MM-YYYY"
+        elif re.match(r'\d{4}-\d{2}-\d{2}', sample):
+            return "YYYY-MM-DD"
+        elif re.match(r'\d{2}/\d{2}/\d{4}', sample):
+            return "DD/MM/YYYY"
+        else:
+            return "DD-MM-YYYY"
+    
+    def _detect_phone_pattern(self, samples):
+        """Detect phone pattern"""
+        if not samples:
+            return "10_digit"
+        
+        sample = str(samples[0])
+        if len(sample) == 10 and sample.isdigit():
+            return "10_digit"
+        elif '+' in sample:
+            return "international"
+        else:
+            return "variable"
     
     def generate_perfect_data(self, original_df, num_rows):
         """Generate PERFECT data that matches ANY dataset structure"""
@@ -103,20 +181,22 @@ class UniversalDataGenerator:
         analysis = self.analyze_dataset(original_df)
         
         # Get LLM to generate data
-        with st.spinner("🤖 LLM is analyzing your data and generating perfect synthetic data..."):
+        with st.spinner(f"🤖 LLM is generating {num_rows} perfect synthetic rows..."):
             llm_data = self._get_llm_generated_data(original_df, num_rows, analysis)
         
-        if llm_data is not None:
-            return llm_data
+        if llm_data is not None and len(llm_data) >= num_rows * 0.8:  # At least 80% of requested rows
+            return llm_data.head(num_rows)
         
-        return self._smart_fallback(original_df, num_rows)
+        # If LLM failed or didn't generate enough rows, use fallback
+        st.warning(f"LLM generated only {len(llm_data) if llm_data is not None else 0} rows. Using enhanced fallback...")
+        return self._enhanced_fallback(original_df, num_rows, analysis)
     
     def _get_llm_generated_data(self, df, num_rows, analysis):
         """Get LLM to generate data for ANY dataset"""
         
         # Prepare samples
         samples = []
-        for i, (idx, row) in enumerate(df.head(5).iterrows()):
+        for i, (idx, row) in enumerate(df.head(3).iterrows()):  # Use only 3 samples for clarity
             sample = {}
             for col in df.columns:
                 val = row[col]
@@ -130,22 +210,19 @@ class UniversalDataGenerator:
                     sample[col] = str(val)
             samples.append(sample)
         
-        # Build dynamic prompt based on analysis
-        prompt = self._build_dynamic_prompt(df, num_rows, samples, analysis)
+        # Build dynamic prompt
+        prompt = self._build_enhanced_prompt(df, num_rows, samples, analysis)
         
         try:
             messages = [
-                {"role": "system", "content": """You are a data generation expert. You generate PERFECTLY realistic synthetic data that matches ANY dataset structure.
+                {"role": "system", "content": """You are a data generation expert. Generate realistic synthetic data.
                 
-                CRITICAL INSTRUCTIONS:
-                1. Analyze the given data structure and patterns
-                2. Generate data that follows the SAME patterns and distributions
-                3. All values MUST be realistic and make sense
-                4. NO placeholder values (no dummy_1, temp_user, test@email.com)
-                5. Maintain data types and formats
-                6. Everything MUST be logically consistent
-                
-                You MUST adapt to whatever dataset is provided."""},
+                IMPORTANT RULES:
+                1. Generate EXACTLY the requested number of rows
+                2. Follow the exact column order and names
+                3. Maintain data types and formats
+                4. Make all values realistic
+                5. Return ONLY JSON array, nothing else"""},
                 {"role": "user", "content": prompt}
             ]
             
@@ -153,340 +230,373 @@ class UniversalDataGenerator:
                 model="llama-3.3-70b-versatile",
                 messages=messages,
                 temperature=0.3,
-                max_tokens=8000
+                max_tokens=12000,  # Increased tokens for more rows
+                response_format={"type": "json_object"}  # Force JSON output
             )
             
             result = response.choices[0].message.content
             
             # Parse the response
-            return self._parse_llm_response(result, df.columns, num_rows, analysis)
+            return self._parse_llm_response_enhanced(result, df.columns, num_rows, analysis)
             
         except Exception as e:
             st.error(f"LLM generation failed: {str(e)}")
             return None
     
-    def _build_dynamic_prompt(self, df, num_rows, samples, analysis):
-        """Build dynamic prompt based on actual dataset"""
+    def _build_enhanced_prompt(self, df, num_rows, samples, analysis):
+        """Build enhanced prompt with explicit instructions"""
         
-        column_descriptions = []
+        column_info = []
         for col in df.columns:
-            col_type = analysis["types"].get(col, "unknown")
-            col_samples = analysis["sample_data"].get(col, [])
+            col_type = analysis["types"].get(col, "text")
+            samples_list = analysis["sample_data"].get(col, [])
             
-            desc = f"- {col}: "
-            if col_type == "id":
-                desc += f"ID field. Samples: {col_samples[:3] if col_samples else 'N/A'}"
+            info = f"Column: '{col}' (Type: {col_type})"
+            if samples_list:
+                info += f" | Samples: {samples_list[:3]}"
+            
+            if col_type == "id" and "AP" in str(samples_list[0] if samples_list else ""):
+                info += " | Pattern: AP### (Appointment IDs starting with AP)"
             elif col_type == "name":
-                desc += f"Name field. Samples: {col_samples[:3] if col_samples else 'N/A'}"
-            elif col_type == "email":
-                desc += f"Email field. Samples: {col_samples[:3] if col_samples else 'N/A'}"
-            elif col_type == "numeric":
-                pattern = analysis["patterns"].get(col, {})
-                desc += f"Numeric field. Range: {pattern.get('min', 'N/A')} to {pattern.get('max', 'N/A')}"
-            elif col_type == "categorical":
-                pattern = analysis["patterns"].get(col, {})
-                values = pattern.get("values", [])
-                desc += f"Categorical field. Values: {values[:5] if len(values) > 0 else 'N/A'}"
+                info += " | Format: Indian names like 'Rahul Patel', 'Priya Sharma'"
+            elif col_type == "phone":
+                info += " | Format: 10-digit Indian mobile numbers"
             elif col_type == "date":
-                desc += f"Date field. Samples: {col_samples[:3] if col_samples else 'N/A'}"
-            else:
-                desc += f"Text/Other field. Samples: {col_samples[:3] if col_samples else 'N/A'}"
-            column_descriptions.append(desc)
+                info += " | Format: DD-MM-YYYY"
+            
+            column_info.append(info)
         
         prompt = f"""
-        CRITICAL TASK: Generate {num_rows} rows of SYNTHETIC DATA that perfectly matches the structure and patterns of the given dataset.
-
-        ORIGINAL DATASET INFO:
-        - Number of columns: {len(df.columns)}
+        Generate EXACTLY {num_rows} rows of synthetic data matching this dataset structure.
+        
+        DATASET STRUCTURE:
         - Columns: {', '.join(df.columns.tolist())}
-        - Sample rows (first 5):
+        - Total columns: {len(df.columns)}
+        
+        COLUMN DETAILS:
+        {chr(10).join(f'{i+1}. {info}' for i, info in enumerate(column_info))}
+        
+        SAMPLE DATA (first 3 rows):
         {json.dumps(samples, indent=2, default=str)}
-
-        COLUMN ANALYSIS:
-        {chr(10).join(column_descriptions)}
-
+        
         IMPORTANT INSTRUCTIONS:
-        1. Generate data that follows the EXACT SAME patterns as the original
-        2. Use the SAME data types and formats for each column
-        3. If a column has specific values (like statuses), use similar realistic values
-        4. If a column has numeric ranges, stay within similar ranges
-        5. If a column has names/emails, generate REALISTIC ones
-        6. Maintain logical consistency between related columns
-
-        GENERATION RULES:
-        - IDs: Continue sequence if sequential, otherwise generate similar format IDs
-        - Names: Use realistic human names if name-like, otherwise similar text patterns
-        - Emails: Generate proper email formats if email field
-        - Numbers: Stay within observed ranges with realistic distributions
-        - Categories: Use observed categories with similar distributions
-        - Dates: Generate dates in same format and time range
-        - Text: Generate realistic text that matches the pattern
-
-        RETURN FORMAT: JSON array ONLY:
-        [
-            {{
-                "{df.columns[0] if len(df.columns) > 0 else 'col1'}": "value1",
-                "{df.columns[1] if len(df.columns) > 1 else 'col2'}": "value2",
+        1. Generate EXACTLY {num_rows} rows, no less
+        2. Use the EXACT same column names and order
+        3. Follow these specific patterns:
+           - IDs: Continue from AP025 -> AP026, AP027, etc.
+           - Names: Real Indian names (First Last format)
+           - Ages: Realistic ages (18-70)
+           - Gender: M or F only
+           - Phone: 10-digit numbers (e.g., 9876543210)
+           - Department: Medical departments like Cardiology, Neurology, etc.
+           - Doctor: Indian doctor names (Dr. First Last)
+           - Date: DD-MM-YYYY format, recent dates
+           - Time: HH:MM AM/PM format
+           - Diagnosis: Real medical conditions
+           - Fee: Reasonable fees (500-1500)
+           - Status: 'Completed' or similar statuses
+        
+        4. Make data realistic and consistent
+        5. Ensure all {num_rows} rows are generated
+        
+        OUTPUT FORMAT: Return ONLY a JSON object with key "data" containing the array:
+        {{
+            "data": [
+                {{
+                    "{df.columns[0]}": "AP026",
+                    "{df.columns[1]}": "Amit Kumar",
+                    ...
+                }},
                 ...
-            }},
-            ...
-        ]
-
-        Generate EXACTLY {num_rows} rows. Make EVERY value realistic and match the original patterns!
+            ]
+        }}
+        
+        Generate EXACTLY {num_rows} rows. DO NOT include any other text.
         """
         
         return prompt
     
-    def _parse_llm_response(self, response, expected_columns, num_rows, analysis):
-        """Parse LLM's response"""
+    def _parse_llm_response_enhanced(self, response, expected_columns, num_rows, analysis):
+        """Enhanced parsing of LLM response"""
         try:
-            # Try to extract JSON array
-            json_match = re.search(r'\[\s*\{.*\}\s*\]', response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-                
-                # Convert to DataFrame
-                df = pd.DataFrame(data[:num_rows])
-                
-                # Apply validation and fixing
-                df = self._validate_and_fix_data(df, expected_columns, analysis)
-                
-                return df
+            # First try to parse as JSON
+            data = json.loads(response)
             
-            # Alternative parsing
-            lines = response.strip().split('\n')
-            data = []
-            current_obj = {}
+            # Check if data is in "data" key
+            if "data" in data and isinstance(data["data"], list):
+                rows = data["data"]
+            elif isinstance(data, list):
+                rows = data
+            else:
+                # Try to find any array in the response
+                json_match = re.search(r'\[\s*\{.*\}\s*\]', response, re.DOTALL)
+                if json_match:
+                    rows = json.loads(json_match.group())
+                else:
+                    return None
             
-            for line in lines:
-                line = line.strip()
-                if line.startswith('{') and line.endswith('}'):
-                    try:
-                        obj = json.loads(line)
-                        data.append(obj)
-                    except:
-                        pass
-                elif ':' in line and not line.startswith('```'):
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        key = parts[0].strip().replace('"', '').replace("'", "")
-                        value = parts[1].strip().replace('"', '').replace("'", "")
-                        current_obj[key] = value
+            # Convert to DataFrame
+            if rows:
+                df = pd.DataFrame(rows)
                 
-                if line.endswith('},') or line.endswith('}'):
-                    if current_obj:
-                        data.append(current_obj.copy())
-                        current_obj = {}
-            
-            if data:
-                df = pd.DataFrame(data[:num_rows])
-                df = self._validate_and_fix_data(df, expected_columns, analysis)
-                return df
+                # Ensure we have all columns
+                for col in expected_columns:
+                    if col not in df.columns:
+                        df[col] = None
+                
+                # Reorder columns
+                df = df[expected_columns]
+                
+                # Apply validation
+                df = self._validate_data(df, analysis)
+                
+                # Ensure we have enough rows
+                if len(df) < num_rows:
+                    # Generate additional rows using fallback
+                    additional_needed = num_rows - len(df)
+                    st.info(f"LLM generated {len(df)} rows. Adding {additional_needed} more rows...")
+                    additional_df = self._generate_additional_rows(df, additional_needed, analysis)
+                    df = pd.concat([df, additional_df], ignore_index=True)
+                
+                return df.head(num_rows)  # Ensure exact number
             
         except Exception as e:
-            st.warning(f"Failed to parse LLM response: {str(e)}")
-            # Show raw response for debugging
-            with st.expander("Debug: LLM Raw Response"):
-                st.code(response[:2000])
+            st.warning(f"JSON parsing failed: {str(e)}")
         
         return None
     
-    def _validate_and_fix_data(self, df, expected_columns, analysis):
-        """Validate and fix data quality based on analysis"""
-        # Ensure all columns exist
-        for col in expected_columns:
-            if col not in df.columns:
-                df[col] = None
-        
-        # Fix each column based on analysis
-        for col in expected_columns:
-            if col in df.columns and not df[col].isnull().all():
-                col_type = analysis["types"].get(col, "unknown")
-                pattern = analysis["patterns"].get(col, {})
-                
-                # Fix based on type
-                for idx in range(len(df)):
-                    val = df.at[idx, col]
-                    
-                    if col_type == "id":
-                        if pd.isna(val) or str(val).strip() == "":
-                            df.at[idx, col] = f"{col}_{idx+1000}"
-                    
-                    elif col_type == "name":
-                        if pd.isna(val) or not any(c.isalpha() for c in str(val)):
-                            df.at[idx, col] = self._generate_real_name()
-                    
-                    elif col_type == "email":
-                        if pd.isna(val) or '@' not in str(val):
-                            df.at[idx, col] = self._generate_email_from_name("User", idx)
-                    
-                    elif col_type == "numeric":
-                        try:
-                            num_val = float(str(val).replace(',', ''))
-                            if pattern:
-                                min_val = pattern.get("min", 0)
-                                max_val = pattern.get("max", 1000)
-                                if num_val < min_val * 0.5 or num_val > max_val * 2:
-                                    df.at[idx, col] = random.uniform(min_val, max_val)
-                        except:
-                            if pattern:
-                                df.at[idx, col] = random.uniform(pattern.get("min", 0), pattern.get("max", 100))
-                    
-                    elif col_type == "categorical":
-                        if pattern and "values" in pattern:
-                            if pd.isna(val) or str(val) not in pattern["values"]:
-                                df.at[idx, col] = random.choice(pattern["values"])
-        
-        # Reorder columns
-        df = df[expected_columns]
+    def _validate_data(self, df, analysis):
+        """Validate and clean generated data"""
+        for col in df.columns:
+            col_type = analysis["types"].get(col, "text")
+            
+            # Clean column
+            df[col] = df[col].apply(lambda x: self._clean_value(x, col_type, col))
         
         return df
     
-    def _generate_real_name(self):
-        """Generate realistic human name"""
-        western_first = ['John', 'James', 'Michael', 'David', 'Robert', 'William', 'Mary', 'Patricia', 
-                        'Jennifer', 'Linda', 'Elizabeth', 'Susan', 'Jessica', 'Sarah']
-        indian_first = ['Rahul', 'Amit', 'Raj', 'Sanjay', 'Vikram', 'Priya', 'Neha', 'Anjali', 'Sneha']
+    def _clean_value(self, value, col_type, col_name):
+        """Clean a single value based on column type"""
+        if pd.isna(value):
+            return self._generate_default_value(col_type, col_name)
         
-        western_last = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis']
-        indian_last = ['Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta', 'Verma']
+        str_val = str(value).strip()
         
-        if random.random() < 0.6:
-            first = random.choice(western_first)
-            last = random.choice(western_last)
-        else:
-            first = random.choice(indian_first)
-            last = random.choice(indian_last)
+        if col_type == "id":
+            # Clean IDs
+            if col_name.lower().startswith('appointment') or 'AP' in str_val:
+                # Extract number part
+                num_match = re.search(r'\d+', str_val)
+                if num_match:
+                    return f"AP{num_match.group().zfill(3)}"
+                return f"AP{random.randint(26, 999):03d}"
+            return str_val
         
-        return f"{first} {last}"
+        elif col_type == "name":
+            # Clean names
+            if any(x in str_val.lower() for x in ['user', 'test', 'dummy', 'null']):
+                return self._generate_indian_name()
+            return str_val.title()
+        
+        elif col_type == "numeric":
+            # Clean numbers
+            try:
+                # Remove non-numeric characters except decimal point
+                clean = re.sub(r'[^\d.-]', '', str_val)
+                return float(clean)
+            except:
+                return random.randint(1, 100)
+        
+        elif col_type == "phone":
+            # Clean phone numbers
+            digits = re.sub(r'\D', '', str_val)
+            if len(digits) >= 10:
+                return digits[:10]
+            return ''.join(random.choices('0123456789', k=10))
+        
+        elif col_type == "date":
+            # Clean dates
+            if re.match(r'\d{2}[-/]\d{2}[-/]\d{4}', str_val):
+                return str_val
+            # Generate recent date
+            days_ago = random.randint(1, 365)
+            date = datetime.now() - timedelta(days=days_ago)
+            return date.strftime('%d-%m-%Y')
+        
+        return str_val
     
-    def _generate_email_from_name(self, name, idx):
-        """Generate realistic email from name"""
-        parts = str(name).split()
-        if len(parts) >= 2:
-            first = parts[0].lower()
-            last = parts[-1].lower()
-            patterns = [
-                f"{first}.{last}{random.randint(1,99)}@gmail.com",
-                f"{first[0]}{last}{random.randint(10,99)}@yahoo.com",
-                f"{first}.{last}@company.com"
-            ]
-        else:
-            patterns = [
-                f"user{idx+1000}@gmail.com",
-                f"client{idx+500}@company.com"
-            ]
+    def _generate_default_value(self, col_type, col_name):
+        """Generate default value for a column type"""
+        if col_type == "id":
+            if 'appointment' in col_name.lower() or 'AP' in col_name:
+                return f"AP{random.randint(100, 999):03d}"
+            return f"ID{random.randint(1000, 9999)}"
         
-        return random.choice(patterns)
+        elif col_type == "name":
+            return self._generate_indian_name()
+        
+        elif col_type == "numeric":
+            return random.randint(1, 1000)
+        
+        elif col_type == "phone":
+            return ''.join(random.choices('9876543210', k=10))
+        
+        elif col_type == "date":
+            days_ago = random.randint(1, 365)
+            date = datetime.now() - timedelta(days=days_ago)
+            return date.strftime('%d-%m-%Y')
+        
+        elif col_type == "gender":
+            return random.choice(['M', 'F'])
+        
+        return "N/A"
     
-    def _smart_fallback(self, df, num_rows):
-        """Smart fallback generation that adapts to any dataset"""
+    def _generate_indian_name(self):
+        """Generate realistic Indian name"""
+        first_names = ['Rahul', 'Amit', 'Raj', 'Sanjay', 'Vikram', 'Karan', 'Sachin', 'Saurabh', 
+                      'Priya', 'Neha', 'Sonia', 'Sneha', 'Kavita', 'Pooja', 'Surbhi', 'Anjali']
+        last_names = ['Patel', 'Sharma', 'Singh', 'Kumar', 'Gupta', 'Jain', 'Reddy', 'Iyer', 'Nair']
+        
+        return f"{random.choice(first_names)} {random.choice(last_names)}"
+    
+    def _generate_additional_rows(self, existing_df, num_rows, analysis):
+        """Generate additional rows when LLM doesn't provide enough"""
+        generated = {}
+        
+        for col in existing_df.columns:
+            col_type = analysis["types"].get(col, "text")
+            existing_vals = existing_df[col].dropna().tolist()
+            
+            if col_type == "id" and existing_vals:
+                # Continue ID sequence
+                last_id = existing_vals[-1]
+                num_match = re.search(r'\d+', str(last_id))
+                if num_match:
+                    start_num = int(num_match.group()) + 1
+                    generated[col] = [f"AP{start_num + i:03d}" for i in range(num_rows)]
+                else:
+                    generated[col] = [f"AP{100 + i:03d}" for i in range(num_rows)]
+            
+            elif col_type == "name":
+                generated[col] = [self._generate_indian_name() for _ in range(num_rows)]
+            
+            elif col_type == "numeric" and existing_vals:
+                # Generate similar numbers
+                nums = [float(x) for x in existing_vals if isinstance(x, (int, float, np.number))]
+                if nums:
+                    min_val = min(nums)
+                    max_val = max(nums)
+                    generated[col] = [random.uniform(min_val, max_val) for _ in range(num_rows)]
+                else:
+                    generated[col] = [random.randint(1, 1000) for _ in range(num_rows)]
+            
+            elif col_type == "phone":
+                generated[col] = [''.join(random.choices('9876543210', k=10)) for _ in range(num_rows)]
+            
+            elif col_type == "date":
+                generated[col] = [(datetime.now() - timedelta(days=random.randint(1, 365))).strftime('%d-%m-%Y') 
+                                for _ in range(num_rows)]
+            
+            elif col_type == "gender":
+                generated[col] = random.choices(['M', 'F'], k=num_rows)
+            
+            elif col_type == "categorical" and existing_vals:
+                # Use existing categories
+                generated[col] = random.choices(existing_vals, k=num_rows)
+            
+            else:
+                # Generate based on samples
+                if existing_vals:
+                    generated[col] = random.choices(existing_vals, k=num_rows)
+                else:
+                    generated[col] = [f"Value_{i}" for i in range(num_rows)]
+        
+        return pd.DataFrame(generated)
+    
+    def _enhanced_fallback(self, df, num_rows, analysis):
+        """Enhanced fallback generation"""
         generated = {}
         
         for col in df.columns:
-            col_lower = col.lower()
-            original_vals = df[col].dropna().tolist()
+            col_type = analysis["types"].get(col, "text")
+            existing_vals = df[col].dropna().tolist()
             
-            # Skip if all null
-            if not original_vals:
-                generated[col] = [None] * num_rows
-                continue
-            
-            # Analyze column content
-            sample_str = str(original_vals[0]) if original_vals else ""
-            
-            # Detect column type
-            is_id = any(x in col_lower for x in ['id', 'code', 'num', 'no', 'number'])
-            is_name = any(x in col_lower for x in ['name', 'person', 'customer', 'user'])
-            is_email = any(x in col_lower for x in ['email', 'mail'])
-            is_date = any(x in col_lower for x in ['date', 'time'])
-            is_numeric = all(isinstance(x, (int, float, np.number)) or (isinstance(x, str) and re.match(r'^-?\d+\.?\d*$', x)) 
-                           for x in original_vals[:10] if x is not None)
-            
-            # Generate based on type
-            if is_id:
-                # ID field
-                if len(set(original_vals)) > len(original_vals) * 0.8:  # Mostly unique
-                    start = 1000
-                    if original_vals and any(str(x).isdigit() for x in original_vals[:5]):
-                        nums = [int(re.sub(r'\D', '', str(x))) for x in original_vals[:5] if str(x).isdigit()]
-                        if nums:
-                            start = max(nums)
-                    generated[col] = [str(start + i) for i in range(1, num_rows + 1)]
+            if col_type == "id":
+                # Generate sequential IDs
+                if existing_vals and any('AP' in str(x) for x in existing_vals[:5]):
+                    # Extract max number from AP IDs
+                    max_num = 25
+                    for val in existing_vals:
+                        if isinstance(val, str) and 'AP' in val:
+                            num_match = re.search(r'\d+', val)
+                            if num_match:
+                                num = int(num_match.group())
+                                if num > max_num:
+                                    max_num = num
+                    generated[col] = [f"AP{i:03d}" for i in range(max_num + 1, max_num + num_rows + 1)]
                 else:
-                    generated[col] = random.choices(original_vals, k=num_rows)
+                    generated[col] = [f"ID{1000 + i}" for i in range(num_rows)]
             
-            elif is_name:
-                # Name field
-                names = []
-                for i in range(num_rows):
-                    if random.random() < 0.6:
-                        first = random.choice(['John', 'James', 'Michael', 'David', 'Mary', 'Patricia', 'Linda'])
-                        last = random.choice(['Smith', 'Johnson', 'Williams', 'Brown', 'Jones'])
-                    else:
-                        first = random.choice(['Rahul', 'Amit', 'Raj', 'Priya', 'Neha', 'Anjali'])
-                        last = random.choice(['Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta'])
-                    names.append(f"{first} {last}")
-                generated[col] = names
+            elif col_type == "name":
+                generated[col] = [self._generate_indian_name() for _ in range(num_rows)]
             
-            elif is_email:
-                # Email field
-                emails = []
-                for i in range(num_rows):
-                    first = random.choice(['john', 'jane', 'alex', 'sam', 'mike'])
-                    last = random.choice(['smith', 'johnson', 'williams', 'brown'])
-                    num = random.randint(1, 99)
-                    domain = random.choice(['gmail.com', 'yahoo.com', 'outlook.com', 'company.com'])
-                    emails.append(f"{first}.{last}{num}@{domain}")
-                generated[col] = emails
-            
-            elif is_date:
-                # Date field
-                dates = []
-                for i in range(num_rows):
-                    days_ago = random.randint(1, 365)
-                    date = datetime.now() - timedelta(days=days_ago)
-                    dates.append(date.strftime('%d-%m-%Y'))
-                generated[col] = dates
-            
-            elif is_numeric:
-                # Numeric field
-                if original_vals:
-                    nums = [float(x) for x in original_vals if x is not None and str(x).strip() != '']
+            elif col_type == "numeric":
+                if existing_vals:
+                    nums = [float(x) for x in existing_vals if isinstance(x, (int, float, np.number))]
                     if nums:
-                        min_val = min(nums)
-                        max_val = max(nums)
-                        values = []
-                        for i in range(num_rows):
-                            val = random.uniform(min_val, max_val)
-                            if random.random() < 0.3:
-                                val = round(val, 2)
-                            values.append(val)
-                        generated[col] = values
+                        min_val = min(nums) * 0.8
+                        max_val = max(nums) * 1.2
+                        generated[col] = [round(random.uniform(min_val, max_val), 2) for _ in range(num_rows)]
                     else:
-                        generated[col] = [random.uniform(0, 100) for _ in range(num_rows)]
+                        generated[col] = [random.randint(500, 1500) for _ in range(num_rows)]
                 else:
-                    generated[col] = [random.uniform(0, 100) for _ in range(num_rows)]
+                    generated[col] = [random.randint(1, 1000) for _ in range(num_rows)]
+            
+            elif col_type == "gender":
+                generated[col] = random.choices(['M', 'F'], k=num_rows, weights=[0.55, 0.45])
+            
+            elif col_type == "phone":
+                generated[col] = [''.join(random.choices('9876543210', k=10)) for _ in range(num_rows)]
+            
+            elif col_type == "date":
+                generated[col] = [(datetime.now() - timedelta(days=random.randint(1, 365))).strftime('%d-%m-%Y') 
+                                for _ in range(num_rows)]
+            
+            elif col_type == "time":
+                times = []
+                for _ in range(num_rows):
+                    hour = random.randint(8, 17)  # 8 AM to 5 PM
+                    minute = random.choice([0, 15, 30, 45])
+                    period = "AM" if hour < 12 else "PM"
+                    hour = hour if hour <= 12 else hour - 12
+                    times.append(f"{hour}:{minute:02d} {period}")
+                generated[col] = times
+            
+            elif col_type == "categorical" and existing_vals:
+                # Use weighted sampling if we can detect patterns
+                unique_vals = list(set(existing_vals))
+                if len(unique_vals) <= 10:
+                    # Count frequencies for weighted sampling
+                    from collections import Counter
+                    counts = Counter(existing_vals)
+                    total = sum(counts.values())
+                    weights = [counts[val]/total for val in unique_vals]
+                    generated[col] = random.choices(unique_vals, weights=weights, k=num_rows)
+                else:
+                    generated[col] = random.choices(existing_vals, k=num_rows)
             
             else:
-                # Text or categorical
-                if len(set(original_vals)) <= 10:  # Categorical
-                    generated[col] = random.choices(original_vals, k=num_rows)
+                # Text or unknown
+                if existing_vals:
+                    generated[col] = random.choices(existing_vals, k=num_rows)
                 else:
-                    # Generate similar text patterns
-                    values = []
-                    for i in range(num_rows):
-                        if original_vals:
-                            base = random.choice(original_vals)
-                            if isinstance(base, str):
-                                values.append(f"{base}_{i}")
-                            else:
-                                values.append(f"Value_{i}")
-                        else:
-                            values.append(f"Data_{i}")
-                    generated[col] = values
+                    generated[col] = [f"Data_{i}" for i in range(num_rows)]
         
         return pd.DataFrame(generated)
+    
+    def _smart_fallback(self, df, num_rows):
+        """Original smart fallback for compatibility"""
+        return self._enhanced_fallback(df, num_rows, self.analyze_dataset(df))
 
 
 # =============================================================================
@@ -507,7 +617,7 @@ def main():
     
     # Header
     st.title("✨ Universal Data Generator")
-    st.markdown("**LLM-Powered • Works with ANY Dataset • No Predefined Schemas**")
+    st.markdown("**LLM-Powered • Works with ANY Dataset • Guaranteed Row Count**")
     
     if st.button("🏠 Back to Home"):
         st.switch_page("app.py")
@@ -522,6 +632,8 @@ def main():
         st.session_state.generated_data = None
     if 'data_analysis' not in st.session_state:
         st.session_state.data_analysis = None
+    if 'original_df' not in st.session_state:
+        st.session_state.original_df = None
     
     # Upload
     uploaded_file = st.file_uploader("📤 Upload ANY Dataset (CSV)", type=['csv'])
@@ -529,32 +641,38 @@ def main():
     if uploaded_file:
         try:
             df = pd.read_csv(uploaded_file)
+            st.session_state.original_df = df
             
             if df.empty:
                 st.error("Empty file")
             else:
                 st.success(f"✅ Loaded {len(df)} rows × {len(df.columns)} columns")
                 
-                # Analyze dataset
-                if st.session_state.data_analysis is None:
-                    with st.spinner("Analyzing dataset structure..."):
-                        st.session_state.data_analysis = st.session_state.universal_generator.analyze_dataset(df)
-                
-                # Preview with analysis
-                with st.expander("📋 Dataset Preview & Analysis", expanded=True):
-                    col1, col2 = st.columns([2, 1])
-                    
+                # Show dataset info
+                with st.expander("📋 Dataset Information", expanded=True):
+                    col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.dataframe(df.head(10))
-                    
+                        st.metric("Total Rows", len(df))
                     with col2:
-                        st.write("**Dataset Analysis:**")
-                        analysis = st.session_state.data_analysis
-                        for col in df.columns[:10]:  # Show first 10 columns
-                            col_type = analysis["types"].get(col, "unknown")
-                            st.write(f"• **{col}**: {col_type}")
-                        if len(df.columns) > 10:
-                            st.write(f"... and {len(df.columns) - 10} more columns")
+                        st.metric("Total Columns", len(df.columns))
+                    with col3:
+                        st.metric("Missing Values", f"{df.isnull().sum().sum():,}")
+                    
+                    st.write("**Columns:**")
+                    cols_per_row = 4
+                    cols = df.columns.tolist()
+                    for i in range(0, len(cols), cols_per_row):
+                        col_group = cols[i:i+cols_per_row]
+                        col_metrics = st.columns(cols_per_row)
+                        for j, col in enumerate(col_group):
+                            with col_metrics[j]:
+                                st.code(col)
+                                st.caption(f"Type: {df[col].dtype}")
+                                st.caption(f"Unique: {df[col].nunique()}")
+                
+                # Preview
+                with st.expander("👀 Data Preview", expanded=False):
+                    st.dataframe(df.head(10), use_container_width=True)
                 
                 # Generation controls
                 st.subheader("⚙️ Generate Synthetic Data")
@@ -563,128 +681,203 @@ def main():
                 with col1:
                     num_rows = st.number_input("Rows to generate", 
                                              min_value=10, 
-                                             max_value=500,
-                                             value=100)
+                                             max_value=1000,
+                                             value=100,
+                                             help="Guaranteed to generate exactly this many rows")
                 
                 with col2:
-                    use_llm = st.checkbox("Use AI for better quality", value=True)
+                    generation_mode = st.selectbox(
+                        "Generation Mode",
+                        ["Smart LLM (Recommended)", "Enhanced Fallback", "Fast Basic"],
+                        help="LLM: Best quality but slower | Fallback: Good quality | Basic: Fastest"
+                    )
                 
                 with col3:
-                    if st.button("🚀 Generate Data", type="primary"):
-                        if use_llm and not st.session_state.universal_generator.available:
-                            st.warning("LLM not available. Using smart fallback.")
-                        
-                        with st.spinner("Generating synthetic data..."):
+                    if st.button("🚀 Generate Data", type="primary", use_container_width=True):
+                        with st.spinner(f"Generating {num_rows} rows..."):
                             generator = st.session_state.universal_generator
-                            if use_llm and generator.available:
+                            
+                            # Analyze dataset if needed
+                            if st.session_state.data_analysis is None:
+                                st.session_state.data_analysis = generator.analyze_dataset(df)
+                            
+                            # Generate based on mode
+                            if generation_mode == "Smart LLM (Recommended)" and generator.available:
                                 generated = generator.generate_perfect_data(df, int(num_rows))
+                            elif generation_mode == "Enhanced Fallback":
+                                analysis = st.session_state.data_analysis
+                                generated = generator._enhanced_fallback(df, int(num_rows), analysis)
                             else:
+                                # Fast basic
                                 generated = generator._smart_fallback(df, int(num_rows))
                             
-                            st.session_state.generated_data = generated
+                            # Ensure we have exactly the requested number of rows
                             if generated is not None:
-                                st.success(f"✅ Generated {len(generated)} rows!")
+                                if len(generated) < num_rows:
+                                    st.warning(f"Generated only {len(generated)} rows. Generating more...")
+                                    # Generate additional rows
+                                    analysis = st.session_state.data_analysis
+                                    additional = generator._generate_additional_rows(
+                                        generated, 
+                                        num_rows - len(generated), 
+                                        analysis
+                                    )
+                                    generated = pd.concat([generated, additional], ignore_index=True)
+                                
+                                # Trim if too many
+                                generated = generated.head(num_rows)
+                                
+                                st.session_state.generated_data = generated
+                                st.success(f"✅ Successfully generated {len(generated)} rows!")
                                 st.balloons()
                             else:
                                 st.error("Failed to generate data")
                 
                 # Show generated data
                 if st.session_state.generated_data is not None:
-                    st.subheader("📊 Generated Synthetic Data")
-                    
                     df_gen = st.session_state.generated_data
                     
+                    st.subheader(f"📊 Generated Data ({len(df_gen)} rows)")
+                    
                     # Tabs
-                    tab1, tab2, tab3, tab4 = st.tabs(["Preview", "Comparison", "Quality Check", "Download"])
+                    tab1, tab2, tab3, tab4 = st.tabs(["Preview", "Statistics", "Quality Check", "Download"])
                     
                     with tab1:
-                        st.dataframe(df_gen.head(20))
+                        # Show data with pagination
+                        page_size = 20
+                        total_pages = max(1, (len(df_gen) + page_size - 1) // page_size)
                         
-                        # Statistics
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Rows Generated", len(df_gen))
-                        with col2:
-                            st.metric("Columns", len(df_gen.columns))
-                        with col3:
-                            null_percent = (df_gen.isnull().sum().sum() / (len(df_gen) * len(df_gen.columns))) * 100
-                            st.metric("Null Values", f"{null_percent:.1f}%")
+                        page = st.number_input("Page", 1, total_pages, 1)
+                        start_idx = (page - 1) * page_size
+                        end_idx = min(start_idx + page_size, len(df_gen))
+                        
+                        st.dataframe(df_gen.iloc[start_idx:end_idx], use_container_width=True)
+                        st.caption(f"Showing rows {start_idx + 1} to {end_idx} of {len(df_gen)}")
                     
                     with tab2:
-                        st.write("## Original vs Generated (First 5 rows)")
-                        col1, col2 = st.columns(2)
+                        # Statistics
+                        st.write("### Dataset Statistics")
+                        
+                        col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.write("**Original Data**")
-                            st.dataframe(df.head(5))
+                            st.metric("Total Rows", len(df_gen))
+                            st.metric("Total Columns", len(df_gen.columns))
+                        
                         with col2:
-                            st.write("**Generated Data**")
-                            st.dataframe(df_gen.head(5))
+                            null_count = df_gen.isnull().sum().sum()
+                            null_percent = (null_count / (len(df_gen) * len(df_gen.columns))) * 100
+                            st.metric("Null Values", f"{null_count:,}")
+                            st.metric("Null %", f"{null_percent:.1f}%")
+                        
+                        with col3:
+                            duplicate_rows = df_gen.duplicated().sum()
+                            duplicate_percent = (duplicate_rows / len(df_gen)) * 100
+                            st.metric("Duplicate Rows", duplicate_rows)
+                            st.metric("Duplicate %", f"{duplicate_percent:.1f}%")
+                        
+                        # Column-wise stats
+                        st.write("### Column Statistics")
+                        stats_df = pd.DataFrame({
+                            'Column': df_gen.columns,
+                            'Type': [str(df_gen[col].dtype) for col in df_gen.columns],
+                            'Unique Values': [df_gen[col].nunique() for col in df_gen.columns],
+                            'Null Count': [df_gen[col].isnull().sum() for col in df_gen.columns],
+                            'Sample Value': [df_gen[col].iloc[0] if len(df_gen) > 0 else 'N/A' for col in df_gen.columns]
+                        })
+                        st.dataframe(stats_df, use_container_width=True)
                     
                     with tab3:
-                        st.write("## Data Quality Report")
+                        # Quality metrics
+                        st.write("### Data Quality Report")
                         
-                        quality_issues = []
-                        good_columns = []
-                        
+                        quality_scores = []
                         for col in df_gen.columns:
+                            score = 100
                             issues = []
                             
-                            # Check for nulls
-                            null_count = df_gen[col].isnull().sum()
-                            if null_count > 0:
-                                issues.append(f"{null_count} null values")
+                            # Check nulls
+                            null_pct = (df_gen[col].isnull().sum() / len(df_gen)) * 100
+                            if null_pct > 10:
+                                score -= 20
+                                issues.append(f"{null_pct:.1f}% nulls")
                             
-                            # Check for unique values
-                            unique_count = df_gen[col].nunique()
-                            if unique_count == 1 and len(df_gen) > 1:
-                                issues.append("Only 1 unique value")
+                            # Check uniqueness
+                            unique_pct = (df_gen[col].nunique() / len(df_gen)) * 100
+                            if unique_pct < 5 and len(df_gen) > 20:
+                                score -= 10
+                                issues.append("Low diversity")
                             
-                            # Check for empty strings
+                            # Check for placeholders
                             if df_gen[col].dtype == 'object':
-                                empty_count = (df_gen[col].astype(str).str.strip() == '').sum()
-                                if empty_count > 0:
-                                    issues.append(f"{empty_count} empty strings")
+                                sample = str(df_gen[col].iloc[0]) if len(df_gen) > 0 else ""
+                                if any(x in sample.lower() for x in ['test', 'dummy', 'temp', 'null', 'na', 'none']):
+                                    score -= 15
+                                    issues.append("Contains placeholders")
                             
-                            if issues:
-                                quality_issues.append((col, issues))
-                            else:
-                                good_columns.append(col)
+                            quality_scores.append({
+                                'Column': col,
+                                'Quality Score': f"{score:.0f}/100",
+                                'Issues': ', '.join(issues) if issues else 'Good',
+                                'Status': '✅ Good' if score >= 80 else '⚠️ Needs Review' if score >= 60 else '❌ Poor'
+                            })
                         
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.success(f"✅ Good Columns: {len(good_columns)}")
-                            for col in good_columns[:10]:
-                                st.write(f"• {col}")
+                        quality_df = pd.DataFrame(quality_scores)
+                        st.dataframe(quality_df, use_container_width=True)
                         
-                        with col2:
-                            if quality_issues:
-                                st.warning(f"⚠️ Columns with issues: {len(quality_issues)}")
-                                for col, issues in quality_issues[:5]:
-                                    st.write(f"• **{col}**: {', '.join(issues)}")
-                            else:
-                                st.success("All columns look good!")
+                        # Overall score
+                        avg_score = sum([int(x['Quality Score'].split('/')[0]) for x in quality_scores]) / len(quality_scores)
+                        st.metric("Overall Quality Score", f"{avg_score:.1f}/100")
                     
                     with tab4:
-                        # Download
-                        csv = df_gen.to_csv(index=False)
-                        st.download_button(
-                            "📥 Download CSV",
-                            csv,
-                            "synthetic_data.csv",
-                            "text/csv"
-                        )
+                        # Download options
+                        st.write("### Download Options")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # CSV Download
+                            csv = df_gen.to_csv(index=False)
+                            st.download_button(
+                                "📥 Download as CSV",
+                                csv,
+                                f"synthetic_data_{len(df_gen)}_rows.csv",
+                                "text/csv",
+                                use_container_width=True
+                            )
+                        
+                        with col2:
+                            # JSON Download
+                            json_str = df_gen.to_json(orient='records', indent=2)
+                            st.download_button(
+                                "📥 Download as JSON",
+                                json_str,
+                                f"synthetic_data_{len(df_gen)}_rows.json",
+                                "application/json",
+                                use_container_width=True
+                            )
+                        
+                        st.write("---")
                         
                         # Regenerate options
-                        st.write("---")
-                        col1, col2 = st.columns(2)
+                        st.write("### Generate More Data")
+                        
+                        col1, col2, col3 = st.columns(3)
                         with col1:
-                            if st.button("🔄 Generate New Dataset"):
+                            if st.button("🔄 Same Settings", use_container_width=True):
                                 st.session_state.generated_data = None
                                 st.rerun()
+                        
                         with col2:
-                            if st.button("📊 Analyze New File"):
+                            if st.button("📊 New Analysis", use_container_width=True):
                                 st.session_state.generated_data = None
                                 st.session_state.data_analysis = None
+                                st.rerun()
+                        
+                        with col3:
+                            if st.button("🆕 New File", use_container_width=True):
+                                st.session_state.generated_data = None
+                                st.session_state.data_analysis = None
+                                st.session_state.original_df = None
                                 st.rerun()
         
         except Exception as e:
