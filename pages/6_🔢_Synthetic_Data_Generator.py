@@ -355,7 +355,7 @@ class UniversalDataGenerator:
                     # Generate additional rows using fallback
                     additional_needed = num_rows - len(df)
                     st.info(f"LLM generated {len(df)} rows. Adding {additional_needed} more rows...")
-                    additional_df = self._generate_missing_rows(df, additional_needed, analysis)
+                    additional_df = self._generate_additional_rows(df, additional_needed, analysis)
                     df = pd.concat([df, additional_df], ignore_index=True)
                 
                 return df.head(num_rows)  # Ensure exact number
@@ -459,7 +459,7 @@ class UniversalDataGenerator:
         
         return f"{random.choice(first_names)} {random.choice(last_names)}"
     
-    def _generate_missing_rows(self, existing_df, num_rows, analysis):
+    def _generate_additional_rows(self, existing_df, num_rows, analysis):
         """Generate additional rows when LLM doesn't provide enough"""
         generated = {}
         
@@ -717,7 +717,7 @@ def main():
                                     st.warning(f"Generated only {len(generated)} rows. Generating more...")
                                     # Generate additional rows
                                     analysis = st.session_state.data_analysis
-                                    additional = generator._generate_missing_rows(
+                                    additional = generator._generate_additional_rows(
                                         generated, 
                                         num_rows - len(generated), 
                                         analysis
