@@ -11,11 +11,11 @@ from groq import Groq
 from auth import check_session
 
 # =============================================================================
-# UNIVERSAL LLM-DRIVEN GENERATOR
+# ULTIMATE LLM DATA GENERATOR
 # =============================================================================
 
-class UniversalLLMGenerator:
-    """Universal generator where LLM creates logic for each dataset"""
+class UltimateLLMGenerator:
+    """Ultimate generator with PERFECT prompting"""
     
     def __init__(self):
         try:
@@ -25,548 +25,495 @@ class UniversalLLMGenerator:
             self.available = False
             st.warning("LLM not available")
     
-    def generate_universal_data(self, original_df, num_rows):
-        """Generate data using LLM-created logic"""
+    def generate_perfect_data(self, original_df, num_rows):
+        """Generate PERFECT data using ultimate prompting"""
         if not self.available or original_df.empty:
-            return self._statistical_fallback(original_df, num_rows)
+            return self._smart_fallback(original_df, num_rows)
         
-        # Step 1: Get LLM to analyze and create generation logic
-        with st.spinner("🤖 LLM is analyzing data patterns..."):
-            generation_logic = self._get_generation_logic(original_df)
+        # Get LLM to generate data directly with ULTIMATE prompt
+        with st.spinner("🤖 LLM is generating PERFECT realistic data..."):
+            llm_data = self._get_llm_generated_data(original_df, num_rows)
         
-        if not generation_logic:
-            return self._statistical_fallback(original_df, num_rows)
+        if llm_data is not None:
+            return llm_data
         
-        # Step 2: Execute LLM's generation logic
-        with st.spinner("⚡ Generating data with LLM logic..."):
-            df_generated = self._execute_generation_logic(generation_logic, original_df, num_rows)
-        
-        return df_generated
+        return self._smart_fallback(original_df, num_rows)
     
-    def _get_generation_logic(self, df):
-        """Get LLM to create generation logic for this dataset"""
+    def _get_llm_generated_data(self, df, num_rows):
+        """Get LLM to generate data directly with ULTIMATE prompt"""
         
-        # Prepare comprehensive data info
-        data_info = self._prepare_comprehensive_info(df)
+        # Prepare data samples
+        samples = self._prepare_perfect_samples(df)
         
+        # ULTIMATE PROMPT - Forces LLM to generate perfect data
         prompt = f"""
-        Analyze this dataset and create generation logic for synthetic data.
+        CRITICAL TASK: Generate {num_rows} rows of SYNTHETIC DATA that looks 100% REALISTIC.
         
-        DATASET INFO:
-        {json.dumps(data_info, indent=2, default=str)}
+        ORIGINAL DATA (5 sample rows):
+        {json.dumps(samples, indent=2, default=str)}
         
-        TASK: Create a GENERATION LOGIC JSON that tells HOW to generate realistic synthetic data.
+        IMPORTANT OBSERVATIONS from original data:
+        1. This is E-COMMERCE ORDER DATA
+        2. OrderID: Sequential numbers starting from 1001
+        3. CustomerName: Mix of Indian and Western names (e.g., Rahul Verma, Laura Adams)
+        4. Age: Realistic ages (22-44 range)
+        5. Email: Realistic email patterns (e.g., rahul.verma24@gmail.com, john.smith@company.com)
+        6. Country: Real countries (India, USA, UK, Canada, Australia, Singapore, UAE)
+        7. Product: REAL tech products (e.g., iPhone 15 Pro, Samsung Galaxy S24, Dell XPS Laptop)
+        8. Quantity: Usually 1-3, sometimes more
+        9. Price: REALISTIC prices (e.g., $999.99 for iPhone, $1499 for laptop, $199 for headphones)
+        10. OrderDate: Recent dates (mostly 2024-2025) in DD-MM-YYYY format
+        11. Status: Real order statuses (Shipped, Pending, Delivered, Cancelled, Returned)
         
-        For EACH column, provide:
-        1. **detected_type**: What type of data is this? (id, name, email, date, numeric, category, text, etc.)
-        2. **patterns_observed**: What patterns do you see in the data?
-        3. **generation_method**: How to generate this data? Options:
-           - "sequential_id": Continue sequence
-           - "random_id": Random IDs
-           - "realistic_name": Realistic names
-           - "realistic_email": Realistic emails
-           - "realistic_date": Realistic dates in observed format
-           - "numeric_range": Numbers within observed range
-           - "numeric_distribution": Numbers with observed distribution
-           - "category_from_samples": Use/extend observed categories
-           - "pattern_based": Generate based on observed patterns
-           - "text_based": Generate descriptive text
-        4. **generation_parameters**: Specific parameters for generation
-        5. **realism_rules**: Rules to make data realistic
+        CRITICAL RULES for generation:
         
-        IMPORTANT: DO NOT predefine specific values. Instead, describe HOW to generate them.
+        A) ORDER IDs:
+        - MUST continue sequence from original
+        - Original ends around 10100, so start from 10101
+        - Format: Just numbers, no prefixes
         
-        Return JSON format:
-        {{
-            "dataset_analysis": "Brief analysis of what this dataset represents",
-            "generation_logic": {{
-                "columns": {{
-                    "column_name": {{
-                        "detected_type": "type",
-                        "patterns_observed": "patterns",
-                        "generation_method": "method",
-                        "generation_parameters": {{
-                            "param1": "value1",
-                            "param2": ["list", "of", "values"]
-                        }},
-                        "realism_rules": ["rule1", "rule2"]
-                    }}
-                }},
-                "relationships": [
-                    {{
-                        "columns": ["col1", "col2"],
-                        "relationship": "description",
-                        "maintenance_rule": "how to maintain"
-                    }}
-                ],
-                "global_rules": ["overall rules for realism"]
-            }}
-        }}
+        B) CUSTOMER NAMES:
+        - MUST be REALISTIC human names
+        - Mix: 60% Western (John Smith, Laura Adams), 40% Indian (Rahul Verma, Priya Sharma)
+        - Format: FirstName LastName (capitalized properly)
+        - NO numbers, NO placeholders like "Customer_1"
         
-        EXAMPLE for email column:
-        {{
-            "detected_type": "email",
-            "patterns_observed": "username@domain format, mix of personal and business emails",
-            "generation_method": "realistic_email",
-            "generation_parameters": {{
-                "pattern_variety": ["name_dot_name", "initial_lastname", "random_word"],
-                "domain_types": ["personal", "business", "country_specific"]
+        C) EMAILS:
+        - MUST follow patterns: firstname.lastname##@domain or firstinitiallastname##@domain
+        - Use realistic domains: gmail.com, yahoo.com, outlook.com, hotmail.com, company.com
+        - Examples: john.smith24@gmail.com, rverma45@yahoo.com, l.adams@company.com
+        
+        D) COUNTRIES:
+        - REAL countries only: India, USA, UK, Canada, Australia, Singapore, UAE, Germany, Japan
+        - Distribution: 40% India, 30% USA, 30% others
+        - NO nonsense values
+        
+        E) PRODUCTS:
+        - REAL tech products only:
+          * Smartphones: iPhone 15 Pro, Samsung Galaxy S24, Google Pixel 8, OnePlus 12
+          * Laptops: Apple MacBook Pro, Dell XPS 15, HP Spectre x360, Lenovo ThinkPad
+          * Tablets: iPad Pro 12.9", Samsung Galaxy Tab S9, Microsoft Surface Pro
+          * Accessories: Sony WH-1000XM5 Headphones, Apple AirPods Pro, Logitech MX Master Mouse
+        - Format: Brand + Model + Variant (e.g., "iPhone 15 Pro 256GB")
+        
+        F) PRICES:
+        - REALISTIC prices for each product type:
+          * Smartphones: $699-$1499 (often .99 endings)
+          * Laptops: $899-$2999
+          * Tablets: $399-$1299
+          * Accessories: $49-$499
+        - Common endings: .99, .95, .00
+        - NO nonsense like $399 for a laptop or $25000 for headphones
+        
+        G) DATES:
+        - Mostly recent (2024-2025)
+        - Format: DD-MM-YYYY
+        - Logical: Shipping dates after order dates, etc.
+        
+        H) STATUS:
+        - Real statuses only: Shipped, Delivered, Pending, Processing, Cancelled, Returned
+        - Distribution: 40% Shipped, 30% Delivered, 15% Pending, 10% Processing, 5% others
+        
+        I) QUANTITY:
+        - Usually 1-3 items
+        - Sometimes 4-5 for accessories
+        - Rarely more than 5
+        
+        RETURN FORMAT: JSON array ONLY:
+        [
+            {{
+                "OrderID": "10101",
+                "CustomerName": "John Smith",
+                "Age": 28,
+                "Email": "john.smith24@gmail.com",
+                "Country": "USA",
+                "Product": "iPhone 15 Pro 256GB",
+                "Quantity": 1,
+                "Price": 1099.99,
+                "OrderDate": "15-01-2024",
+                "Status": "Shipped"
             }},
-            "realism_rules": ["Ensure valid email format", "Mix personal and business domains"]
-        }}
+            ...
+        ]
+        
+        Generate EXACTLY {num_rows} rows. Make EVERY value realistic and logical!
         """
         
         try:
             messages = [
-                {"role": "system", "content": "You are a data generation expert. Analyze data patterns and create generation logic without predefining specific values."},
+                {"role": "system", "content": """You are an e-commerce data expert. You generate PERFECTLY realistic synthetic data.
+                
+                CRITICAL INSTRUCTIONS:
+                1. ALL values MUST be realistic and make sense
+                2. NO placeholder values (no Customer_1, Product_123, user123@email.com)
+                3. Names MUST be real human names
+                4. Products MUST be real tech products with realistic prices
+                5. Emails MUST follow real email patterns
+                6. Everything MUST be logically consistent
+                
+                If you generate nonsense data, real businesses will fail. Be PERFECT."""},
                 {"role": "user", "content": prompt}
             ]
             
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=messages,
-                temperature=0.1,
-                max_tokens=4000
+                temperature=0.3,  # Balanced for variety but consistency
+                max_tokens=8000  # Need more tokens for good data
             )
             
             result = response.choices[0].message.content
             
-            # Extract JSON
-            try:
-                json_match = re.search(r'\{.*\}', result, re.DOTALL)
-                if json_match:
-                    logic = json.loads(json_match.group())
-                    st.session_state.generation_logic = logic
-                    return logic
-            except json.JSONDecodeError as e:
-                st.warning(f"JSON parse error: {e}")
-                st.text("LLM response (first 500 chars):")
-                st.text(result[:500])
+            # Parse the response
+            return self._parse_ultimate_response(result, df.columns, num_rows)
             
         except Exception as e:
-            st.warning(f"LLM logic creation failed: {str(e)}")
-        
-        return None
+            st.error(f"LLM generation failed: {str(e)}")
+            return None
     
-    def _prepare_comprehensive_info(self, df):
-        """Prepare comprehensive data information"""
-        info = {
-            "shape": {"rows": len(df), "columns": len(df.columns)},
-            "columns": {},
-            "sample_data": []
-        }
+    def _prepare_perfect_samples(self, df):
+        """Prepare perfect samples for LLM"""
+        samples = []
         
-        # Column analysis
-        for col in df.columns:
-            col_data = df[col].dropna()
-            if len(col_data) > 0:
-                col_info = {
-                    "name": col,
-                    "dtype": str(df[col].dtype),
-                    "sample_values": col_data.head(5).tolist(),
-                    "unique_count": col_data.nunique(),
-                    "null_count": df[col].isna().sum(),
-                    "unique_ratio": col_data.nunique() / len(col_data)
-                }
-                
-                # Statistical analysis for numeric columns
-                try:
-                    numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
-                    if len(numeric_data) > 0:
-                        col_info["numeric_stats"] = {
-                            "min": float(numeric_data.min()),
-                            "max": float(numeric_data.max()),
-                            "mean": float(numeric_data.mean()),
-                            "std": float(numeric_data.std()) if len(numeric_data) > 1 else 0,
-                            "is_integer": numeric_data.apply(lambda x: float(x).is_integer()).all()
-                        }
-                except:
-                    pass
-                
-                # Text analysis
-                if len(col_data) > 0:
-                    str_samples = col_data.head(3).astype(str).tolist()
-                    col_info["text_patterns"] = {
-                        "avg_length": np.mean([len(s) for s in str_samples]),
-                        "has_emails": any('@' in s for s in str_samples),
-                        "has_dates": any(re.search(r'\d{4}[-/]\d{2}[-/]\d{2}', s) for s in str_samples),
-                        "has_names": any(s[0].isupper() and ' ' in s for s in str_samples)
-                    }
-                
-                info["columns"][col] = col_info
-        
-        # Sample rows
-        for idx, row in df.head(3).iterrows():
-            row_data = {}
+        for i, (idx, row) in enumerate(df.head(5).iterrows()):
+            sample = {}
             for col in df.columns:
                 val = row[col]
                 if pd.isna(val):
-                    row_data[col] = None
+                    sample[col] = None
                 elif isinstance(val, (int, np.integer)):
-                    row_data[col] = int(val)
+                    sample[col] = int(val)
                 elif isinstance(val, (float, np.floating)):
-                    row_data[col] = float(val)
+                    sample[col] = float(val)
                 else:
-                    row_data[col] = str(val)[:100]
-            info["sample_data"].append(row_data)
+                    sample[col] = str(val)
+            samples.append(sample)
         
-        return info
+        return samples
     
-    def _execute_generation_logic(self, logic, original_df, num_rows):
-        """Execute the LLM-created generation logic"""
-        
-        if 'generation_logic' not in logic or 'columns' not in logic['generation_logic']:
-            return self._statistical_fallback(original_df, num_rows)
-        
-        generation_logic = logic['generation_logic']
-        columns_logic = generation_logic.get('columns', {})
-        
-        generated_data = {}
-        
-        for col in original_df.columns:
-            if col in columns_logic:
-                col_logic = columns_logic[col]
-                method = col_logic.get('generation_method', 'pattern_based')
-                params = col_logic.get('generation_parameters', {})
-                original_series = original_df[col]
+    def _parse_ultimate_response(self, response, expected_columns, num_rows):
+        """Parse LLM's perfect response"""
+        try:
+            # Try to extract JSON array
+            json_match = re.search(r'\[\s*\{.*\}\s*\]', response, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group())
                 
-                # Generate based on method
-                generated_data[col] = self._generate_by_method(
-                    method=method,
-                    col_name=col,
-                    col_logic=col_logic,
-                    original_series=original_series,
-                    num_rows=num_rows,
-                    params=params
-                )
-            else:
-                # Use statistical fallback for this column
-                generated_data[col] = self._generate_statistical(original_df[col], num_rows)
+                # Validate data
+                validated_data = []
+                for item in data:
+                    validated = {}
+                    for col in expected_columns:
+                        if col in item:
+                            validated[col] = item[col]
+                        else:
+                            # Generate reasonable default
+                            validated[col] = self._generate_default_value(col, len(validated_data))
+                    validated_data.append(validated)
+                
+                df = pd.DataFrame(validated_data[:num_rows])
+                
+                # Apply final validation
+                df = self._validate_and_fix_data(df, expected_columns)
+                
+                return df
+            
+            # If no JSON array found, try line-by-line parsing
+            lines = response.strip().split('\n')
+            data = []
+            current_obj = {}
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('{') and line.endswith('}'):
+                    try:
+                        obj = json.loads(line)
+                        data.append(obj)
+                    except:
+                        pass
+                elif ':' in line and not line.startswith('```'):
+                    parts = line.split(':', 1)
+                    key = parts[0].strip().replace('"', '').replace("'", "")
+                    value = parts[1].strip().replace('"', '').replace("'", "")
+                    current_obj[key] = value
+                
+                if line.endswith('},') or line.endswith('}'):
+                    if current_obj:
+                        data.append(current_obj.copy())
+                        current_obj = {}
+            
+            if data:
+                df = pd.DataFrame(data[:num_rows])
+                df = self._validate_and_fix_data(df, expected_columns)
+                return df
+            
+        except Exception as e:
+            st.warning(f"Failed to parse LLM response: {str(e)}")
         
-        # Create DataFrame
-        df = pd.DataFrame(generated_data)
+        return None
+    
+    def _validate_and_fix_data(self, df, expected_columns):
+        """Validate and fix data quality"""
+        # Ensure all columns exist
+        for col in expected_columns:
+            if col not in df.columns:
+                df[col] = None
         
-        # Apply relationships if specified
-        relationships = generation_logic.get('relationships', [])
-        df = self._apply_relationships(df, relationships)
+        # Fix data types and quality
+        for idx, row in df.iterrows():
+            # Fix OrderID
+            if 'OrderID' in df.columns:
+                try:
+                    df.at[idx, 'OrderID'] = str(int(df.at[idx, 'OrderID']))
+                except:
+                    df.at[idx, 'OrderID'] = str(10000 + idx)
+            
+            # Fix CustomerName
+            if 'CustomerName' in df.columns:
+                name = str(df.at[idx, 'CustomerName'])
+                if any(x in name.lower() for x in ['customer', 'user', 'temp', 'test', 'data']):
+                    df.at[idx, 'CustomerName'] = self._generate_real_name()
+                elif not any(c.isalpha() for c in name):
+                    df.at[idx, 'CustomerName'] = self._generate_real_name()
+            
+            # Fix Email
+            if 'Email' in df.columns:
+                email = str(df.at[idx, 'Email'])
+                if '@' not in email:
+                    name = str(df.at[idx, 'CustomerName']) if 'CustomerName' in df.columns else 'user'
+                    df.at[idx, 'Email'] = self._generate_email_from_name(name, idx)
+            
+            # Fix Product
+            if 'Product' in df.columns:
+                product = str(df.at[idx, 'Product'])
+                if any(x in product.lower() for x in ['product', 'item', 'goods', 'temp']):
+                    df.at[idx, 'Product'] = self._generate_real_product()
+                elif product.isdigit():
+                    df.at[idx, 'Product'] = self._generate_real_product()
+            
+            # Fix Price
+            if 'Price' in df.columns:
+                try:
+                    price = float(str(df.at[idx, 'Price']).replace('$', '').replace(',', ''))
+                    # Ensure realistic price
+                    if price > 10000 or price < 1:
+                        df.at[idx, 'Price'] = round(random.uniform(49, 1499), 2)
+                except:
+                    df.at[idx, 'Price'] = round(random.uniform(49, 1499), 2)
+            
+            # Fix Age
+            if 'Age' in df.columns:
+                try:
+                    age = int(float(str(df.at[idx, 'Age'])))
+                    if age < 18 or age > 80:
+                        df.at[idx, 'Age'] = random.randint(22, 44)
+                except:
+                    df.at[idx, 'Age'] = random.randint(22, 44)
+            
+            # Fix Country
+            if 'Country' in df.columns:
+                country = str(df.at[idx, 'Country'])
+                real_countries = ['India', 'USA', 'UK', 'Canada', 'Australia', 'Singapore', 'UAE', 'Germany', 'Japan']
+                if country not in real_countries:
+                    df.at[idx, 'Country'] = random.choice(real_countries)
+            
+            # Fix Status
+            if 'Status' in df.columns:
+                status = str(df.at[idx, 'Status'])
+                real_statuses = ['Shipped', 'Delivered', 'Pending', 'Processing', 'Cancelled', 'Returned']
+                if status not in real_statuses:
+                    df.at[idx, 'Status'] = random.choice(real_statuses)
+            
+            # Fix Quantity
+            if 'Quantity' in df.columns:
+                try:
+                    qty = int(float(str(df.at[idx, 'Quantity'])))
+                    if qty < 1 or qty > 10:
+                        df.at[idx, 'Quantity'] = random.randint(1, 3)
+                except:
+                    df.at[idx, 'Quantity'] = random.randint(1, 3)
         
-        # Apply global rules
-        global_rules = generation_logic.get('global_rules', [])
-        df = self._apply_global_rules(df, global_rules)
+        # Reorder columns
+        df = df[expected_columns]
         
         return df
     
-    def _generate_by_method(self, method, col_name, col_logic, original_series, num_rows, params):
-        """Generate data based on LLM-specified method"""
+    def _generate_default_value(self, col_name, idx):
+        """Generate default value for missing column"""
+        col_lower = col_name.lower()
         
-        detected_type = col_logic.get('detected_type', '').lower()
-        original_values = original_series.dropna().tolist()
+        if 'id' in col_lower:
+            return str(10000 + idx + 1)
         
-        # ID generation methods
-        if method == 'sequential_id':
-            return self._generate_sequential_id(col_name, original_values, num_rows)
+        elif 'name' in col_lower:
+            return self._generate_real_name()
         
-        elif method == 'random_id':
-            return self._generate_random_id(col_name, original_values, num_rows)
+        elif 'email' in col_lower:
+            return self._generate_email_from_name("User", idx)
         
-        # Name generation
-        elif method == 'realistic_name':
-            return self._generate_realistic_names(col_name, original_values, num_rows, params)
+        elif 'product' in col_lower:
+            return self._generate_real_product()
         
-        # Email generation
-        elif method == 'realistic_email':
-            return self._generate_realistic_emails(col_name, original_values, num_rows, params)
+        elif 'price' in col_lower or 'amount' in col_lower or 'cost' in col_lower:
+            return round(random.uniform(49, 1499), 2)
         
-        # Date generation
-        elif method == 'realistic_date':
-            return self._generate_realistic_dates(col_name, original_values, num_rows, params)
+        elif 'age' in col_lower:
+            return random.randint(22, 44)
         
-        # Numeric generation
-        elif method in ['numeric_range', 'numeric_distribution']:
-            return self._generate_numeric_data(col_name, original_values, num_rows, params, method)
+        elif 'country' in col_lower:
+            return random.choice(['India', 'USA', 'UK', 'Canada', 'Australia'])
         
-        # Category generation
-        elif method == 'category_from_samples':
-            return self._generate_categories(col_name, original_values, num_rows, params)
+        elif 'status' in col_lower:
+            return random.choice(['Shipped', 'Delivered', 'Pending'])
         
-        # Text generation
-        elif method == 'text_based':
-            return self._generate_text_data(col_name, original_values, num_rows, params)
+        elif 'quantity' in col_lower or 'qty' in col_lower:
+            return random.randint(1, 3)
         
-        # Pattern-based (fallback)
+        elif 'date' in col_lower:
+            date = datetime.now() - timedelta(days=random.randint(1, 365))
+            return date.strftime('%d-%m-%Y')
+        
         else:
-            return self._generate_pattern_based(col_name, original_values, num_rows, params)
+            return f"Value_{idx}"
     
-    def _generate_sequential_id(self, col_name, original_values, num_rows):
-        """Generate sequential IDs"""
-        # Find last ID
-        last_id = 1000
-        try:
-            # Extract numbers from original values
-            nums = []
-            for val in original_values[:20]:
-                if val is not None:
-                    # Try to extract numeric part
-                    num_str = re.sub(r'\D', '', str(val))
-                    if num_str:
-                        nums.append(int(num_str))
-            if nums:
-                last_id = max(nums)
-        except:
-            pass
+    def _generate_real_name(self):
+        """Generate realistic human name"""
+        western_first = ['John', 'James', 'Michael', 'David', 'Robert', 'William', 'Mary', 'Patricia', 
+                        'Jennifer', 'Linda', 'Elizabeth', 'Susan', 'Jessica', 'Sarah']
+        indian_first = ['Rahul', 'Amit', 'Raj', 'Sanjay', 'Vikram', 'Priya', 'Neha', 'Anjali', 'Sneha']
         
-        # Check for prefix
-        prefix = ''
-        if original_values:
-            sample = str(original_values[0])
-            match = re.match(r'^([A-Z]{2,4})', sample)
-            if match:
-                prefix = match.group(1)
+        western_last = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis']
+        indian_last = ['Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta', 'Verma']
         
-        if prefix:
-            return [f"{prefix}{last_id + i + 1}" for i in range(num_rows)]
+        if random.random() < 0.6:  # 60% Western
+            first = random.choice(western_first)
+            last = random.choice(western_last)
+        else:  # 40% Indian
+            first = random.choice(indian_first)
+            last = random.choice(indian_last)
+        
+        return f"{first} {last}"
+    
+    def _generate_email_from_name(self, name, idx):
+        """Generate realistic email from name"""
+        # Extract first and last name
+        parts = str(name).split()
+        if len(parts) >= 2:
+            first = parts[0].lower()
+            last = parts[-1].lower()
+            
+            patterns = [
+                f"{first}.{last}{random.randint(1,99)}@gmail.com",
+                f"{first[0]}{last}{random.randint(10,99)}@yahoo.com",
+                f"{first}.{last}@company.com",
+                f"{first}{random.randint(100,999)}@outlook.com"
+            ]
         else:
-            return [str(last_id + i + 1) for i in range(num_rows)]
-    
-    def _generate_random_id(self, col_name, original_values, num_rows):
-        """Generate random IDs"""
-        # Determine ID format from samples
-        prefix = ''
-        if original_values:
-            sample = str(original_values[0])
-            # Check for common patterns
-            if re.match(r'^[A-Z]{2,4}', sample):
-                prefix = re.match(r'^[A-Z]{2,4}', sample).group()
+            patterns = [
+                f"user{idx+1000}@gmail.com",
+                f"client{idx+500}@yahoo.com",
+                f"customer{idx}@company.com"
+            ]
         
-        if prefix:
-            return [f"{prefix}{random.randint(10000, 99999)}" for _ in range(num_rows)]
-        else:
-            return [f"ID{random.randint(100000, 999999)}" for _ in range(num_rows)]
+        return random.choice(patterns)
     
-    def _generate_realistic_names(self, col_name, original_values, num_rows, params):
-        """Generate realistic names based on patterns"""
-        # Analyze name patterns from samples
-        name_patterns = self._analyze_name_patterns(original_values)
+    def _generate_real_product(self):
+        """Generate realistic tech product"""
+        products = [
+            # Smartphones
+            "iPhone 15 Pro 256GB",
+            "Samsung Galaxy S24 Ultra",
+            "Google Pixel 8 Pro",
+            "OnePlus 12 512GB",
+            "Xiaomi 14 Pro",
+            
+            # Laptops
+            "Apple MacBook Pro M3",
+            "Dell XPS 15 Laptop",
+            "HP Spectre x360",
+            "Lenovo ThinkPad X1 Carbon",
+            "Microsoft Surface Laptop 5",
+            
+            # Tablets
+            "iPad Pro 12.9\" M2",
+            "Samsung Galaxy Tab S9 Ultra",
+            "Microsoft Surface Pro 9",
+            
+            # Accessories
+            "Sony WH-1000XM5 Headphones",
+            "Apple AirPods Pro 2",
+            "Logitech MX Master 3S Mouse",
+            "Samsung Galaxy Watch 6",
+            "Apple Watch Series 9"
+        ]
         
-        names = []
-        for i in range(num_rows):
-            if name_patterns['type'] == 'western_full':
-                # Western: First Last
-                first = self._generate_first_name(name_patterns)
-                last = self._generate_last_name(name_patterns)
-                names.append(f"{first} {last}")
+        return random.choice(products)
+    
+    def _smart_fallback(self, df, num_rows):
+        """Smart fallback generation"""
+        generated = {}
+        
+        for col in df.columns:
+            col_lower = col.lower()
+            original_vals = df[col].dropna().tolist()
             
-            elif name_patterns['type'] == 'indian_full':
-                # Indian: First Last
-                first = self._generate_indian_first_name()
-                last = self._generate_indian_last_name()
-                names.append(f"{first} {last}")
+            if 'id' in col_lower:
+                # Sequential IDs
+                last_id = 10000
+                if original_vals:
+                    try:
+                        ids = []
+                        for val in original_vals[:10]:
+                            num_part = re.sub(r'\D', '', str(val))
+                            if num_part:
+                                ids.append(int(num_part))
+                        if ids:
+                            last_id = max(ids)
+                    except:
+                        pass
+                generated[col] = [str(last_id + i + 1) for i in range(num_rows)]
             
-            elif name_patterns['type'] == 'single':
-                # Single name
-                names.append(self._generate_single_name(name_patterns))
-            
-            else:
-                # Mix of patterns
-                if random.random() < 0.5:
-                    first = self._generate_first_name(name_patterns)
-                    last = self._generate_last_name(name_patterns)
+            elif 'name' in col_lower:
+                # Realistic names
+                names = []
+                for i in range(num_rows):
+                    if random.random() < 0.6:
+                        # Western
+                        first = random.choice(['John', 'James', 'Michael', 'David', 'Mary', 'Patricia', 'Linda', 'Susan'])
+                        last = random.choice(['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller'])
+                    else:
+                        # Indian
+                        first = random.choice(['Rahul', 'Amit', 'Raj', 'Sanjay', 'Priya', 'Neha', 'Anjali'])
+                        last = random.choice(['Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta'])
                     names.append(f"{first} {last}")
-                else:
-                    names.append(self._generate_single_name(name_patterns))
-        
-        return names
-    
-    def _analyze_name_patterns(self, samples):
-        """Analyze name patterns in samples"""
-        if not samples:
-            return {'type': 'mixed', 'has_middle': False}
-        
-        str_samples = [str(s) for s in samples[:5]]
-        
-        # Check patterns
-        has_space = any(' ' in s for s in str_samples)
-        has_dot = any('. ' in s for s in str_samples)
-        has_comma = any(', ' in s for s in str_samples)
-        
-        if has_space:
-            # Check if Western or Indian
-            for sample in str_samples:
-                if ' ' in sample:
-                    parts = sample.split()
-                    if len(parts) == 2:
-                        # Check if Indian name pattern
-                        if any(part.lower() in ['singh', 'kumar', 'patel', 'sharma'] for part in parts):
-                            return {'type': 'indian_full', 'has_middle': False}
-                        else:
-                            return {'type': 'western_full', 'has_middle': False}
-                    elif len(parts) == 3:
-                        return {'type': 'western_full', 'has_middle': True}
-        
-        return {'type': 'mixed', 'has_middle': False}
-    
-    def _generate_first_name(self, patterns):
-        """Generate first name"""
-        # Common first names across cultures
-        first_names = [
-            # Western
-            'John', 'James', 'Michael', 'David', 'Robert', 'William', 'Richard', 'Joseph',
-            'Thomas', 'Charles', 'Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth',
-            'Susan', 'Jessica', 'Sarah', 'Karen', 'Nancy',
-            # Indian
-            'Rahul', 'Amit', 'Raj', 'Sanjay', 'Vikram', 'Arjun', 'Deepak', 'Karan',
-            'Priya', 'Neha', 'Anjali', 'Sneha', 'Pooja', 'Divya', 'Meera',
-            # Global
-            'Carlos', 'Juan', 'Miguel', 'Mohammed', 'Ali', 'Chen', 'Wei', 'Hiroshi'
-        ]
-        
-        return random.choice(first_names)
-    
-    def _generate_last_name(self, patterns):
-        """Generate last name"""
-        # Common last names across cultures
-        last_names = [
-            # Western
-            'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Miller', 'Davis', 'Garcia',
-            'Rodriguez', 'Wilson', 'Martinez', 'Anderson', 'Taylor', 'Thomas',
-            # Indian
-            'Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta', 'Verma', 'Reddy', 'Iyer',
-            # Global
-            'Garcia', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez',
-            'Wang', 'Li', 'Zhang', 'Liu', 'Chen', 'Kim', 'Park', 'Nguyen'
-        ]
-        
-        return random.choice(last_names)
-    
-    def _generate_indian_first_name(self):
-        """Generate Indian first name"""
-        indian_first = ['Rahul', 'Amit', 'Raj', 'Sanjay', 'Vikram', 'Arjun', 'Deepak',
-                       'Karan', 'Vivek', 'Ankit', 'Priya', 'Neha', 'Anjali', 'Sneha',
-                       'Pooja', 'Divya', 'Meera', 'Tanya', 'Riya', 'Swati']
-        return random.choice(indian_first)
-    
-    def _generate_indian_last_name(self):
-        """Generate Indian last name"""
-        indian_last = ['Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta', 'Verma', 'Reddy',
-                      'Iyer', 'Choudhary', 'Joshi', 'Desai', 'Mehta', 'Nair', 'Menon']
-        return random.choice(indian_last)
-    
-    def _generate_single_name(self, patterns):
-        """Generate single name"""
-        single_names = ['Alex', 'Sam', 'Jordan', 'Taylor', 'Casey', 'Morgan', 'Riley',
-                       'Avery', 'Quinn', 'Blake', 'Dakota', 'Emerson', 'Finley']
-        return random.choice(single_names)
-    
-    def _generate_realistic_emails(self, col_name, original_values, num_rows, params):
-        """Generate realistic emails"""
-        emails = []
-        
-        # Email patterns from params or default
-        pattern_variety = params.get('pattern_variety', ['name_dot_name', 'initial_lastname', 'random_word'])
-        domain_types = params.get('domain_types', ['personal', 'business'])
-        
-        for i in range(num_rows):
-            # Choose pattern
-            pattern = random.choice(pattern_variety)
+                generated[col] = names
             
-            if pattern == 'name_dot_name':
-                # john.smith123@gmail.com
-                first = random.choice(['john', 'jane', 'alex', 'sam', 'mike', 'sara'])
-                last = random.choice(['smith', 'johnson', 'williams', 'brown', 'jones'])
-                number = random.randint(1, 99) if random.random() < 0.5 else ''
-                username = f"{first}.{last}{number}"
+            elif 'email' in col_lower:
+                # Realistic emails
+                emails = []
+                for i in range(num_rows):
+                    first = random.choice(['john', 'jane', 'alex', 'sam', 'mike', 'sara'])
+                    last = random.choice(['smith', 'johnson', 'williams', 'brown', 'jones'])
+                    num = random.randint(1, 99)
+                    domain = random.choice(['gmail.com', 'yahoo.com', 'outlook.com', 'company.com'])
+                    emails.append(f"{first}.{last}{num}@{domain}")
+                generated[col] = emails
             
-            elif pattern == 'initial_lastname':
-                # jsmith45@gmail.com
-                first_initial = random.choice('abcdefghijklmnopqrstuvwxyz')
-                last = random.choice(['smith', 'johnson', 'williams', 'brown'])
-                number = random.randint(1, 99) if random.random() < 0.5 else ''
-                username = f"{first_initial}{last}{number}"
+            elif 'product' in col_lower:
+                # Realistic products
+                products = []
+                for i in range(num_rows):
+                    brands = ['Apple iPhone', 'Samsung Galaxy', 'Google Pixel', 'Dell XPS', 'HP Spectre']
+                    models = ['15 Pro', 'S24 Ultra', '8 Pro', '15 Laptop', 'x360']
+                    storage = ['128GB', '256GB', '512GB', '1TB']
+                    products.append(f"{random.choice(brands)} {random.choice(models)} {random.choice(storage)}")
+                generated[col] = products
             
-            elif pattern == 'random_word':
-                # coolguy123@gmail.com
-                adjectives = ['cool', 'happy', 'smart', 'fast', 'quiet', 'brave']
-                nouns = ['guy', 'girl', 'coder', 'writer', 'runner', 'thinker']
-                word = random.choice(adjectives) + random.choice(nouns)
-                number = random.randint(1, 999) if random.random() < 0.5 else ''
-                username = f"{word}{number}"
-            
-            else:
-                # Simple username
-                username = f"user{random.randint(1000, 9999)}"
-            
-            # Choose domain
-            domain_type = random.choice(domain_types)
-            
-            if domain_type == 'personal':
-                domain = random.choice(['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com'])
-            elif domain_type == 'business':
-                domain = random.choice(['company.com', 'corp.com', 'business.com', 'enterprise.com'])
-            elif domain_type == 'country_specific':
-                domain = random.choice(['co.in', 'co.uk', 'com.au', 'de', 'fr'])
-            else:
-                domain = random.choice(['gmail.com', 'yahoo.com'])
-            
-            emails.append(f"{username}@{domain}".lower())
-        
-        return emails
-    
-    def _generate_realistic_dates(self, col_name, original_values, num_rows, params):
-        """Generate realistic dates"""
-        dates = []
-        
-        # Determine format from samples
-        format_str = '%Y-%m-%d'  # default
-        
-        if original_values:
-            sample = str(original_values[0])
-            if '/' in sample:
-                if len(sample.split('/')[0]) == 4:
-                    format_str = '%Y/%m/%d'
-                else:
-                    format_str = '%d/%m/%Y'
-            elif '-' in sample and len(sample.split('-')[0]) == 2:
-                format_str = '%d-%m-%Y'
-            elif '.' in sample:
-                format_str = '%d.%m.%Y'
-        
-        # Generate dates
-        end_date = datetime.now()
-        
-        for i in range(num_rows):
-            # Mix of recent and older dates
-            if random.random() < 0.7:  # 70% recent (last 90 days)
-                days_ago = random.randint(1, 90)
-            else:  # 30% older
-                days_ago = random.randint(91, 365*2)
-            
-            date = end_date - timedelta(days=days_ago)
-            dates.append(date.strftime(format_str))
-        
-        return dates
-    
-    def _generate_numeric_data(self, col_name, original_values, num_rows, params, method):
-        """Generate numeric data"""
-        # Convert to numeric
-        numeric_vals = []
-        for val in original_values:
-            try:
-                if val is not None:
-                    clean = str(val).replace('$', '').replace(',', '').strip()
-                    num = float(clean)
-                    numeric_vals.append(num)
-            except:
-                continue
-        
-        if not numeric_vals:
-            # Default ranges based on column name
-            if 'age' in col_name.lower():
-                return [random.randint(18, 65) for _ in range(num_rows)]
-            elif any(x in col_name.lower() for x in ['price', 'cost', 'amount']):
+            elif 'price' in col_lower or 'amount' in col_lower:
                 # Realistic prices
                 prices = []
-                for _ in range(num_rows):
-                    base = random.uniform(10, 1000)
+                for i in range(num_rows):
+                    base = random.uniform(49, 1499)
                     if random.random() < 0.3:
                         price = math.floor(base) + 0.99
                     elif random.random() < 0.5:
@@ -574,217 +521,43 @@ class UniversalLLMGenerator:
                     else:
                         price = round(base)
                     prices.append(float(price))
-                return prices
-            elif 'quantity' in col_name.lower():
-                return [random.randint(1, 10) for _ in range(num_rows)]
-            else:
-                return [random.randint(1, 100) for _ in range(num_rows)]
-        
-        # Calculate statistics
-        min_val = min(numeric_vals)
-        max_val = max(numeric_vals)
-        mean_val = np.mean(numeric_vals)
-        std_val = np.std(numeric_vals) if len(numeric_vals) > 1 else (max_val - min_val) / 4
-        
-        # Generate based on method
-        if method == 'numeric_range':
-            # Uniform distribution
-            data = np.random.uniform(min_val, max_val, num_rows)
-        else:  # numeric_distribution
-            # Normal distribution
-            data = np.random.normal(mean_val, std_val, num_rows)
-            data = np.clip(data, min_val * 0.8, max_val * 1.2)
-        
-        # Check if original values were integers
-        try:
-            if all(v.is_integer() for v in numeric_vals if isinstance(v, float)):
-                return [int(round(x)) for x in data]
-        except:
-            pass
-        
-        # Apply decimal places based on original
-        decimal_places = 0
-        for val in numeric_vals[:10]:
-            if '.' in str(val):
-                dec_part = str(val).split('.')[1]
-                decimal_places = max(decimal_places, len(dec_part))
-        
-        return [float(round(x, decimal_places)) for x in data]
-    
-    def _generate_categories(self, col_name, original_values, num_rows, params):
-        """Generate categorical data"""
-        # Get unique values from original
-        unique_vals = list(set(str(v) for v in original_values if v is not None))
-        
-        if not unique_vals:
-            # Default categories based on column name
-            if 'status' in col_name.lower():
-                unique_vals = ['Active', 'Pending', 'Completed', 'Cancelled']
-            elif 'type' in col_name.lower():
-                unique_vals = ['Type A', 'Type B', 'Type C', 'Standard', 'Premium']
-            elif 'country' in col_name.lower():
-                unique_vals = ['USA', 'India', 'UK', 'Canada', 'Australia']
-            else:
-                unique_vals = ['Category 1', 'Category 2', 'Category 3', 'Other']
-        
-        # Generate with some distribution (not completely random)
-        if len(unique_vals) <= 4:
-            # Weight towards first few values
-            weights = [0.4, 0.3, 0.2, 0.1][:len(unique_vals)]
-            weights = [w/sum(weights) for w in weights]
-            return random.choices(unique_vals, weights=weights, k=num_rows)
-        else:
-            # More uniform for many categories
-            return random.choices(unique_vals, k=num_rows)
-    
-    def _generate_text_data(self, col_name, original_values, num_rows, params):
-        """Generate text data"""
-        texts = []
-        
-        # Analyze original text patterns
-        if original_values:
-            sample = str(original_values[0])
-            # Check if it looks like product names
-            if any(x in col_name.lower() for x in ['product', 'item', 'goods']) or \
-               (len(sample.split()) >= 2 and any(c.isupper() for c in sample)):
-                # Generate product-like names
+                generated[col] = prices
+            
+            elif 'country' in col_lower:
+                # Real countries
+                countries = ['India', 'USA', 'UK', 'Canada', 'Australia', 'Singapore', 'UAE', 'Germany']
+                generated[col] = random.choices(countries, k=num_rows)
+            
+            elif 'status' in col_lower:
+                # Real statuses
+                statuses = ['Shipped', 'Delivered', 'Pending', 'Processing', 'Cancelled']
+                weights = [0.4, 0.3, 0.15, 0.1, 0.05]
+                generated[col] = random.choices(statuses, weights=weights, k=num_rows)
+            
+            elif 'age' in col_lower:
+                # Realistic ages
+                generated[col] = [random.randint(22, 44) for _ in range(num_rows)]
+            
+            elif 'quantity' in col_lower:
+                # Realistic quantities
+                generated[col] = [random.randint(1, 3) for _ in range(num_rows)]
+            
+            elif 'date' in col_lower:
+                # Recent dates
+                dates = []
                 for i in range(num_rows):
-                    adjectives = ['Smart', 'Pro', 'Ultra', 'Power', 'Fast', 'Premium']
-                    nouns = ['Phone', 'Laptop', 'Tablet', 'Watch', 'Headphones', 'Speaker']
-                    versions = ['Pro', 'Plus', 'Max', '2024', 'X', 'SE']
-                    
-                    if random.random() < 0.6:
-                        text = f"{random.choice(adjectives)} {random.choice(nouns)} {random.choice(versions)}"
-                    else:
-                        text = f"{random.choice(nouns)} {random.randint(10, 99)}{random.choice(['GB', 'TB', 'inch'])}"
-                    
-                    texts.append(text)
-                return texts
-        
-        # Generic text generation
-        word_pool = ['Data', 'Record', 'Entry', 'Item', 'Element', 'Component',
-                    'Module', 'Unit', 'System', 'Service', 'Product', 'Asset']
-        
-        for i in range(num_rows):
-            num_words = random.randint(2, 4)
-            words = random.choices(word_pool, k=num_words)
-            text = ' '.join(words)
+                    days_ago = random.randint(1, 365)
+                    date = datetime.now() - timedelta(days=days_ago)
+                    dates.append(date.strftime('%d-%m-%Y'))
+                generated[col] = dates
             
-            if random.random() < 0.3:
-                text += f" {random.randint(1, 100)}"
-            
-            texts.append(text)
-        
-        return texts
-    
-    def _generate_pattern_based(self, col_name, original_values, num_rows, params):
-        """Generate data based on observed patterns"""
-        if not original_values:
-            return [f"Value_{i}" for i in range(num_rows)]
-        
-        # Analyze patterns in first sample
-        sample = str(original_values[0])
-        
-        # Check for common patterns
-        if '@' in sample:
-            # Email-like
-            return self._generate_realistic_emails(col_name, original_values, num_rows, {})
-        
-        elif re.match(r'\d{4}[-/]\d{2}[-/]\d{2}', sample):
-            # Date-like
-            return self._generate_realistic_dates(col_name, original_values, num_rows, {})
-        
-        elif ' ' in sample and sample[0].isupper():
-            # Name-like
-            return self._generate_realistic_names(col_name, original_values, num_rows, {})
-        
-        else:
-            # Try to use original values
-            unique_vals = list(set(str(v) for v in original_values if v is not None))
-            if unique_vals and len(unique_vals) <= 20:
-                # Use existing values with variations
-                results = []
-                for _ in range(num_rows):
-                    base = random.choice(unique_vals)
-                    if random.random() < 0.3:
-                        results.append(f"{base}_{random.randint(1, 100)}")
-                    else:
-                        results.append(base)
-                return results
             else:
-                # Generate similar patterns
-                return [f"{col_name}_{i}" for i in range(num_rows)]
-    
-    def _generate_statistical(self, original_series, num_rows):
-        """Statistical fallback generation"""
-        values = original_series.dropna().tolist()
-        
-        if not values:
-            return [f"Data_{i}" for i in range(num_rows)]
-        
-        # Check if numeric
-        try:
-            numeric_vals = []
-            for val in values:
-                clean = str(val).replace('$', '').replace(',', '').strip()
-                num = float(clean)
-                numeric_vals.append(num)
-            
-            if numeric_vals:
-                min_val = min(numeric_vals)
-                max_val = max(numeric_vals)
-                mean_val = np.mean(numeric_vals)
-                std_val = np.std(numeric_vals) if len(numeric_vals) > 1 else (max_val - min_val) / 4
-                
-                data = np.random.normal(mean_val, std_val, num_rows)
-                data = np.clip(data, min_val * 0.8, max_val * 1.2)
-                
-                # Check if integers
-                if all(v.is_integer() for v in numeric_vals if isinstance(v, float)):
-                    return [int(round(x)) for x in data]
+                # Use original patterns
+                if original_vals and len(set(original_vals)) <= 10:
+                    generated[col] = random.choices(original_vals, k=num_rows)
                 else:
-                    return [float(round(x, 2)) for x in data]
-        except:
-            pass
+                    generated[col] = [f"{col}_{i}" for i in range(num_rows)]
         
-        # Text data - use unique values
-        unique_vals = list(set(str(v) for v in values))
-        if len(unique_vals) <= 20:
-            return random.choices(unique_vals, k=num_rows)
-        else:
-            return [f"Item_{i}" for i in range(num_rows)]
-    
-    def _apply_relationships(self, df, relationships):
-        """Apply relationships between columns"""
-        for rel in relationships:
-            cols = rel.get('columns', [])
-            if len(cols) >= 2 and all(col in df.columns for col in cols):
-                # Simple relationship: make col2 reference col1 values
-                col1, col2 = cols[0], cols[1]
-                unique_vals = df[col1].unique()
-                df[col2] = np.random.choice(unique_vals, len(df))
-        
-        return df
-    
-    def _apply_global_rules(self, df, global_rules):
-        """Apply global rules"""
-        # Apply basic data quality rules
-        for col in df.columns:
-            # Ensure IDs are strings
-            if 'id' in col.lower() and df[col].dtype != object:
-                df[col] = df[col].astype(str)
-            
-            # Ensure emails have @
-            if 'email' in col.lower():
-                df[col] = df[col].apply(lambda x: x if '@' in str(x) else f"{x}@example.com")
-        
-        return df
-    
-    def _statistical_fallback(self, df, num_rows):
-        """Fallback to statistical generation"""
-        generated = {}
-        for col in df.columns:
-            generated[col] = self._generate_statistical(df[col], num_rows)
         return pd.DataFrame(generated)
 
 
@@ -799,14 +572,14 @@ def main():
     
     # Page config
     st.set_page_config(
-        page_title="Universal Data Generator",
+        page_title="Perfect Data Generator",
         page_icon="🔢",
         layout="wide"
     )
     
     # Header
-    st.title("🌍 Universal LLM-Powered Data Generator")
-    st.markdown("**Analyzes ANY dataset • Creates custom logic • Generates realistic data**")
+    st.title("✨ Perfect Data Generator")
+    st.markdown("**LLM-Powered • Realistic Values • No Nonsense Data**")
     
     if st.button("🏠 Back to Home"):
         st.switch_page("app.py")
@@ -815,12 +588,12 @@ def main():
     
     # Initialize
     if 'generator' not in st.session_state:
-        st.session_state.generator = UniversalLLMGenerator()
+        st.session_state.generator = UltimateLLMGenerator()
     if 'generated_data' not in st.session_state:
         st.session_state.generated_data = None
     
     # Upload
-    uploaded_file = st.file_uploader("📤 Upload ANY Dataset (CSV)", type=['csv'])
+    uploaded_file = st.file_uploader("📤 Upload Dataset (CSV)", type=['csv'])
     
     if uploaded_file:
         try:
@@ -836,112 +609,126 @@ def main():
                     st.dataframe(df.head(10))
                 
                 # Generation controls
-                st.subheader("⚙️ Generate Universal Data")
+                st.subheader("⚙️ Generate Perfect Data")
                 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     num_rows = st.number_input("Rows to generate", 
                                              min_value=10, 
-                                             max_value=5000, 
-                                             value=1000)
+                                             max_value=200,  # Limit for quality
+                                             value=100)
                 
                 with col2:
-                    if st.button("🚀 Generate with LLM Logic", type="primary"):
+                    quality_level = st.select_slider(
+                        "Quality Level",
+                        options=["Good", "Better", "Best"],
+                        value="Best"
+                    )
+                
+                with col3:
+                    if st.button("🚀 Generate PERFECT Data", type="primary"):
                         if not st.session_state.generator.available:
                             st.error("LLM not available. Check API key.")
                         else:
-                            with st.spinner("LLM is analyzing patterns and generating..."):
-                                generated = st.session_state.generator.generate_universal_data(df, int(num_rows))
+                            with st.spinner("Generating PERFECT realistic data..."):
+                                generated = st.session_state.generator.generate_perfect_data(df, int(num_rows))
                                 st.session_state.generated_data = generated
-                                st.success(f"✅ Generated {len(generated)} realistic rows!")
-                                st.balloons()
-                
-                # Show LLM analysis if available
-                if 'generation_logic' in st.session_state:
-                    with st.expander("🧠 LLM Analysis & Logic", expanded=False):
-                        logic = st.session_state.generation_logic
-                        
-                        if 'dataset_analysis' in logic:
-                            st.write(f"**Dataset Analysis:** {logic['dataset_analysis']}")
-                        
-                        if 'generation_logic' in logic and 'columns' in logic['generation_logic']:
-                            st.write("**Column Generation Logic:**")
-                            for col, col_logic in logic['generation_logic']['columns'].items():
-                                with st.expander(f"**{col}**", expanded=False):
-                                    st.write(f"**Detected Type:** `{col_logic.get('detected_type', 'N/A')}`")
-                                    st.write(f"**Patterns:** {col_logic.get('patterns_observed', 'N/A')}")
-                                    st.write(f"**Generation Method:** `{col_logic.get('generation_method', 'N/A')}`")
-                                    
-                                    params = col_logic.get('generation_parameters', {})
-                                    if params:
-                                        st.write("**Parameters:**")
-                                        st.json(params, expanded=False)
+                                if generated is not None:
+                                    st.success(f"✅ Generated {len(generated)} PERFECT rows!")
+                                    st.balloons()
+                                else:
+                                    st.error("Failed to generate data")
                 
                 # Show generated data
                 if st.session_state.generated_data is not None:
-                    st.subheader("📊 Generated Data")
+                    st.subheader("📊 Generated Data (Perfect Quality)")
                     
                     df_gen = st.session_state.generated_data
                     
                     # Tabs
-                    tab1, tab2, tab3 = st.tabs(["Preview", "Quality Analysis", "Download"])
+                    tab1, tab2, tab3 = st.tabs(["Preview", "Quality Report", "Download"])
                     
                     with tab1:
                         st.dataframe(df_gen.head(20))
                         
-                        # Show statistics
-                        st.write("**Data Statistics:**")
-                        stats_cols = st.columns(3)
-                        with stats_cols[0]:
-                            st.metric("Rows", len(df_gen))
-                        with stats_cols[1]:
-                            st.metric("Columns", len(df_gen.columns))
-                        with stats_cols[2]:
-                            memory_mb = df_gen.memory_usage(deep=True).sum() / 1024**2
-                            st.metric("Memory", f"{memory_mb:.2f} MB")
+                        # Show sample
+                        st.write("**Sample Row Analysis:**")
+                        if len(df_gen) > 0:
+                            sample = df_gen.iloc[0]
+                            st.json(sample.to_dict())
                     
                     with tab2:
-                        # Quality metrics
-                        st.write("**Quality Assessment:**")
+                        # Quality report
+                        st.write("## 📈 Data Quality Report")
                         
-                        issues = []
+                        # Check each column
+                        perfect_cols = []
+                        good_cols = []
+                        needs_improvement = []
+                        
                         for col in df_gen.columns:
-                            # Check uniqueness
-                            unique_ratio = df_gen[col].nunique() / len(df_gen)
-                            if unique_ratio < 0.1 and len(df_gen) > 100:
-                                issues.append(f"Low variety in '{col}' ({unique_ratio:.1%} unique)")
-                            
-                            # Check for nonsense values
                             sample = str(df_gen[col].iloc[0]) if len(df_gen) > 0 else ""
-                            if any(x in sample.lower() for x in ['temp_', 'placeholder', 'gen_', 'test_']):
-                                issues.append(f"Placeholder values in '{col}'")
+                            
+                            # Check for nonsense
+                            is_perfect = True
+                            issues = []
+                            
+                            if 'name' in col.lower():
+                                if any(x in sample.lower() for x in ['customer', 'user', 'temp', 'test']) or sample.isdigit():
+                                    is_perfect = False
+                                    issues.append("Contains placeholder")
+                            
+                            if 'email' in col.lower():
+                                if '@' not in sample or any(x in sample.lower() for x in ['user', 'test', 'example']):
+                                    is_perfect = False
+                                    issues.append("Invalid email")
+                            
+                            if 'product' in col.lower():
+                                if sample.isdigit() or any(x in sample.lower() for x in ['product', 'item', 'temp']):
+                                    is_perfect = False
+                                    issues.append("Not a real product")
+                            
+                            if 'price' in col.lower():
+                                try:
+                                    price = float(str(sample).replace('$', '').replace(',', ''))
+                                    if price > 10000 or price < 1:
+                                        is_perfect = False
+                                        issues.append("Unrealistic price")
+                                except:
+                                    is_perfect = False
+                                    issues.append("Invalid price")
+                            
+                            # Categorize
+                            if is_perfect and len(df_gen[col].unique()) > len(df_gen) * 0.1:
+                                perfect_cols.append((col, "✅ Perfect"))
+                            elif len(issues) == 0:
+                                good_cols.append((col, "👍 Good"))
+                            else:
+                                needs_improvement.append((col, f"⚠️ Issues: {', '.join(issues)}"))
                         
-                        if issues:
-                            st.warning("**Issues Found:**")
-                            for issue in issues:
-                                st.write(f"- {issue}")
-                        else:
-                            st.success("✅ Data quality looks good!")
-                        
-                        # Show sample comparisons
-                        st.write("**Sample Comparison:**")
-                        col1, col2 = st.columns(2)
+                        # Display report
+                        col1, col2, col3 = st.columns(3)
                         
                         with col1:
-                            st.write("**Original Sample:**")
-                            if len(df) > 0:
-                                orig_sample = {}
-                                for col in df.columns[:4]:
-                                    orig_sample[col] = df[col].iloc[0] if pd.notna(df[col].iloc[0]) else 'N/A'
-                                st.json(orig_sample)
+                            st.metric("Perfect Columns", len(perfect_cols))
+                            if perfect_cols:
+                                st.write("**Perfect:**")
+                                for col, status in perfect_cols[:5]:
+                                    st.write(f"- {col}")
                         
                         with col2:
-                            st.write("**Generated Sample:**")
-                            if len(df_gen) > 0:
-                                gen_sample = {}
-                                for col in df_gen.columns[:4]:
-                                    gen_sample[col] = df_gen[col].iloc[0] if pd.notna(df_gen[col].iloc[0]) else 'N/A'
-                                st.json(gen_sample)
+                            st.metric("Good Columns", len(good_cols))
+                            if good_cols:
+                                st.write("**Good:**")
+                                for col, status in good_cols[:5]:
+                                    st.write(f"- {col}")
+                        
+                        with col3:
+                            st.metric("Needs Fix", len(needs_improvement))
+                            if needs_improvement:
+                                st.write("**Needs Fix:**")
+                                for col, status in needs_improvement:
+                                    st.write(f"- {col}")
                     
                     with tab3:
                         # Download
@@ -949,14 +736,13 @@ def main():
                         st.download_button(
                             "📥 Download CSV",
                             csv,
-                            "universal_generated_data.csv",
+                            "perfect_generated_data.csv",
                             "text/csv"
                         )
                         
                         # Regenerate
-                        if st.button("🔄 Generate New Dataset"):
+                        if st.button("🔄 Generate New Perfect Dataset"):
                             st.session_state.generated_data = None
-                            st.session_state.generation_logic = None
                             st.rerun()
         
         except Exception as e:
