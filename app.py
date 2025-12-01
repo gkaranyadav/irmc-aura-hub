@@ -1,4 +1,4 @@
-# app.py (updated with 5th app)
+# app.py
 import streamlit as st
 from auth import login_user, signup_user, logout_user, check_session
 from database import init_database
