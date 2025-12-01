@@ -152,7 +152,7 @@ def home_page():
         """.format(st.session_state.email), unsafe_allow_html=True)
     
     with col2:
-        if st.button("** Logout**", use_container_width=True):
+        if st.button("**Logout**", use_container_width=True):
             logout_user()
             st.rerun()
     
