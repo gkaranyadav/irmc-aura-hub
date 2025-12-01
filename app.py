@@ -8,7 +8,7 @@ init_database()
 
 # Page configuration
 st.set_page_config(
-    page_title="IRMC aura - AI Apps Hub",
+    page_title="iRMC aura - AI Apps Hub",
     page_icon="",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -92,7 +92,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def login_page():
-    st.markdown('<div class="main-header">IRMC aura</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">iRMC aura</div>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["**Login**", "**Sign Up**"])
     
@@ -131,7 +131,7 @@ def login_page():
                         st.error("❌ Password must be at least 4 characters")
                     else:
                         if signup_user(new_email, new_password):
-                            st.success("🎉 Account created successfully! Please login.")
+                            st.success(" Account created successfully! Please login.")
                         else:
                             st.error("❌ Email already exists!")
                 else:
@@ -144,7 +144,7 @@ def home_page():
     with col1:
         st.markdown("""
         <div style='margin-bottom: 1rem;'>
-            <div class="main-header" style='font-size: 2.5rem; text-align: left; margin: 0;'>🔮 IRMC aura</div>
+            <div class="main-header" style='font-size: 2.5rem; text-align: left; margin: 0;'> iRMC aura</div>
             <p style='color: #666; font-size: 1.1rem; margin: 0;'>
                 Welcome back, <strong style="color: #175CFF;">{}</strong>
             </p>
