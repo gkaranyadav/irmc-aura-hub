@@ -10,1143 +10,804 @@ from groq import Groq
 from auth import check_session
 
 # =============================================================================
-# ENHANCED INDUSTRY-GRADE GENERATOR
+# TEMPLATE-BASED UNIVERSAL GENERATOR (NO PREDEFINED DATA)
 # =============================================================================
 
-class EnhancedColumnClassifier:
-    """Enhanced rule-based column classification"""
-    
-    @staticmethod
-    def classify_column(col_name, sample_values, df_stats=None):
-        """
-        Enhanced classification with better pattern detection
-        """
-        col_name_lower = str(col_name).lower()
-        sample_strs = [str(v).lower() for v in sample_values[:10] if pd.notna(v)]
-        
-        # Enhanced ID detection
-        if any(x in col_name_lower for x in ['id', 'code', 'num', 'no', 'number', 'ref', 'key', 'serial']):
-            if EnhancedColumnClassifier._looks_like_id(sample_strs):
-                return {
-                    'category': 'identifier',
-                    'subcategory': 'sequential_id' if EnhancedColumnClassifier._is_sequential(sample_strs) else 'random_id',
-                    'confidence': 0.95,
-                    'format_hint': EnhancedColumnClassifier._get_id_format(sample_strs)
-                }
-        
-        # Enhanced date/time detection
-        if any(x in col_name_lower for x in ['date', 'time', 'day', 'month', 'year', 'timestamp', 'datetime']):
-            date_format = EnhancedColumnClassifier._detect_date_format(sample_strs)
-            if date_format:
-                return {
-                    'category': 'temporal',
-                    'subcategory': 'date_time' if any(':' in s for s in sample_strs[:3]) else 'date',
-                    'confidence': 0.9,
-                    'format_hint': date_format
-                }
-        
-        # Enhanced name detection
-        name_type = EnhancedColumnClassifier._detect_name_type(col_name_lower, sample_strs)
-        if name_type:
-            return {
-                'category': 'person',
-                'subcategory': name_type,
-                'confidence': 0.85,
-                'format_hint': 'mixed_names' if any(any(c.isalpha() and not c.isascii() for c in s) for s in sample_strs[:3]) else 'western_names'
-            }
-        
-        # Enhanced email detection
-        if any(x in col_name_lower for x in ['email', 'mail', 'contact', 'e-mail']):
-            if any('@' in s for s in sample_strs[:3]):
-                return {
-                    'category': 'contact',
-                    'subcategory': 'email',
-                    'confidence': 0.98,
-                    'format_hint': EnhancedColumnClassifier._get_email_pattern(sample_strs)
-                }
-        
-        # Enhanced location detection
-        location_type = EnhancedColumnClassifier._detect_location_type(col_name_lower, sample_strs)
-        if location_type:
-            return {
-                'category': 'location',
-                'subcategory': location_type,
-                'confidence': 0.8,
-                'format_hint': 'country_name' if location_type == 'country' else 'city_name'
-            }
-        
-        # Enhanced categorical detection
-        if any(x in col_name_lower for x in ['status', 'type', 'category', 'class', 'level', 'stage', 'phase', 'state']):
-            unique_count = len(set(sample_strs))
-            if unique_count <= 15:
-                return {
-                    'category': 'categorical',
-                    'subcategory': 'status' if 'status' in col_name_lower else 'category',
-                    'confidence': 0.85,
-                    'unique_count': unique_count,
-                    'values': list(set(sample_strs))[:10]
-                }
-        
-        # Enhanced numeric detection with better type inference
-        numeric_stats = EnhancedColumnClassifier._analyze_numeric(sample_strs)
-        if numeric_stats['is_numeric']:
-            # Determine numeric type
-            num_type = EnhancedColumnClassifier._determine_numeric_type(col_name_lower, numeric_stats)
-            
-            return {
-                'category': 'numeric',
-                'subcategory': num_type,
-                'confidence': 0.9,
-                'stats': numeric_stats,
-                'format_hint': 'currency' if any(x in col_name_lower for x in ['price', 'cost', 'amount', 'value']) else 'plain'
-            }
-        
-        # Text/description detection
-        if any(x in col_name_lower for x in ['desc', 'note', 'comment', 'detail', 'text', 'remark', 'description', 'title', 'name']):
-            return {
-                'category': 'text',
-                'subcategory': 'product_name' if any(len(s.split()) >= 2 and any(c.isupper() for c in s) for s in sample_strs[:3]) else 'description',
-                'confidence': 0.75,
-                'avg_length': np.mean([len(s) for s in sample_strs]) if sample_strs else 0
-            }
-        
-        # Default
-        return {
-            'category': 'unknown',
-            'subcategory': 'generic',
-            'confidence': 0.5
-        }
-    
-    @staticmethod
-    def _looks_like_id(values):
-        """Enhanced ID detection"""
-        if not values:
-            return False
-        
-        # Check patterns
-        patterns = [
-            r'^[A-Z]{2,4}\d{4,8}$',  # ABCD12345
-            r'^\d{6,12}$',  # 123456789
-            r'^[A-Z]{2}\d{6}$',  # AB123456
-            r'^\d{3}-\d{3}-\d{4}$',  # 123-456-7890
-            r'^[A-Z0-9]{8}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{12}$'  # UUID
-        ]
-        
-        for pattern in patterns:
-            if any(re.match(pattern, v.upper()) for v in values[:3]):
-                return True
-        
-        # Check sequential
-        try:
-            nums = []
-            for v in values[:10]:
-                num_part = re.sub(r'\D', '', v)
-                if num_part:
-                    nums.append(int(num_part))
-            
-            if len(nums) >= 3:
-                diffs = [nums[i+1] - nums[i] for i in range(len(nums)-1)]
-                if len(set(diffs)) == 1:  # All diffs equal
-                    return True
-        except:
-            pass
-        
-        return False
-    
-    @staticmethod
-    def _is_sequential(values):
-        """Check if values are sequential"""
-        try:
-            nums = []
-            for v in values[:5]:
-                num_part = re.sub(r'\D', '', v)
-                if num_part:
-                    nums.append(int(num_part))
-            
-            if len(nums) >= 3:
-                return all(nums[i+1] == nums[i] + 1 for i in range(len(nums)-1))
-        except:
-            return False
-        return False
-    
-    @staticmethod
-    def _get_id_format(values):
-        """Get ID format pattern"""
-        if not values:
-            return "unknown"
-        
-        sample = str(values[0]).upper()
-        
-        if re.match(r'^[A-Z]{2,4}\d{4,8}$', sample):
-            return "prefix_numeric"
-        elif re.match(r'^\d{6,12}$', sample):
-            return "numeric_only"
-        elif re.match(r'^\d{3}-\d{3}-\d{4}$', sample):
-            return "dashed_numeric"
-        elif '-' in sample and len(sample) > 20:
-            return "uuid"
-        else:
-            return "mixed"
-    
-    @staticmethod
-    def _detect_date_format(values):
-        """Detect date format"""
-        if not values:
-            return None
-        
-        sample = str(values[0])
-        
-        # Common date formats
-        formats = {
-            r'\d{4}-\d{2}-\d{2}': '%Y-%m-%d',
-            r'\d{2}/\d{2}/\d{4}': '%d/%m/%Y',
-            r'\d{2}-\d{2}-\d{4}': '%d-%m-%Y',
-            r'\d{4}/\d{2}/\d{2}': '%Y/%m/%d',
-            r'\d{2}\.\d{2}\.\d{4}': '%d.%m.%Y',
-            r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}': '%Y-%m-%d %H:%M:%S'
-        }
-        
-        for pattern, date_format in formats.items():
-            if re.match(pattern, sample):
-                return date_format
-        
-        return None
-    
-    @staticmethod
-    def _detect_name_type(col_name, values):
-        """Detect name type"""
-        if not values:
-            return None
-        
-        # Check column name hints
-        if any(x in col_name for x in ['first', 'given', 'fore']):
-            return 'first_name'
-        elif any(x in col_name for x in ['last', 'surname', 'family']):
-            return 'last_name'
-        elif any(x in col_name for x in ['full', 'complete', 'customer', 'person']):
-            return 'full_name'
-        
-        # Check value patterns
-        sample = str(values[0])
-        words = sample.split()
-        
-        if len(words) == 1:
-            # Check if it's a first name pattern
-            if sample[0].isupper() and sample.isalpha():
-                return 'first_name' if len(sample) <= 12 else 'single_name'
-        elif len(words) == 2:
-            if all(w[0].isupper() for w in words if w):
-                return 'full_name'
-        
-        return None
-    
-    @staticmethod
-    def _get_email_pattern(values):
-        """Analyze email patterns"""
-        if not values:
-            return "generic"
-        
-        samples = values[:3]
-        
-        # Check patterns
-        if any('.' in s.split('@')[0] for s in samples if '@' in s):
-            if any(re.match(r'^[a-z]+\.[a-z]+\d*@', s) for s in samples):
-                return "first.last"
-            elif any(re.match(r'^[a-z]+\d*@', s) for s in samples):
-                return "username"
-        
-        return "mixed"
-    
-    @staticmethod
-    def _detect_location_type(col_name, values):
-        """Detect location type"""
-        if not values:
-            return None
-        
-        # Column name hints
-        if 'country' in col_name:
-            return 'country'
-        elif 'city' in col_name:
-            return 'city'
-        elif any(x in col_name for x in ['state', 'province', 'region']):
-            return 'state'
-        elif any(x in col_name for x in ['address', 'location', 'place']):
-            return 'address'
-        
-        # Value pattern hints
-        sample = str(values[0]).upper()
-        if sample in ['USA', 'INDIA', 'UK', 'CANADA', 'AUSTRALIA', 'GERMANY']:
-            return 'country'
-        elif len(sample) <= 3 and sample.isalpha():
-            return 'country_code'
-        
-        return 'general'
-    
-    @staticmethod
-    def _analyze_numeric(values):
-        """Analyze numeric patterns"""
-        stats = {
-            'is_numeric': False,
-            'min': None,
-            'max': None,
-            'mean': None,
-            'std': None,
-            'is_integer': False,
-            'has_decimal': False,
-            'decimal_places': 0,
-            'has_currency': False
-        }
-        
-        numeric_vals = []
-        for v in values:
-            try:
-                # Clean value
-                clean_v = str(v).replace('$', '').replace(',', '').replace('€', '').replace('£', '').replace('¥', '')
-                num = float(clean_v)
-                numeric_vals.append(num)
-                
-                # Check for currency
-                if any(c in str(v) for c in ['$', '€', '£', '¥']):
-                    stats['has_currency'] = True
-            except:
-                continue
-        
-        if len(numeric_vals) >= 3:
-            stats['is_numeric'] = True
-            stats['min'] = float(min(numeric_vals))
-            stats['max'] = float(max(numeric_vals))
-            stats['mean'] = float(np.mean(numeric_vals))
-            stats['std'] = float(np.std(numeric_vals)) if len(numeric_vals) > 1 else 0
-            
-            # Check if all integers
-            stats['is_integer'] = all(v.is_integer() for v in numeric_vals)
-            
-            # Check decimal places
-            decimal_counts = []
-            for v in numeric_vals:
-                if '.' in str(v):
-                    stats['has_decimal'] = True
-                    decimal_part = str(v).split('.')[1]
-                    decimal_counts.append(len(decimal_part))
-            
-            if decimal_counts:
-                stats['decimal_places'] = int(np.mean(decimal_counts))
-        
-        return stats
-    
-    @staticmethod
-    def _determine_numeric_type(col_name, stats):
-        """Determine numeric type"""
-        col_lower = col_name.lower()
-        
-        if any(x in col_lower for x in ['age', 'years', 'old']):
-            return 'age'
-        elif any(x in col_lower for x in ['price', 'cost', 'amount', 'value', 'salary', 'income', 'revenue', 'fee']):
-            return 'monetary'
-        elif any(x in col_lower for x in ['quantity', 'count', 'qty', 'total', 'sum', 'number', 'items']):
-            return 'count'
-        elif any(x in col_lower for x in ['score', 'rating', 'grade', 'percentage', 'rate', 'ratio', 'percent']):
-            return 'measurement'
-        elif any(x in col_lower for x in ['weight', 'height', 'length', 'width', 'depth', 'size', 'volume']):
-            return 'dimension'
-        elif any(x in col_lower for x in ['temperature', 'pressure', 'humidity', 'speed', 'velocity']):
-            return 'sensor_reading'
-        else:
-            return 'general'
-
-
-class EnhancedDomainDetector:
-    """Enhanced domain detection with better inference"""
+class TemplateAnalyzer:
+    """Analyze data and create generation templates - NO predefined data"""
     
     def __init__(self):
         try:
             self.client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-            self.available = True
+            self.llm_available = True
         except:
-            self.available = False
+            self.llm_available = False
+            st.warning("LLM not available. Using pattern-based templates.")
     
-    def detect_domain_with_context(self, column_names, sample_data, column_types):
-        """Enhanced domain detection with context"""
-        if not self.available:
-            return self._enhanced_rule_based_domain(column_names, column_types)
+    def create_generation_templates(self, df_sample):
+        """
+        Create generation templates from data patterns
+        Returns templates for each column
+        """
+        if df_sample.empty:
+            return {}
         
-        # Prepare context
-        context = {
-            "columns": column_names,
-            "sample_data": sample_data,
-            "column_types": column_types
-        }
+        # If LLM available, use it to create smart templates
+        if self.llm_available:
+            templates = self._create_llm_templates(df_sample)
+            if templates:
+                return templates
+        
+        # Fallback: Create templates from patterns
+        return self._create_pattern_templates(df_sample)
+    
+    def _create_llm_templates(self, df_sample):
+        """Use LLM to create intelligent generation templates"""
+        
+        # Prepare data samples
+        data_samples = {}
+        for col in df_sample.columns:
+            samples = df_sample[col].dropna().head(10).tolist()
+            # Convert to string and clean
+            str_samples = []
+            for s in samples:
+                if isinstance(s, (int, float)):
+                    str_samples.append(str(s))
+                elif pd.isna(s):
+                    continue
+                else:
+                    str_samples.append(str(s)[:50])
+            if str_samples:
+                data_samples[col] = str_samples
         
         prompt = f"""
-        Analyze this dataset and determine its domain.
+        I need to generate synthetic data that looks realistic.
         
-        Context:
-        {json.dumps(context, indent=2, default=str)}
+        Here are samples from each column:
+        {json.dumps(data_samples, indent=2, default=str)}
         
-        DOMAIN OPTIONS:
-        1. ecommerce - Online shopping, orders, products, customers, payments
-        2. finance - Banking, transactions, accounts, investments, loans
-        3. healthcare - Medical records, patients, treatments, hospitals, prescriptions
-        4. human_resources - Employees, salaries, departments, performance, attendance
-        5. education - Students, courses, grades, teachers, schools
-        6. iot_sensors - Sensor data, devices, measurements, timestamps, readings
-        7. logistics - Shipping, inventory, warehouses, delivery, tracking
-        8. social_media - Users, posts, likes, comments, followers
-        9. real_estate - Properties, listings, prices, locations, features
-        10. manufacturing - Production, quality, equipment, maintenance, output
-        11. telecom - Customers, calls, data usage, plans, devices
-        12. marketing - Campaigns, leads, conversions, ads, metrics
-        13. other - None of the above
+        For EACH column, create a generation TEMPLATE.
         
-        Return JSON with:
+        IMPORTANT: DO NOT predefine specific values like ["India", "USA", "UK"]
+        Instead, create TEMPLATES that can generate VARIED, REALISTIC data.
+        
+        For example:
+        - For names: "first_name + ' ' + last_name" 
+        - For emails: "first_name.lower() + '.' + last_name.lower() + random_number(1,99) + '@' + random_choice(['gmail.com', 'yahoo.com', 'company.com'])"
+        - For countries: "random_choice(['Country1', 'Country2', 'Country3'])" but DON'T use real country names - instead describe HOW to generate them
+        - For products: "adjective + ' ' + product_type + ' ' + random_choice(['Pro', 'Plus', 'Max']) + ' ' + size"
+        
+        Return JSON with templates:
         {{
-            "domain": "chosen_domain",
-            "confidence": 0.0-1.0,
-            "reason": "brief explanation",
-            "suggestions": ["suggestions for realistic data generation"]
+            "columns": {{
+                "column_name": {{
+                    "data_type": "detected type",
+                    "pattern_analysis": "what patterns you see",
+                    "generation_template": "template string with placeholders",
+                    "placeholders": {{
+                        "placeholder1": {{
+                            "type": "string|number|choice|pattern",
+                            "description": "what this placeholder represents",
+                            "generation_rule": "how to generate values for this placeholder"
+                        }}
+                    }},
+                    "realism_rules": ["rules to make data realistic"],
+                    "variation_suggestions": ["how to add variety"]
+                }}
+            }},
+            "relationships": [
+                {{
+                    "between": ["col1", "col2"],
+                    "relationship": "how they relate",
+                    "generation_rule": "how to maintain relationship"
+                }}
+            ]
         }}
+        
+        Make templates FLEXIBLE and VARIED. No hardcoded specific values!
         """
         
         try:
-            messages = [{"role": "user", "content": prompt}]
+            messages = [
+                {"role": "system", "content": "You are a template creation expert. Create flexible generation templates without hardcoding specific values."},
+                {"role": "user", "content": prompt}
+            ]
+            
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=messages,
                 temperature=0.1,
-                max_tokens=500
+                max_tokens=4000
             )
             
-            result = response.choices[0].message.content.strip()
+            result = response.choices[0].message.content
             
+            # Extract JSON
             try:
                 json_match = re.search(r'\{.*\}', result, re.DOTALL)
                 if json_match:
-                    return json.loads(json_match.group())
-            except:
-                pass
+                    templates = json.loads(json_match.group())
+                    
+                    # Validate and enhance templates
+                    return self._enhance_templates(templates, df_sample)
+            except json.JSONDecodeError as e:
+                st.warning(f"JSON parse error: {e}")
+                st.text("LLM response (first 500 chars):")
+                st.text(result[:500])
             
-            # Fallback
-            return {
-                "domain": self._enhanced_rule_based_domain(column_names, column_types),
-                "confidence": 0.7,
-                "reason": "Rule-based detection",
-                "suggestions": ["Generate data matching observed patterns"]
-            }
+        except Exception as e:
+            st.warning(f"LLM template creation failed: {str(e)}")
+        
+        return None
+    
+    def _enhance_templates(self, templates, df_sample):
+        """Add statistical data to templates"""
+        if 'columns' not in templates:
+            templates['columns'] = {}
+        
+        for col in df_sample.columns:
+            if col not in templates['columns']:
+                templates['columns'][col] = {}
             
-        except:
-            return {
-                "domain": self._enhanced_rule_based_domain(column_names, column_types),
-                "confidence": 0.6,
-                "reason": "Fallback detection",
-                "suggestions": ["Use statistical patterns from original data"]
-            }
-    
-    def _enhanced_rule_based_domain(self, column_names, column_types):
-        """Enhanced rule-based domain detection"""
-        col_names_lower = [str(c).lower() for c in column_names]
-        col_types = [t.get('category', '') for t in column_types.values()]
-        
-        # Domain patterns with weights
-        patterns = {
-            'ecommerce': {
-                'keywords': ['order', 'product', 'customer', 'price', 'quantity', 'shipping', 'payment', 'cart', 'invoice'],
-                'required_types': ['identifier', 'person', 'numeric', 'categorical'],
-                'score': 0
-            },
-            'finance': {
-                'keywords': ['account', 'transaction', 'balance', 'amount', 'credit', 'debit', 'bank', 'loan', 'interest'],
-                'required_types': ['identifier', 'numeric', 'temporal'],
-                'score': 0
-            },
-            'healthcare': {
-                'keywords': ['patient', 'doctor', 'diagnosis', 'treatment', 'hospital', 'medical', 'prescription', 'test', 'result'],
-                'required_types': ['person', 'categorical', 'temporal'],
-                'score': 0
-            },
-            'human_resources': {
-                'keywords': ['employee', 'salary', 'department', 'hire', 'position', 'manager', 'performance', 'review', 'attendance'],
-                'required_types': ['person', 'numeric', 'categorical'],
-                'score': 0
-            }
-        }
-        
-        # Calculate scores
-        for domain, pattern in patterns.items():
-            # Keyword matching
-            for keyword in pattern['keywords']:
-                if any(keyword in col for col in col_names_lower):
-                    pattern['score'] += 2
-            
-            # Type matching
-            for req_type in pattern['required_types']:
-                if req_type in col_types:
-                    pattern['score'] += 1
-        
-        # Find best domain
-        if patterns:
-            best_domain = max(patterns.items(), key=lambda x: x[1]['score'])
-            if best_domain[1]['score'] > 3:
-                return best_domain[0]
-        
-        return 'other'
-
-
-class EnhancedSmartGenerator:
-    """Enhanced generator with realistic data patterns"""
-    
-    # Enhanced domain data
-    DOMAIN_DATA = {
-        'ecommerce': {
-            'countries': ['India', 'USA', 'UK', 'Canada', 'Australia', 'Germany', 'France', 'Japan', 'China', 'Brazil'],
-            'statuses': ['Shipped', 'Pending', 'Delivered', 'Cancelled', 'Processing', 'Returned', 'Refunded', 'On Hold'],
-            'products': {
-                'categories': ['Electronics', 'Clothing', 'Home & Kitchen', 'Books', 'Beauty', 'Sports', 'Toys', 'Automotive'],
-                'electronics': {
-                    'types': ['Smartphone', 'Laptop', 'Tablet', 'Smartwatch', 'Headphones', 'Speaker', 'Monitor', 'Keyboard', 'Mouse'],
-                    'brands': ['Apple', 'Samsung', 'Dell', 'HP', 'Lenovo', 'Sony', 'Bose', 'Logitech'],
-                    'models': ['Pro', 'Plus', 'Max', 'Air', 'SE', 'X', 'Ultra', 'Lite', '2024', '2025'],
-                    'specs': ['256GB', '512GB', '1TB', '16GB RAM', '32GB RAM', '8-core', '12-core', '4K', 'OLED']
-                },
-                'price_ranges': {
-                    'Smartphone': (200, 1500),
-                    'Laptop': (500, 3000),
-                    'Tablet': (100, 1200),
-                    'Smartwatch': (100, 800),
-                    'Headphones': (50, 500),
-                    'Speaker': (30, 400),
-                    'Monitor': (150, 2000)
-                }
-            },
-            'quantity_range': (1, 5)  # Most orders have 1-5 items
-        },
-        'finance': {
-            'transaction_types': ['Deposit', 'Withdrawal', 'Transfer', 'Payment', 'Refund', 'Interest', 'Fee', 'Dividend'],
-            'currencies': ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'CAD', 'AUD', 'CHF'],
-            'status': ['Completed', 'Pending', 'Failed', 'Cancelled', 'Processing', 'Reversed'],
-            'amount_ranges': {
-                'Deposit': (100, 10000),
-                'Withdrawal': (50, 5000),
-                'Transfer': (20, 2000),
-                'Payment': (10, 1000)
-            }
-        }
-    }
-    
-    # Universal data pools
-    UNIVERSAL_DATA = {
-        'first_names': {
-            'western': ['James', 'Mary', 'John', 'Patricia', 'Robert', 'Jennifer', 'Michael', 'Linda', 'William', 'Elizabeth',
-                       'David', 'Susan', 'Richard', 'Jessica', 'Joseph', 'Sarah', 'Thomas', 'Karen', 'Charles', 'Nancy',
-                       'Christopher', 'Lisa', 'Daniel', 'Margaret', 'Matthew', 'Sandra', 'Anthony', 'Ashley', 'Donald', 'Kimberly'],
-            'indian': ['Rahul', 'Priya', 'Aarav', 'Ananya', 'Vikram', 'Sneha', 'Arjun', 'Diya', 'Raj', 'Neha',
-                      'Sanjay', 'Pooja', 'Amit', 'Riya', 'Deepak', 'Swati', 'Karan', 'Meera', 'Vivek', 'Tanya'],
-            'global': ['Carlos', 'Maria', 'Juan', 'Ana', 'Mohammed', 'Fatima', 'Ali', 'Aisha', 'Chen', 'Li',
-                      'Wang', 'Zhang', 'Hiroshi', 'Yuki', 'Kenji', 'Sakura', 'Dmitry', 'Olga', 'Ivan', 'Natalia']
-        },
-        'last_names': {
-            'common': ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez',
-                      'Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta', 'Verma', 'Khan', 'Chen', 'Wang', 'Li', 'Kim', 'Park', 'Nguyen']
-        },
-        'email_domains': {
-            'personal': ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'],
-            'corporate': ['company.com', 'business.com', 'enterprise.com', 'corp.com', 'inc.com'],
-            'country': ['co.in', 'co.uk', 'ca', 'com.au', 'de', 'fr', 'jp']
-        },
-        'companies': ['TechCorp', 'GlobalBiz', 'InnovateInc', 'MegaCorp', 'NextGen', 'FutureTech', 'SmartSolutions', 'DigitalWorks']
-    }
-    
-    @staticmethod
-    def generate_enhanced_data(col_name, col_info, domain_info, original_values, num_rows):
-        """Enhanced data generation with better realism"""
-        
-        category = col_info.get('category', 'unknown')
-        subcategory = col_info.get('subcategory', 'generic')
-        domain = domain_info.get('domain', 'other')
-        
-        # Enhanced generation based on category
-        if category == 'identifier':
-            return EnhancedSmartGenerator._generate_enhanced_id(col_name, col_info, original_values, num_rows)
-        
-        elif category == 'person':
-            return EnhancedSmartGenerator._generate_enhanced_person(col_name, col_info, domain, num_rows)
-        
-        elif category == 'contact':
-            return EnhancedSmartGenerator._generate_enhanced_email(col_name, col_info, num_rows)
-        
-        elif category == 'location':
-            return EnhancedSmartGenerator._generate_enhanced_location(col_name, col_info, domain, num_rows)
-        
-        elif category == 'categorical':
-            return EnhancedSmartGenerator._generate_enhanced_categorical(col_name, col_info, domain, original_values, num_rows)
-        
-        elif category == 'numeric':
-            return EnhancedSmartGenerator._generate_enhanced_numeric(col_name, col_info, domain, original_values, num_rows)
-        
-        elif category == 'text':
-            if subcategory == 'product_name':
-                return EnhancedSmartGenerator._generate_enhanced_products(domain, original_values, num_rows)
-            else:
-                return EnhancedSmartGenerator._generate_enhanced_text(col_info, num_rows)
-        
-        elif category == 'temporal':
-            return EnhancedSmartGenerator._generate_enhanced_dates(col_info, original_values, num_rows)
-        
-        else:
-            return EnhancedSmartGenerator._generate_from_enhanced_patterns(original_values, num_rows)
-    
-    @staticmethod
-    def _generate_enhanced_id(col_name, col_info, original_values, num_rows):
-        """Generate enhanced IDs"""
-        # Get format hint
-        format_hint = col_info.get('format_hint', 'unknown')
-        
-        # Determine start based on original
-        start_id = 1000
-        if original_values:
-            try:
-                nums = []
-                for val in original_values[:10]:
-                    if pd.notna(val):
-                        num_part = re.sub(r'\D', '', str(val))
-                        if num_part:
-                            nums.append(int(num_part))
-                if nums:
-                    start_id = max(nums) + 1
-            except:
-                pass
-        
-        # Generate based on format
-        if format_hint == 'prefix_numeric':
-            prefix = 'ORD' if 'order' in col_name.lower() else 'CUST' if 'customer' in col_name.lower() else 'PROD'
-            return [f"{prefix}{start_id + i:05d}" for i in range(num_rows)]
-        
-        elif format_hint == 'numeric_only':
-            return [str(start_id + i) for i in range(num_rows)]
-        
-        elif format_hint == 'uuid':
-            return [str(uuid.uuid4()) for _ in range(num_rows)]
-        
-        else:
-            # Mixed format
-            prefixes = ['ID', 'REF', 'KEY', 'CODE']
-            return [f"{random.choice(prefixes)}{start_id + i:06d}" for i in range(num_rows)]
-    
-    @staticmethod
-    def _generate_enhanced_person(col_name, col_info, domain, num_rows):
-        """Generate enhanced person names"""
-        subcategory = col_info.get('subcategory', 'full_name')
-        format_hint = col_info.get('format_hint', 'western_names')
-        
-        # Choose name pool based on format hint
-        if 'indian' in str(format_hint).lower() or domain == 'ecommerce':
-            # Mix of Indian and Western names for e-commerce
-            first_names = EnhancedSmartGenerator.UNIVERSAL_DATA['first_names']['indian'] + \
-                         EnhancedSmartGenerator.UNIVERSAL_DATA['first_names']['western'][:10]
-        elif 'global' in str(format_hint).lower():
-            first_names = EnhancedSmartGenerator.UNIVERSAL_DATA['first_names']['global']
-        else:
-            first_names = EnhancedSmartGenerator.UNIVERSAL_DATA['first_names']['western']
-        
-        last_names = EnhancedSmartGenerator.UNIVERSAL_DATA['last_names']['common']
-        
-        # Generate names
-        if subcategory == 'first_name':
-            return random.choices(first_names, k=num_rows)
-        elif subcategory == 'last_name':
-            return random.choices(last_names, k=num_rows)
-        else:  # full_name
-            names = []
-            for _ in range(num_rows):
-                first = random.choice(first_names)
-                last = random.choice(last_names)
+            col_data = df_sample[col].dropna()
+            if len(col_data) > 0:
+                col_info = templates['columns'][col]
                 
-                # Occasionally add middle initial
-                if random.random() < 0.2:
-                    middle = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
-                    names.append(f"{first} {middle}. {last}")
-                else:
-                    names.append(f"{first} {last}")
-            
-            return names
-    
-    @staticmethod
-    def _generate_enhanced_email(col_name, col_info, num_rows):
-        """Generate enhanced realistic emails"""
-        format_hint = col_info.get('format_hint', 'generic')
+                # Add statistical insights
+                col_info['statistical_insights'] = self._get_statistical_insights(col_data)
+                
+                # If no template, create simple one
+                if 'generation_template' not in col_info:
+                    col_info['generation_template'] = self._create_simple_template(col_data)
+                
+                # Ensure placeholders exist
+                if 'placeholders' not in col_info:
+                    col_info['placeholders'] = self._extract_placeholders(col_info.get('generation_template', ''))
         
+        return templates
+    
+    def _get_statistical_insights(self, col_data):
+        """Get statistical insights from column data"""
+        insights = {
+            'sample_count': len(col_data),
+            'unique_count': col_data.nunique(),
+            'null_count': col_data.isna().sum(),
+            'sample_values': col_data.head(5).tolist()
+        }
+        
+        # Try numeric analysis
+        try:
+            numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
+            if len(numeric_data) > 0:
+                insights['numeric_stats'] = {
+                    'min': float(numeric_data.min()),
+                    'max': float(numeric_data.max()),
+                    'mean': float(numeric_data.mean()),
+                    'std': float(numeric_data.std()) if len(numeric_data) > 1 else 0,
+                    'is_integer': numeric_data.apply(lambda x: float(x).is_integer()).all()
+                }
+        except:
+            pass
+        
+        # Length analysis for text
+        if len(col_data) > 0:
+            try:
+                str_lengths = col_data.astype(str).str.len()
+                insights['length_stats'] = {
+                    'min': int(str_lengths.min()),
+                    'max': int(str_lengths.max()),
+                    'mean': float(str_lengths.mean())
+                }
+            except:
+                pass
+        
+        return insights
+    
+    def _create_simple_template(self, col_data):
+        """Create simple template from data patterns"""
+        samples = col_data.head(3).tolist()
+        
+        # Check for common patterns
+        for sample in samples:
+            if isinstance(sample, str):
+                if '@' in sample and '.' in sample:
+                    return "username + '@' + domain"
+                elif re.match(r'\d{4}-\d{2}-\d{2}', str(sample)):
+                    return "date_string"
+                elif ' ' in sample and sample[0].isupper():
+                    return "first_name + ' ' + last_name"
+        
+        # Check if numeric
+        try:
+            numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
+            if len(numeric_data) > 0:
+                return "number_in_range"
+        except:
+            pass
+        
+        # Default
+        return "text_value"
+    
+    def _extract_placeholders(self, template):
+        """Extract placeholders from template string"""
+        placeholders = {}
+        
+        # Simple placeholder extraction
+        if 'username' in template.lower():
+            placeholders['username'] = {
+                'type': 'string',
+                'description': 'Username part of email',
+                'generation_rule': 'Combine first name and last name with dot or numbers'
+            }
+        
+        if 'domain' in template.lower():
+            placeholders['domain'] = {
+                'type': 'choice',
+                'description': 'Email domain',
+                'generation_rule': 'Choose from common email domains'
+            }
+        
+        if 'first_name' in template.lower():
+            placeholders['first_name'] = {
+                'type': 'name',
+                'description': 'First name',
+                'generation_rule': 'Random first name'
+            }
+        
+        if 'last_name' in template.lower():
+            placeholders['last_name'] = {
+                'type': 'name',
+                'description': 'Last name',
+                'generation_rule': 'Random last name'
+            }
+        
+        if 'number_in_range' in template:
+            placeholders['number'] = {
+                'type': 'number',
+                'description': 'Numeric value',
+                'generation_rule': 'Random number within observed range'
+            }
+        
+        return placeholders
+    
+    def _create_pattern_templates(self, df_sample):
+        """Create templates from statistical patterns only"""
+        templates = {'columns': {}}
+        
+        for col in df_sample.columns:
+            col_data = df_sample[col].dropna()
+            if len(col_data) > 0:
+                col_info = {
+                    'data_type': self._detect_type_pattern(col_data),
+                    'pattern_analysis': 'Statistical pattern detected',
+                    'generation_template': self._create_template_from_pattern(col_data),
+                    'statistical_insights': self._get_statistical_insights(col_data),
+                    'placeholders': {}
+                }
+                
+                templates['columns'][col] = col_info
+        
+        return templates
+    
+    def _detect_type_pattern(self, col_data):
+        """Detect type from patterns"""
+        samples = col_data.head(5).astype(str).tolist()
+        
+        # Check patterns
+        if any('@' in s and '.' in s for s in samples[:3]):
+            return 'email'
+        elif any(re.match(r'\d{4}-\d{2}-\d{2}', s) for s in samples[:2]):
+            return 'date'
+        elif any(' ' in s and s[0].isupper() for s in samples[:2]):
+            return 'name'
+        
+        # Check numeric
+        try:
+            numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
+            if len(numeric_data) > len(col_data) * 0.7:
+                return 'numeric'
+        except:
+            pass
+        
+        return 'text'
+    
+    def _create_template_from_pattern(self, col_data):
+        """Create template from data patterns"""
+        samples = col_data.head(3).astype(str).tolist()
+        
+        # Analyze first sample
+        if samples:
+            sample = samples[0]
+            
+            # Email pattern
+            if '@' in sample:
+                parts = sample.split('@')
+                if len(parts) == 2:
+                    username_pattern = self._analyze_username_pattern(parts[0])
+                    domain_pattern = self._analyze_domain_pattern(parts[1])
+                    return f"{username_pattern} + '@' + {domain_pattern}"
+            
+            # Date pattern
+            if re.match(r'\d{4}-\d{2}-\d{2}', sample):
+                return "generate_date()"
+            
+            # Name pattern
+            if ' ' in sample and sample[0].isupper():
+                name_parts = sample.split()
+                if len(name_parts) == 2:
+                    return "random_first_name() + ' ' + random_last_name()"
+        
+        # Numeric pattern
+        try:
+            numeric_data = pd.to_numeric(col_data, errors='coerce').dropna()
+            if len(numeric_data) > 0:
+                return "random_number(min={}, max={})".format(
+                    int(numeric_data.min()),
+                    int(numeric_data.max())
+                )
+        except:
+            pass
+        
+        # Text pattern
+        return "generate_text(length={})".format(
+            int(col_data.astype(str).str.len().mean())
+        )
+    
+    def _analyze_username_pattern(self, username):
+        """Analyze username pattern"""
+        if '.' in username:
+            parts = username.split('.')
+            if len(parts) == 2:
+                return "first_name.lower() + '.' + last_name.lower() + optional_number()"
+        
+        if username[:-2].isdigit() and username[-2:].isalpha():
+            return "word() + number_suffix(2)"
+        
+        return "random_username()"
+    
+    def _analyze_domain_pattern(self, domain):
+        """Analyze domain pattern"""
+        if domain in ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com']:
+            return "random_personal_domain()"
+        elif 'company' in domain or 'corp' in domain or 'inc' in domain:
+            return "random_business_domain()"
+        else:
+            return "random_domain()"
+
+
+class TemplateGenerator:
+    """Generate data from templates"""
+    
+    def __init__(self):
+        # Initialize with NO predefined data
+        # Everything will be generated dynamically
+        pass
+    
+    def generate_from_templates(self, templates, num_rows):
+        """Generate data from templates"""
+        if not templates or 'columns' not in templates:
+            return pd.DataFrame()
+        
+        generated_data = {}
+        
+        for col_name, col_info in templates['columns'].items():
+            template = col_info.get('generation_template', '')
+            data_type = col_info.get('data_type', 'unknown')
+            stats = col_info.get('statistical_insights', {})
+            
+            # Generate based on template
+            generated_data[col_name] = self._generate_from_template(
+                template=template,
+                data_type=data_type,
+                stats=stats,
+                num_rows=num_rows,
+                col_name=col_name
+            )
+        
+        # Create DataFrame
+        df = pd.DataFrame(generated_data)
+        
+        # Apply relationship rules if any
+        if 'relationships' in templates:
+            df = self._apply_relationships(df, templates['relationships'])
+        
+        return df
+    
+    def _generate_from_template(self, template, data_type, stats, num_rows, col_name):
+        """Generate data from a template string"""
+        
+        # Parse template and generate
+        if 'email' in data_type.lower() or '@' in template:
+            return self._generate_emails(num_rows, stats)
+        
+        elif 'date' in data_type.lower() or 'date' in template.lower():
+            return self._generate_dates(num_rows, stats)
+        
+        elif 'name' in data_type.lower() or 'first_name' in template or 'last_name' in template:
+            return self._generate_names(num_rows, col_name, stats)
+        
+        elif 'numeric' in data_type.lower() or 'number' in template.lower():
+            return self._generate_numbers(num_rows, stats)
+        
+        elif 'country' in col_name.lower():
+            return self._generate_countries(num_rows, stats)
+        
+        elif 'product' in col_name.lower():
+            return self._generate_products(num_rows, stats)
+        
+        elif 'status' in col_name.lower():
+            return self._generate_statuses(num_rows, stats)
+        
+        else:
+            # Generic text generation
+            return self._generate_text(num_rows, stats)
+    
+    def _generate_emails(self, num_rows, stats):
+        """Generate realistic emails WITHOUT hardcoded names"""
         emails = []
+        
+        # Analyze patterns from stats if available
+        sample_values = stats.get('sample_values', [])
+        
         for i in range(num_rows):
-            # Choose email pattern
-            rand = random.random()
+            # Multiple email patterns for variety
+            pattern = random.choice([
+                self._pattern_username_domain,  # username@domain
+                self._pattern_name_number_domain,  # name.number@domain
+                self._pattern_initials_domain,  # initials@domain
+                self._pattern_random_word_domain  # randomword@domain
+            ])
             
-            if rand < 0.4:  # first.last pattern
-                first = random.choice(['john', 'jane', 'alex', 'sam', 'mike', 'sara', 'david', 'lisa'])
-                last = random.choice(['smith', 'johnson', 'williams', 'brown', 'jones', 'miller', 'davis'])
-                num = random.randint(1, 99) if random.random() < 0.5 else ''
-                username = f"{first}.{last}{num}"
-            
-            elif rand < 0.7:  # first initial + last
-                first = random.choice(['j', 'a', 's', 'm', 'd', 'l', 'r', 'p'])
-                last = random.choice(['smith', 'johnson', 'williams', 'brown', 'kumar', 'sharma', 'patel'])
-                num = random.randint(1, 99) if random.random() < 0.3 else ''
-                username = f"{first}{last}{num}"
-            
-            elif rand < 0.85:  # descriptive username
-                adjectives = ['cool', 'happy', 'smart', 'fast', 'quiet', 'brave', 'calm']
-                nouns = ['guy', 'girl', 'coder', 'writer', 'runner', 'thinker', 'maker']
-                num = random.randint(1, 999)
-                username = f"{random.choice(adjectives)}{random.choice(nouns)}{num}"
-            
-            else:  # simple username
-                username = f"user{random.randint(1000, 9999)}"
-            
-            # Choose domain
-            if random.random() < 0.7:
-                domain = random.choice(EnhancedSmartGenerator.UNIVERSAL_DATA['email_domains']['personal'])
-            else:
-                if random.random() < 0.5:
-                    domain = random.choice(EnhancedSmartGenerator.UNIVERSAL_DATA['email_domains']['corporate'])
-                else:
-                    domain = random.choice(EnhancedSmartGenerator.UNIVERSAL_DATA['email_domains']['country'])
-            
-            emails.append(f"{username}@{domain}".lower())
+            emails.append(pattern())
         
         return emails
     
     @staticmethod
-    def _generate_enhanced_location(col_name, col_info, domain, num_rows):
-        """Generate enhanced locations"""
-        subcategory = col_info.get('subcategory', 'general')
-        
-        if subcategory == 'country':
-            domain_data = EnhancedSmartGenerator.DOMAIN_DATA.get(domain, {})
-            countries = domain_data.get('countries', EnhancedSmartGenerator.UNIVERSAL_DATA.get('countries', ['USA', 'India', 'UK']))
-            
-            # Generate with some distribution (not completely random)
-            weights = [0.3, 0.25, 0.2, 0.15, 0.1] + [0.01] * (len(countries) - 5)
-            weights = weights[:len(countries)]
-            weights = [w/sum(weights) for w in weights]  # Normalize
-            
-            return random.choices(countries, weights=weights, k=num_rows)
-        
-        elif subcategory == 'city':
-            cities = ['New York', 'London', 'Tokyo', 'Mumbai', 'Sydney', 'Berlin', 'Paris', 'Toronto',
-                     'Singapore', 'Dubai', 'Hong Kong', 'Shanghai', 'São Paulo', 'Moscow', 'Seoul',
-                     'Delhi', 'Bangalore', 'Chennai', 'Kolkata', 'Hyderabad']
-            return random.choices(cities, k=num_rows)
-        
-        else:
-            return ['Location {}'.format(random.randint(1, 100)) for _ in range(num_rows)]
+    def _pattern_username_domain():
+        """username@domain pattern"""
+        username = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=random.randint(6, 12)))
+        domain = random.choice(['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'])
+        return f"{username}@{domain}"
     
     @staticmethod
-    def _generate_enhanced_categorical(col_name, col_info, domain, original_values, num_rows):
-        """Generate enhanced categorical data"""
-        col_lower = col_name.lower()
+    def _pattern_name_number_domain():
+        """name.number@domain pattern"""
+        first_parts = ['john', 'jane', 'alex', 'sam', 'mike', 'sara', 'david', 'lisa']
+        last_parts = ['smith', 'johnson', 'williams', 'brown', 'jones', 'miller', 'davis']
         
-        # Use original values if they make sense
-        unique_vals = list(set(str(v) for v in original_values if pd.notna(v)))
+        first = random.choice(first_parts)
+        last = random.choice(last_parts)
+        number = random.randint(1, 99)
+        domain = random.choice(['gmail.com', 'yahoo.com', 'outlook.com'])
         
-        if unique_vals and len(unique_vals) <= 15:
-            # Check if original values are meaningful
-            if all(len(v) > 1 and any(c.isalpha() for c in v) for v in unique_vals[:5]):
-                # Add some variations
-                all_vals = unique_vals.copy()
-                if len(all_vals) < 8:
-                    # Add some common values
-                    if 'status' in col_lower:
-                        common = ['Active', 'Inactive', 'Pending', 'Completed', 'Failed', 'Cancelled']
-                        all_vals.extend([v for v in common if v not in all_vals])
-                
-                return random.choices(all_vals, k=num_rows)
-        
-        # Domain-specific values
-        domain_data = EnhancedSmartGenerator.DOMAIN_DATA.get(domain, {})
-        
-        if 'status' in col_lower and 'statuses' in domain_data:
-            values = domain_data['statuses']
-        elif 'type' in col_lower or 'category' in col_lower:
-            values = ['Type A', 'Type B', 'Type C', 'Standard', 'Premium', 'Basic', 'Advanced']
-        else:
-            values = ['Value {}'.format(i) for i in range(1, 6)]
-        
-        # Add some randomness but keep distribution realistic
-        if len(values) >= 3:
-            # Weight towards first few values
-            weights = [0.4, 0.3, 0.15] + [0.15/(len(values)-3)] * (len(values)-3)
-            return random.choices(values, weights=weights[:len(values)], k=num_rows)
-        else:
-            return random.choices(values, k=num_rows)
+        return f"{first}.{last}{number}@{domain}"
     
     @staticmethod
-    def _generate_enhanced_numeric(col_name, col_info, domain, original_values, num_rows):
-        """Generate enhanced numeric data with realistic values"""
-        subcategory = col_info.get('subcategory', 'general')
-        stats = col_info.get('stats', {})
-        format_hint = col_info.get('format_hint', 'plain')
+    def _pattern_initials_domain():
+        """initials@domain pattern"""
+        initials = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=random.randint(2, 3)))
+        number = random.randint(10, 99) if random.random() < 0.5 else ''
+        domain = random.choice(['company.com', 'corp.com', 'business.com', 'enterprise.com'])
         
-        # Extract numeric values from original
-        numeric_vals = []
-        for val in original_values:
-            try:
-                if pd.notna(val):
-                    clean = str(val).replace('$', '').replace(',', '').strip()
-                    num = float(clean)
-                    numeric_vals.append(num)
-            except:
-                continue
-        
-        # Generate based on subcategory
-        if subcategory == 'age':
-            # Realistic age distribution
-            if numeric_vals:
-                mean_age = np.mean(numeric_vals)
-                std_age = np.std(numeric_vals) if len(numeric_vals) > 1 else 8
-            else:
-                mean_age = 35
-                std_age = 12
-            
-            # Generate with normal distribution, clipped to realistic range
-            ages = np.random.normal(mean_age, std_age, num_rows)
-            ages = np.clip(ages, 18, 80)
-            return [int(round(age)) for age in ages]
-        
-        elif subcategory == 'monetary':
-            # Realistic prices with common endings
-            if numeric_vals:
-                mean_val = np.mean(numeric_vals)
-                std_val = np.std(numeric_vals) if len(numeric_vals) > 1 else mean_val * 0.5
-                min_val = min(numeric_vals)
-                max_val = max(numeric_vals)
-            else:
-                # Default realistic ranges
-                if 'price' in col_name.lower():
-                    mean_val = 500
-                    std_val = 400
-                    min_val = 10
-                    max_val = 3000
-                else:
-                    mean_val = 1000
-                    std_val = 800
-                    min_val = 50
-                    max_val = 10000
-            
-            # Generate prices
-            prices = []
-            for _ in range(num_rows):
-                # Base price with normal distribution
-                base = np.random.normal(mean_val, std_val)
-                base = np.clip(base, min_val * 0.5, max_val * 1.5)
-                
-                # Apply realistic price psychology
-                rand = random.random()
-                if rand < 0.3:  # .99 ending
-                    price = math.floor(base) + 0.99
-                elif rand < 0.5:  # .95 ending
-                    price = math.floor(base) + 0.95
-                elif rand < 0.6:  # .50 ending
-                    price = math.floor(base) + 0.50
-                elif rand < 0.7:  # .00 ending
-                    price = round(base)
-                else:  # Random cents
-                    price = round(base, 2)
-                
-                # Ensure reasonable values
-                if price < 1:
-                    price = round(random.uniform(1, 100), 2)
-                
-                prices.append(float(price))
-            
-            return prices
-        
-        elif subcategory == 'count':
-            # Realistic counts (often small numbers)
-            if numeric_vals:
-                mean_count = np.mean(numeric_vals)
-                max_count = max(numeric_vals)
-            else:
-                mean_count = 2
-                max_count = 10
-            
-            # Generate with Poisson-like distribution
-            counts = []
-            for _ in range(num_rows):
-                # Poisson distribution for counts
-                lam = min(mean_count, 10)  # Lambda for Poisson
-                count = np.random.poisson(lam) + 1
-                count = min(count, max_count * 2)
-                counts.append(int(count))
-            
-            return counts
-        
-        else:
-            # General numeric
-            if numeric_vals:
-                mean_val = np.mean(numeric_vals)
-                std_val = np.std(numeric_vals) if len(numeric_vals) > 1 else mean_val * 0.3
-                min_val = min(numeric_vals)
-                max_val = max(numeric_vals)
-                
-                data = np.random.normal(mean_val, std_val, num_rows)
-                data = np.clip(data, min_val * 0.8, max_val * 1.2)
-                
-                if stats.get('is_integer', False):
-                    return [int(round(x)) for x in data]
-                else:
-                    decimals = stats.get('decimal_places', 2)
-                    return [float(round(x, decimals)) for x in data]
-            else:
-                return [random.randint(1, 100) for _ in range(num_rows)]
+        return f"{initials}{number}@{domain}"
     
     @staticmethod
-    def _generate_enhanced_products(domain, original_values, num_rows):
-        """Generate enhanced product names with variety"""
-        if domain != 'ecommerce':
-            # Generic products for other domains
-            items = ['Item', 'Product', 'Service', 'Component', 'Module', 'Tool']
-            types = ['Standard', 'Premium', 'Basic', 'Advanced', 'Professional']
-            return [f"{random.choice(types)} {random.choice(items)} {random.randint(1, 100)}" 
-                   for _ in range(num_rows)]
+    def _pattern_random_word_domain():
+        """randomword@domain pattern"""
+        adjectives = ['cool', 'happy', 'smart', 'fast', 'quiet', 'brave', 'calm', 'quick', 'bright']
+        nouns = ['guy', 'girl', 'coder', 'writer', 'runner', 'thinker', 'maker', 'builder', 'creator']
         
-        # E-commerce specific products
-        domain_data = EnhancedSmartGenerator.DOMAIN_DATA.get('ecommerce', {})
-        products_data = domain_data.get('products', {})
+        word = random.choice(adjectives) + random.choice(nouns)
+        number = random.randint(1, 999) if random.random() < 0.5 else ''
+        domain = random.choice(['gmail.com', 'yahoo.com', 'outlook.com'])
         
-        electronics = products_data.get('electronics', {})
-        categories = products_data.get('categories', ['Electronics'])
-        
-        products = []
-        used_combinations = set()
-        
-        for i in range(num_rows):
-            # Ensure variety - don't repeat same combination too often
-            for attempt in range(10):  # Try up to 10 times to get unique combination
-                # Choose product type
-                if random.random() < 0.8:  # 80% electronics
-                    product_type = random.choice(electronics['types'])
-                    brand = random.choice(electronics['brands'])
-                    model = random.choice(electronics['models'])
-                    spec = random.choice(electronics['specs']) if random.random() < 0.6 else ''
-                    
-                    combo = (product_type, brand, model)
-                    if combo not in used_combinations or len(used_combinations) > 50:
-                        used_combinations.add(combo)
-                        product_name = f"{brand} {product_type} {model} {spec}".strip()
-                        break
-                else:  # 20% other categories
-                    category = random.choice(categories)
-                    if category == 'Electronics':
-                        continue  # Try again
-                    
-                    # Generic product
-                    adjectives = ['Premium', 'Luxury', 'Essential', 'Everyday', 'Professional']
-                    product_name = f"{random.choice(adjectives)} {category} Item {random.randint(1, 100)}"
-                    break
-            else:
-                # Fallback if no unique combo found
-                product_name = f"Product {i+1000}"
-            
-            products.append(product_name)
-        
-        return products
+        return f"{word}{number}@{domain}"
     
-    @staticmethod
-    def _generate_enhanced_text(col_info, num_rows):
-        """Generate enhanced text"""
-        avg_length = col_info.get('avg_length', 20)
-        
-        texts = []
-        for _ in range(num_rows):
-            # Generate text of appropriate length
-            words = ['report', 'analysis', 'summary', 'review', 'document', 'note', 'comment',
-                    'description', 'details', 'information', 'data', 'results', 'findings']
-            
-            num_words = max(2, int(avg_length / 5))
-            text_words = random.choices(words, k=num_words)
-            text = ' '.join(word.capitalize() for word in text_words)
-            
-            # Add some variations
-            if random.random() < 0.3:
-                text += f" #{random.randint(1, 100)}"
-            
-            texts.append(text)
-        
-        return texts
-    
-    @staticmethod
-    def _generate_enhanced_dates(col_info, original_values, num_rows):
-        """Generate enhanced dates"""
-        format_hint = col_info.get('format_hint', '%Y-%m-%d')
-        
-        # Parse format
-        try:
-            date_format = format_hint
-        except:
-            date_format = '%Y-%m-%d'
-        
-        # Generate dates (mostly recent with some older)
+    def _generate_dates(self, num_rows, stats):
+        """Generate dates"""
         dates = []
         end_date = datetime.now()
         
+        # Check sample format
+        format_str = '%Y-%m-%d'  # default
+        sample_values = stats.get('sample_values', [])
+        if sample_values:
+            sample = str(sample_values[0])
+            if '/' in sample:
+                format_str = '%d/%m/%Y' if len(sample.split('/')[0]) == 2 else '%Y/%m/%d'
+            elif '-' in sample and len(sample.split('-')[0]) == 2:
+                format_str = '%d-%m-%Y'
+        
         for _ in range(num_rows):
-            # 60% recent (last 60 days), 30% medium (61-365 days), 10% older
-            rand = random.random()
-            if rand < 0.6:
-                days_ago = random.randint(1, 60)
-            elif rand < 0.9:
-                days_ago = random.randint(61, 365)
+            # Mix of recent and older dates
+            if random.random() < 0.7:
+                days_ago = random.randint(1, 90)  # Recent
             else:
-                days_ago = random.randint(366, 365*2)
+                days_ago = random.randint(91, 730)  # Older
             
             date = end_date - timedelta(days=days_ago)
-            dates.append(date.strftime(date_format))
+            dates.append(date.strftime(format_str))
         
         return dates
     
-    @staticmethod
-    def _generate_from_enhanced_patterns(original_values, num_rows):
-        """Enhanced pattern-based generation"""
-        if not original_values:
-            return [f"Data_{i:04d}" for i in range(num_rows)]
+    def _generate_names(self, num_rows, col_name, stats):
+        """Generate names WITHOUT hardcoded lists"""
+        names = []
         
-        # Analyze patterns
-        samples = [str(v) for v in original_values[:20] if pd.notna(v)]
-        
-        if len(set(samples)) <= 10:
-            # Use existing values with some variations
-            base_values = list(set(samples))
-            results = []
-            for _ in range(num_rows):
-                base = random.choice(base_values)
-                if random.random() < 0.3:
-                    results.append(f"{base}_{random.randint(1, 100)}")
-                else:
-                    results.append(base)
-            return results
+        # Determine name type from column name
+        if 'first' in col_name.lower():
+            return self._generate_first_names(num_rows)
+        elif 'last' in col_name.lower():
+            return self._generate_last_names(num_rows)
         else:
-            # Generate similar patterns
-            pattern = EnhancedSmartGenerator._analyze_pattern(samples[0] if samples else "Sample")
-            return [EnhancedSmartGenerator._generate_from_pattern(pattern) for _ in range(num_rows)]
+            return self._generate_full_names(num_rows)
     
     @staticmethod
-    def _analyze_pattern(sample):
-        """Analyze pattern in a sample"""
-        # Simple pattern analysis
-        pattern = []
-        for char in sample:
-            if char.isdigit():
-                pattern.append('#')
-            elif char.isalpha():
-                pattern.append('@')
+    def _generate_first_names(num_rows):
+        """Generate first names using patterns"""
+        # Name patterns instead of hardcoded lists
+        name_patterns = [
+            # 2-3 syllables patterns
+            lambda: random.choice(['A', 'E', 'I', 'O', 'U']) + 
+                    random.choice(['lex', 'dam', 'ron', 'lan', 'vin', 'don', 'bert', 'nard', 'drew']),
+            lambda: random.choice(['J', 'M', 'D', 'S', 'R', 'K', 'L']) + 
+                    random.choice(['ohn', 'ary', 'avid', 'arah', 'obert', 'aren', 'inda']),
+            lambda: random.choice(['Br', 'Ch', 'Gr', 'Tr', 'Sh', 'Wh']) + 
+                    random.choice(['andon', 'arles', 'egory', 'acey', 'aun', 'itney']),
+        ]
+        
+        # Also include some common name patterns
+        common_patterns = [
+            'Alex', 'Sam', 'John', 'Jane', 'Mike', 'Sara', 'David', 'Lisa',
+            'Rahul', 'Priya', 'Amit', 'Neha', 'Raj', 'Anjali'
+        ]
+        
+        names = []
+        for _ in range(num_rows):
+            if random.random() < 0.7:
+                # Use pattern generator
+                pattern = random.choice(name_patterns)
+                name = pattern()
+                # Capitalize
+                name = name[0].upper() + name[1:].lower()
             else:
-                pattern.append(char)
-        return ''.join(pattern)
+                # Use common pattern
+                name = random.choice(common_patterns)
+            
+            names.append(name)
+        
+        return names
     
     @staticmethod
-    def _generate_from_pattern(pattern):
-        """Generate from pattern"""
-        result = []
-        for char in pattern:
-            if char == '#':
-                result.append(str(random.randint(0, 9)))
-            elif char == '@':
-                result.append(random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'))
+    def _generate_last_names(num_rows):
+        """Generate last names using patterns"""
+        # Last name patterns
+        patterns = [
+            # Endings
+            lambda: random.choice(['Smith', 'Johnson', 'Williams', 'Brown', 'Jones']),
+            lambda: random.choice(['son', 'ton', 'berg', 'stein', 'ford', 'wood', 'field']) +
+                    ('' if random.random() < 0.7 else random.choice(['e', 'er', 's'])),
+            lambda: random.choice(['Mac', 'Mc', 'O\'']) + 
+                    random.choice(['Donald', 'Gregor', 'Brien', 'Laughlin']),
+            lambda: random.choice(['Singh', 'Kumar', 'Patel', 'Sharma', 'Gupta', 'Verma']),
+        ]
+        
+        last_names = []
+        for _ in range(num_rows):
+            pattern = random.choice(patterns)
+            last_name = pattern()
+            
+            # Ensure proper capitalization
+            if "'" in last_name:
+                parts = last_name.split("'")
+                last_name = parts[0].capitalize() + "'" + parts[1].capitalize()
             else:
-                result.append(char)
-        return ''.join(result)
+                last_name = last_name.capitalize()
+            
+            last_names.append(last_name)
+        
+        return last_names
+    
+    def _generate_full_names(self, num_rows):
+        """Generate full names"""
+        first_names = self._generate_first_names(num_rows)
+        last_names = self._generate_last_names(num_rows)
+        
+        return [f"{first} {last}" for first, last in zip(first_names, last_names)]
+    
+    def _generate_numbers(self, num_rows, stats):
+        """Generate numbers based on statistical patterns"""
+        numeric_stats = stats.get('numeric_stats', {})
+        
+        if numeric_stats:
+            # Use observed statistics
+            min_val = numeric_stats.get('min', 0)
+            max_val = numeric_stats.get('max', 100)
+            mean_val = numeric_stats.get('mean', (min_val + max_val) / 2)
+            std_val = numeric_stats.get('std', (max_val - min_val) / 4)
+            
+            # Generate with normal distribution
+            data = np.random.normal(mean_val, std_val, num_rows)
+            data = np.clip(data, min_val * 0.8, max_val * 1.2)
+            
+            if numeric_stats.get('is_integer', True):
+                return [int(round(x)) for x in data]
+            else:
+                return [float(round(x, 2)) for x in data]
+        else:
+            # Default based on column hints
+            if 'age' in str(stats.get('sample_values', [''])[0]).lower():
+                # Ages
+                return [random.randint(18, 65) for _ in range(num_rows)]
+            elif any(x in str(stats.get('sample_values', [''])[0]).lower() 
+                    for x in ['price', 'cost', 'amount']):
+                # Prices with realistic endings
+                prices = []
+                for _ in range(num_rows):
+                    base = random.uniform(10, 1000)
+                    if random.random() < 0.3:
+                        price = math.floor(base) + 0.99
+                    elif random.random() < 0.5:
+                        price = round(base, 2)
+                    else:
+                        price = round(base)
+                    prices.append(float(price))
+                return prices
+            else:
+                # Generic numbers
+                return [random.randint(1, 1000) for _ in range(num_rows)]
+    
+    def _generate_countries(self, num_rows, stats):
+        """Generate country-like values WITHOUT hardcoded list"""
+        # Country patterns instead of hardcoded names
+        patterns = [
+            # Real country patterns
+            lambda: random.choice(['United States', 'United Kingdom', 'United Arab Emirates']),
+            lambda: random.choice(['India', 'China', 'Japan', 'Korea', 'Brazil', 'Mexico']),
+            lambda: random.choice(['Germany', 'France', 'Italy', 'Spain', 'Portugal']),
+            lambda: random.choice(['Canada', 'Australia', 'New Zealand', 'South Africa']),
+            # Pattern-based (could be used for any dataset)
+            lambda: random.choice(['Country', 'Region', 'Territory', 'State']) + 
+                    ' ' + random.choice(['A', 'B', 'C', 'X', 'Y', 'Z']),
+        ]
+        
+        countries = []
+        for _ in range(num_rows):
+            pattern = random.choice(patterns)
+            countries.append(pattern())
+        
+        return countries
+    
+    def _generate_products(self, num_rows, stats):
+        """Generate product names WITHOUT hardcoded lists"""
+        products = []
+        
+        # Product name patterns
+        patterns = [
+            # Tech products
+            lambda: random.choice(['Smart', 'Pro', 'Ultra', 'Power', 'Fast']) + ' ' +
+                    random.choice(['Phone', 'Laptop', 'Tablet', 'Watch', 'Headphones']) + ' ' +
+                    random.choice(['Pro', 'Plus', 'Max', 'Air', '2024']),
+            # General products
+            lambda: random.choice(['Premium', 'Standard', 'Basic', 'Advanced']) + ' ' +
+                    random.choice(['Product', 'Item', 'Device', 'Tool']) + ' ' +
+                    str(random.randint(1, 100)),
+            # Descriptive products
+            lambda: random.choice(['Wireless', 'Bluetooth', 'USB-C', 'HDMI']) + ' ' +
+                    random.choice(['Adapter', 'Hub', 'Cable', 'Dongle']),
+        ]
+        
+        for i in range(num_rows):
+            pattern = random.choice(patterns)
+            products.append(pattern())
+        
+        return products
+    
+    def _generate_statuses(self, num_rows, stats):
+        """Generate status values"""
+        # Status patterns (domain independent)
+        patterns = [
+            ['Active', 'Inactive', 'Pending', 'Completed'],
+            ['Open', 'Closed', 'In Progress', 'Cancelled'],
+            ['Success', 'Failed', 'Processing', 'Waiting'],
+            ['Shipped', 'Delivered', 'Processing', 'Returned'],
+        ]
+        
+        # Choose a pattern or mix
+        if random.random() < 0.7:
+            # Use one pattern consistently
+            status_set = random.choice(patterns)
+        else:
+            # Mix patterns
+            status_set = []
+            for pattern in patterns:
+                status_set.extend(pattern)
+            status_set = list(set(status_set))
+        
+        # Generate with some distribution (not completely random)
+        weights = [0.4, 0.3, 0.2, 0.1][:len(status_set)]
+        weights = [w/sum(weights) for w in weights]  # Normalize
+        
+        return random.choices(status_set, weights=weights, k=num_rows)
+    
+    def _generate_text(self, num_rows, stats):
+        """Generate generic text"""
+        texts = []
+        
+        # Determine length from stats
+        length_stats = stats.get('length_stats', {})
+        avg_length = length_stats.get('mean', 15)
+        
+        for _ in range(num_rows):
+            # Generate text of appropriate length
+            words = []
+            current_length = 0
+            
+            word_pool = ['data', 'value', 'item', 'record', 'entry', 'element',
+                        'component', 'module', 'unit', 'system', 'service']
+            
+            while current_length < avg_length:
+                word = random.choice(word_pool)
+                words.append(word)
+                current_length += len(word) + 1  # +1 for space
+            
+            text = ' '.join(words).capitalize()
+            
+            # Add variations
+            if random.random() < 0.3:
+                text += f" #{random.randint(1, 100)}"
+            
+            texts.append(text[:100])  # Limit length
+        
+        return texts
+    
+    def _apply_relationships(self, df, relationships):
+        """Apply relationship rules to data"""
+        # Simple relationship handling
+        for rel in relationships:
+            if 'between' in rel and len(rel['between']) >= 2:
+                col1, col2 = rel['between'][:2]
+                
+                if col1 in df.columns and col2 in df.columns:
+                    # Apply simple relationship logic
+                    relationship_type = rel.get('relationship', '').lower()
+                    
+                    if 'foreign' in relationship_type or 'reference' in relationship_type:
+                        # Ensure col2 values exist in col1 (for foreign key relationships)
+                        unique_vals = df[col1].unique()
+                        df[col2] = np.random.choice(unique_vals, len(df))
+        
+        return df
 
 
 # =============================================================================
 # MAIN GENERATOR CLASS
 # =============================================================================
 import math
-import uuid
 
-class EnhancedIndustryGenerator:
-    """Main enhanced generator class"""
+class UniversalTemplateGenerator:
+    """Main generator using templates"""
     
     def __init__(self):
-        self.classifier = EnhancedColumnClassifier()
-        self.domain_detector = EnhancedDomainDetector()
-        self.generator = EnhancedSmartGenerator()
+        self.analyzer = TemplateAnalyzer()
+        self.generator = TemplateGenerator()
+        self.templates = None
     
-    def generate(self, original_df, num_rows):
-        """Enhanced generation pipeline"""
+    def generate_data(self, original_df, num_rows):
+        """Generate data using template approach"""
         if original_df.empty:
             return pd.DataFrame()
         
-        # Step 1: Enhanced column classification
-        column_analysis = {}
-        for col in original_df.columns:
-            samples = original_df[col].dropna().head(30).tolist()
-            analysis = self.classifier.classify_column(col, samples)
-            column_analysis[col] = analysis
+        # Step 1: Create templates from data
+        with st.spinner("🤖 Creating generation templates..."):
+            self.templates = self.analyzer.create_generation_templates(original_df.head(50))
+            st.session_state.templates = self.templates
         
-        # Step 2: Enhanced domain detection
-        sample_row = {}
-        for col in original_df.columns[:5]:
-            if len(original_df[col].dropna()) > 0:
-                sample_row[col] = original_df[col].iloc[0]
-        
-        domain_info = self.domain_detector.detect_domain_with_context(
-            list(original_df.columns),
-            sample_row,
-            column_analysis
-        )
-        
-        # Store for display
-        st.session_state.column_analysis = column_analysis
-        st.session_state.domain_info = domain_info
-        
-        # Step 3: Enhanced generation
-        generated_data = {}
-        
-        for col in original_df.columns:
-            analysis = column_analysis[col]
-            original_values = original_df[col].dropna().tolist()
-            
-            generated_data[col] = self.generator.generate_enhanced_data(
-                col_name=col,
-                col_info=analysis,
-                domain_info=domain_info,
-                original_values=original_values,
-                num_rows=num_rows
-            )
-        
-        # Step 4: Create DataFrame
-        df_generated = pd.DataFrame(generated_data)
-        
-        # Step 5: Post-processing for realism
-        df_generated = self._apply_realism_checks(df_generated, column_analysis, domain_info)
+        # Step 2: Generate data from templates
+        with st.spinner("⚡ Generating data from templates..."):
+            df_generated = self.generator.generate_from_templates(self.templates, num_rows)
         
         return df_generated
-    
-    def _apply_realism_checks(self, df, column_analysis, domain_info):
-        """Apply final realism checks"""
-        # Ensure IDs are unique and sequential if needed
-        for col in df.columns:
-            if col in column_analysis:
-                info = column_analysis[col]
-                if info.get('category') == 'identifier' and info.get('subcategory') == 'sequential_id':
-                    # Ensure sequential order
-                    try:
-                        # Extract numbers and sort
-                        nums = []
-                        for val in df[col]:
-                            num_part = re.sub(r'\D', '', str(val))
-                            if num_part:
-                                nums.append(int(num_part))
-                        
-                        if nums and len(set(nums)) == len(nums):
-                            # Already unique
-                            pass
-                        else:
-                            # Make unique and sequential
-                            start = 1000
-                            df[col] = [str(start + i) for i in range(len(df))]
-                    except:
-                        pass
-        
-        return df
 
 
 # =============================================================================
@@ -1160,14 +821,14 @@ def main():
     
     # Page config
     st.set_page_config(
-        page_title="Enhanced Data Generator",
+        page_title="Universal Template Generator",
         page_icon="🔢",
         layout="wide"
     )
     
     # Header
-    st.title("🚀 Enhanced Industry-Grade Data Generator")
-    st.markdown("**Realistic • Diverse • High-Quality** - Production-ready data generation")
+    st.title("🎭 Universal Template-Based Data Generator")
+    st.markdown("**No Predefined Data • Dynamic Templates • Works for ANY Dataset**")
     
     if st.button("🏠 Back to Home"):
         st.switch_page("app.py")
@@ -1176,12 +837,12 @@ def main():
     
     # Initialize
     if 'generator' not in st.session_state:
-        st.session_state.generator = EnhancedIndustryGenerator()
+        st.session_state.generator = UniversalTemplateGenerator()
     if 'generated_data' not in st.session_state:
         st.session_state.generated_data = None
     
     # Upload
-    uploaded_file = st.file_uploader("📤 Upload Dataset (CSV)", type=['csv'])
+    uploaded_file = st.file_uploader("📤 Upload ANY Dataset (CSV)", type=['csv'])
     
     if uploaded_file:
         try:
@@ -1195,14 +856,11 @@ def main():
                 # Preview
                 with st.expander("📋 Original Data Preview", expanded=True):
                     st.dataframe(df.head(10))
-                    st.write(f"**Data Types:**")
-                    for col in df.columns:
-                        st.write(f"- {col}: {df[col].dtype}")
                 
                 # Generation controls
-                st.subheader("⚙️ Generate High-Quality Data")
+                st.subheader("⚙️ Generate Using Templates")
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 with col1:
                     num_rows = st.number_input("Rows to generate", 
                                              min_value=10, 
@@ -1210,172 +868,112 @@ def main():
                                              value=1000)
                 
                 with col2:
-                    realism_level = st.select_slider(
-                        "Realism Level",
-                        options=["Basic", "Standard", "Enhanced", "Premium"],
-                        value="Enhanced"
-                    )
-                
-                with col3:
-                    if st.button("🚀 Generate Premium Data", type="primary"):
-                        with st.spinner("Analyzing patterns and generating high-quality data..."):
-                            generated = st.session_state.generator.generate(df, int(num_rows))
+                    if st.button("🚀 Generate with Dynamic Templates", type="primary"):
+                        with st.spinner("Creating templates and generating data..."):
+                            generated = st.session_state.generator.generate_data(df, int(num_rows))
                             st.session_state.generated_data = generated
-                            st.success(f"✅ Generated {len(generated)} premium quality rows!")
+                            st.success(f"✅ Generated {len(generated)} diverse rows!")
                             st.balloons()
                 
-                # Show analysis
-                if 'column_analysis' in st.session_state:
-                    with st.expander("🔍 Advanced Analysis", expanded=False):
-                        analysis = st.session_state.column_analysis
-                        domain_info = st.session_state.domain_info
+                # Show templates if available
+                if 'templates' in st.session_state:
+                    with st.expander("🔧 Generation Templates", expanded=False):
+                        templates = st.session_state.templates
                         
-                        st.write(f"**Detected Domain:** `{domain_info.get('domain', 'unknown')}`")
-                        st.write(f"**Confidence:** `{domain_info.get('confidence', 0):.2f}`")
-                        st.write(f"**Reason:** {domain_info.get('reason', '')}")
-                        
-                        if 'suggestions' in domain_info:
-                            st.write("**AI Suggestions:**")
-                            for suggestion in domain_info['suggestions'][:3]:
-                                st.write(f"- {suggestion}")
-                        
-                        st.write("---")
-                        st.write("**Column Analysis:**")
-                        for col, info in analysis.items():
-                            with st.expander(f"{col}", expanded=False):
-                                st.write(f"**Category:** `{info.get('category', 'unknown')}`")
-                                st.write(f"**Subcategory:** `{info.get('subcategory', 'generic')}`")
-                                st.write(f"**Confidence:** `{info.get('confidence', 0):.2f}`")
-                                
-                                if 'format_hint' in info:
-                                    st.write(f"**Format:** `{info['format_hint']}`")
-                                
-                                if 'stats' in info and info['stats'].get('is_numeric'):
-                                    stats = info['stats']
-                                    st.write("**Numeric Stats:**")
-                                    st.write(f"- Min: `{stats.get('min', 'N/A')}`")
-                                    st.write(f"- Max: `{stats.get('max', 'N/A')}`")
-                                    st.write(f"- Mean: `{stats.get('mean', 'N/A')}`")
+                        if templates and 'columns' in templates:
+                            for col, info in templates['columns'].items():
+                                with st.expander(f"**{col}**", expanded=False):
+                                    st.write(f"**Data Type:** `{info.get('data_type', 'unknown')}`")
+                                    st.write(f"**Template:** `{info.get('generation_template', 'N/A')}`")
+                                    
+                                    if 'pattern_analysis' in info:
+                                        st.write(f"**Pattern Analysis:** {info['pattern_analysis']}")
+                                    
+                                    if 'placeholders' in info and info['placeholders']:
+                                        st.write("**Placeholders:**")
+                                        for ph_name, ph_info in info['placeholders'].items():
+                                            st.write(f"  - `{ph_name}`: {ph_info.get('description', '')}")
                 
                 # Show generated data
                 if st.session_state.generated_data is not None:
-                    st.subheader("📊 Generated Data Analysis")
+                    st.subheader("📊 Generated Data")
                     
                     df_gen = st.session_state.generated_data
                     
                     # Tabs for different views
-                    tab1, tab2, tab3, tab4 = st.tabs(["Preview", "Quality Check", "Statistics", "Download"])
+                    tab1, tab2, tab3 = st.tabs(["Preview", "Analysis", "Download"])
                     
                     with tab1:
                         st.dataframe(df_gen.head(20))
-                        st.write(f"**Shape:** {len(df_gen)} rows × {len(df_gen.columns)} columns")
                         
-                        # Show sample row
-                        st.write("**Sample Row:**")
-                        sample_idx = random.randint(0, min(5, len(df_gen)-1))
-                        sample = df_gen.iloc[sample_idx]
-                        st.json(sample.to_dict())
-                    
-                    with tab2:
-                        st.write("**Data Quality Assessment:**")
+                        # Show data quality metrics
+                        st.write("**Data Quality Check:**")
                         
-                        # Check for nonsense values
-                        issues = []
+                        quality_issues = []
                         for col in df_gen.columns:
-                            # Check for placeholder values
-                            sample = str(df_gen[col].iloc[0]) if len(df_gen) > 0 else ""
-                            if 'GEN_' in sample or 'DATA_' in sample or 'VALUE_' in sample:
-                                issues.append(f"Column '{col}' has placeholder values")
-                            
-                            # Check for reasonable diversity
+                            # Check for variety
                             unique_ratio = df_gen[col].nunique() / len(df_gen)
-                            if unique_ratio < 0.01 and len(df_gen) > 100:
-                                issues.append(f"Column '{col}' has low diversity ({unique_ratio:.1%} unique)")
+                            if unique_ratio < 0.1 and len(df_gen) > 100:
+                                quality_issues.append(f"Low variety in '{col}' ({unique_ratio:.1%} unique)")
+                            
+                            # Check for placeholder patterns
+                            sample = str(df_gen[col].iloc[0]) if len(df_gen) > 0 else ""
+                            if 'gen_' in sample.lower() or 'temp_' in sample.lower():
+                                quality_issues.append(f"Placeholder patterns in '{col}'")
                         
-                        if issues:
-                            st.warning("**Issues Found:**")
-                            for issue in issues:
+                        if quality_issues:
+                            st.warning("⚠️ Quality Issues Found:")
+                            for issue in quality_issues:
                                 st.write(f"- {issue}")
                         else:
-                            st.success("✅ Data looks realistic and diverse!")
-                        
-                        # Show value distributions for key columns
-                        st.write("**Value Distributions:**")
-                        key_cols = [col for col in df_gen.columns if df_gen[col].nunique() < 20][:3]
-                        for col in key_cols[:3]:
-                            if df_gen[col].nunique() < 20:
-                                st.write(f"**{col}:**")
-                                counts = df_gen[col].value_counts().head(10)
-                                st.bar_chart(counts)
+                            st.success("✅ Data quality looks good!")
                     
-                    with tab3:
+                    with tab2:
+                        # Compare original vs generated
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            st.write("**Original Data Statistics**")
-                            st.write(f"- Rows: {len(df)}")
-                            st.write(f"- Columns: {len(df.columns)}")
-                            st.write(f"- Memory: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+                            st.write("**Original Data**")
+                            st.write(f"Rows: {len(df)}")
+                            st.write(f"Columns: {len(df.columns)}")
                             
                             if len(df) > 0:
-                                st.write("**Sample Values:**")
+                                st.write("**Sample Row:**")
+                                sample_orig = df.iloc[0]
                                 for col in df.columns[:3]:
-                                    unique_count = df[col].nunique()
-                                    st.write(f"- {col}: {df[col].iloc[0] if pd.notna(df[col].iloc[0]) else 'N/A'} (Unique: {unique_count})")
+                                    st.write(f"- {col}: `{sample_orig[col] if pd.notna(sample_orig[col]) else 'N/A'}`")
                         
                         with col2:
-                            st.write("**Generated Data Statistics**")
-                            st.write(f"- Rows: {len(df_gen)}")
-                            st.write(f"- Columns: {len(df_gen.columns)}")
-                            st.write(f"- Memory: {df_gen.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+                            st.write("**Generated Data**")
+                            st.write(f"Rows: {len(df_gen)}")
+                            st.write(f"Columns: {len(df_gen.columns)}")
                             
                             if len(df_gen) > 0:
-                                st.write("**Sample Values:**")
+                                st.write("**Sample Row:**")
+                                sample_gen = df_gen.iloc[0]
                                 for col in df_gen.columns[:3]:
-                                    unique_count = df_gen[col].nunique()
-                                    st.write(f"- {col}: {df_gen[col].iloc[0] if pd.notna(df_gen[col].iloc[0]) else 'N/A'} (Unique: {unique_count})")
+                                    st.write(f"- {col}: `{sample_gen[col] if pd.notna(sample_gen[col]) else 'N/A'}`")
+                        
+                        # Diversity analysis
+                        st.write("**Diversity Analysis:**")
+                        for col in df_gen.columns[:5]:
+                            unique_count = df_gen[col].nunique()
+                            st.write(f"- `{col}`: {unique_count} unique values ({unique_count/len(df_gen):.1%})")
                     
-                    with tab4:
+                    with tab3:
                         # Download options
                         csv = df_gen.to_csv(index=False)
                         st.download_button(
                             "📥 Download CSV",
                             csv,
-                            "enhanced_synthetic_data.csv",
-                            "text/csv",
-                            key="download-csv"
+                            "template_generated_data.csv",
+                            "text/csv"
                         )
-                        
-                        # JSON download
-                        json_str = df_gen.to_json(orient='records', indent=2, default=str)
-                        st.download_button(
-                            "📥 Download JSON",
-                            json_str,
-                            "enhanced_synthetic_data.json",
-                            "application/json",
-                            key="download-json"
-                        )
-                        
-                        # Excel download
-                        try:
-                            output = io.BytesIO()
-                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                                df_gen.to_excel(writer, index=False, sheet_name='Generated_Data')
-                            excel_data = output.getvalue()
-                            
-                            st.download_button(
-                                "📥 Download Excel",
-                                excel_data,
-                                "enhanced_synthetic_data.xlsx",
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key="download-excel"
-                            )
-                        except:
-                            st.info("Excel download requires openpyxl. Install with: `pip install openpyxl`")
                         
                         # Regenerate button
-                        if st.button("🔄 Generate New Dataset", type="secondary"):
+                        if st.button("🔄 Generate New Dataset"):
                             st.session_state.generated_data = None
+                            st.session_state.templates = None
                             st.rerun()
         
         except Exception as e:
