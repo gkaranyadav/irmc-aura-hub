@@ -1,4 +1,4 @@
-# pages/6_🔢_Synthetic_Data_Generator.py - FIXED VERSION
+# pages/6_🔢_Synthetic_Data_Generator.py - ENHANCED PROMPT VERSION
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,177 +10,275 @@ from collections import defaultdict, Counter
 import hashlib
 
 # =============================================================================
-# RULE DISCOVERY ENGINE (USING GROQ)
+# ENHANCED RULE DISCOVERY ENGINE
 # =============================================================================
 
-class RuleDiscoveryEngine:
-    """Discovers rules from ANY dataset using Groq - NO HARDCODING"""
+class EnhancedRuleDiscoveryEngine:
+    """Enhanced rule discovery with better prompting"""
     
     def __init__(self, api_key: str):
         self.api_key = api_key
     
     def discover_rules(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Discover ALL rules from ANY dataset
-        Returns structured rules that can be applied
+        Enhanced rule discovery with improved prompting
         """
         try:
             from groq import Groq
             client = Groq(api_key=self.api_key)
             
-            # Prepare data sample (limit to avoid token limits)
-            sample_size = min(15, len(df))
+            # Prepare data sample
+            sample_size = min(20, len(df))
             sample_df = df.sample(sample_size, random_state=42) if len(df) > sample_size else df
             
-            # Build intelligent prompt
-            prompt = self._build_discovery_prompt(df, sample_df)
+            # Get column relationship analysis FIRST
+            relationship_analysis = self._analyze_relationships_statistically(df)
+            
+            # Build ENHANCED prompt
+            prompt = self._build_enhanced_prompt(df, sample_df, relationship_analysis)
             
             # Get analysis from Groq
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": """You are a data pattern detection expert. 
-                     Analyze ANY dataset and discover ALL rules, patterns, and relationships.
+                    {"role": "system", "content": """You are an EXPERT data pattern detective. 
+                     Your ONLY job is to find EXACT relationships between columns.
+                     Be METICULOUS - find EVERY relationship.
                      Return ONLY valid JSON."""},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
-                max_tokens=3000,
+                max_tokens=4000,
                 response_format={"type": "json_object"}
             )
             
             # Parse response
             raw_rules = json.loads(response.choices[0].message.content)
             
-            # Structure and validate rules
-            structured_rules = self._structure_rules(raw_rules, df)
+            # Structure and ENHANCE rules with statistical validation
+            structured_rules = self._structure_and_enhance_rules(raw_rules, df, relationship_analysis)
             
             return structured_rules
             
         except Exception as e:
             st.error(f"Rule discovery failed: {e}")
-            # Fallback to statistical rule discovery
-            return self._discover_rules_statistically(df)
+            return self._discover_rules_statistically_enhanced(df)
     
-    def _build_discovery_prompt(self, df: pd.DataFrame, sample_df: pd.DataFrame) -> str:
-        """Build prompt for rule discovery"""
-        return f"""ANALYZE THIS DATASET AND DISCOVER ALL RULES:
+    def _analyze_relationships_statistically(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Statistical analysis to help LLM"""
+        relationships = {
+            "strong_mappings": [],
+            "value_constraints": {},
+            "pattern_detection": {}
+        }
+        
+        # Find strong column relationships
+        for i, col1 in enumerate(df.columns):
+            for col2 in df.columns[i+1:]:
+                # Calculate relationship strength
+                unique_pairs = df[[col1, col2]].drop_duplicates()
+                pair_count = len(unique_pairs)
+                total_possible = df[col1].nunique() * df[col2].nunique()
+                
+                if pair_count > 0 and pair_count < total_possible * 0.5:
+                    # Strong relationship detected
+                    relationship_strength = 1 - (pair_count / total_possible)
+                    
+                    if relationship_strength > 0.7:  # Very strong
+                        relationships["strong_mappings"].append({
+                            "columns": [col1, col2],
+                            "unique_pairs": pair_count,
+                            "strength": relationship_strength,
+                            "examples": unique_pairs.head(3).to_dict('records')
+                        })
+        
+        # Analyze value constraints
+        for col in df.columns:
+            unique_count = df[col].nunique()
+            total = len(df)
+            
+            if unique_count < min(10, total * 0.3):
+                # Likely categorical with constraints
+                relationships["value_constraints"][col] = {
+                    "type": "categorical",
+                    "unique_values": df[col].dropna().unique().tolist(),
+                    "value_counts": df[col].value_counts().to_dict()
+                }
+            elif pd.api.types.is_numeric_dtype(df[col]):
+                relationships["value_constraints"][col] = {
+                    "type": "numeric",
+                    "min": float(df[col].min()),
+                    "max": float(df[col].max()),
+                    "mean": float(df[col].mean())
+                }
+        
+        return relationships
+    
+    def _build_enhanced_prompt(self, df: pd.DataFrame, sample_df: pd.DataFrame, stats: Dict) -> str:
+        """Build ENHANCED prompt for better rule discovery"""
+        
+        # Create relationship hints from statistical analysis
+        relationship_hints = ""
+        if stats["strong_mappings"]:
+            relationship_hints = "STATISTICAL HINTS (high confidence relationships):\n"
+            for mapping in stats["strong_mappings"][:5]:  # Top 5
+                cols = mapping["columns"]
+                examples = mapping.get("examples", [])
+                relationship_hints += f"- Columns {cols[0]} ↔ {cols[1]}: {len(examples)} example mappings\n"
+                for ex in examples[:2]:
+                    relationship_hints += f"  * {cols[0]}={ex.get(cols[0])} → {cols[1]}={ex.get(cols[1])}\n"
+        
+        return f"""CRITICAL DATA ANALYSIS TASK - FIND EVERY RELATIONSHIP
 
-DATASET INFO:
-- Total rows: {len(df)}
-- Columns ({len(df.columns)}): {list(df.columns)}
+I need you to analyze this dataset METICULOUSLY and find EXACTLY how columns relate to each other.
 
-COLUMN TYPES (auto-detected):
-{self._get_column_types_summary(df)}
+DATASET OVERVIEW:
+- Rows: {len(df)}
+- Columns: {list(df.columns)}
 
-SAMPLE DATA ({len(sample_df)} random rows):
+{relationship_hints}
+
+COLUMN DETAILS:
+{self._get_detailed_column_analysis(df)}
+
+DATA SAMPLE ({len(sample_df)} random rows for pattern analysis):
 {sample_df.to_string(index=False)}
 
-DISCOVER THESE TYPES OF RULES:
+YOUR MISSION - FIND THESE RELATIONSHIPS:
 
-1. VALUE MAPPINGS (column A → column B):
-   - Which values in one column map to specific values in another column?
-   - Example: In row 1, "Cardiology" maps to "Dr. Sharma"
+1. **EXACT VALUE MAPPINGS** (MOST IMPORTANT):
+   For EVERY column pair where values map exactly:
+   - When column A has value X, column B ALWAYS has value Y
+   - Example: When "Department" = "Cardiology", "Doctor" ALWAYS = "Dr. Sharma"
+   
+   Format each mapping as:
+   {{
+     "from_column": "Department",
+     "from_value": "Cardiology", 
+     "to_column": "Doctor",
+     "to_value": "Dr. Sharma",
+     "confidence": "exact"  # or "strong" or "partial"
+   }}
 
-2. VALUE CONSTRAINTS (per column):
-   - What values are allowed/possible for each column?
-   - Example: "Gender" only has ["M", "F"]
+2. **COMPLETE VALUE CONSTRAINTS**:
+   For EACH column, list ALL possible values or valid ranges:
+   - Categorical: ["M", "F"], ["Completed", "Cancelled", "No-Show"]
+   - Numeric: min=0, max=120
+   - Patterns: phone=10 digits, id=starts with letters
+   
+3. **LOGICAL RULES**:
+   Business logic that MUST be followed:
+   - "IF Symptom contains 'Chest' THEN Department must be 'Cardiology'"
+   - "Age must be between 0 and 120"
+   - "Phone numbers must be exactly 10 digits"
 
-3. FORMAT PATTERNS:
-   - What patterns do values follow? (dates, IDs, phones, emails)
-   - Example: "Phone" is always 10 digits
+4. **UNIQUENESS RULES**:
+   Which columns should have unique values?
+   - "PatientID must be unique"
+   - "AppointmentID must be unique"
 
-4. LOGICAL RELATIONSHIPS:
-   - IF-THEN rules between columns
-   - Example: IF Symptom="Chest Pain" THEN Department="Cardiology"
+CRITICAL INSTRUCTIONS:
+1. Be EXHAUSTIVE - find EVERY relationship
+2. Be PRECISE - exact values, not approximations
+3. Check CONSISTENCY - if a mapping appears multiple times, it's a rule
+4. Validate EVERYTHING - only include rules that are 100% consistent in the sample
 
-5. UNIQUENESS & FREQUENCY:
-   - Which columns should be unique?
-   - What's the frequency distribution?
-
-RETURN JSON WITH THIS STRUCTURE:
+RETURN COMPREHENSIVE JSON with this structure:
 {{
-  "dataset_summary": "Brief description of dataset type",
+  "dataset_summary": "brief description",
   "value_mappings": [
+    // LIST EVERY EXACT MAPPING YOU FIND
     {{
       "from_column": "column_name",
-      "from_value": "specific_value",
-      "to_column": "other_column", 
-      "to_value": "mapped_value"
+      "from_value": "exact_value",
+      "to_column": "other_column",
+      "to_value": "exact_mapped_value",
+      "confidence": "exact/strong/partial"
     }}
   ],
   "value_constraints": {{
     "column_name": {{
-      "type": "categorical/numeric/date/text",
-      "allowed_values": ["list", "of", "values"],
+      "type": "categorical/numeric/date/text/id",
+      "allowed_values": ["complete", "list", "of", "ALL", "values"],
       "min": 0,
       "max": 100,
-      "pattern": "regex_pattern"
+      "pattern": "regex if applicable",
+      "description": "constraint description"
     }}
   }},
   "logical_rules": [
-    "IF column1='value1' THEN column2='value2'",
-    "column3 values must match column4 pattern"
+    "clear business rules that must be followed"
   ],
-  "uniqueness_constraints": ["column1", "column2"],
-  "discovery_confidence": {{
-    "mappings_confidence": "high/medium/low",
-    "constraints_confidence": "high/medium/low"
-  }}
+  "uniqueness_constraints": ["columns that should be unique"],
+  "analysis_notes": "what you focused on and why"
 }}
 
-Be SPECIFIC and PRECISE. Only include rules you are confident about."""
+IMPORTANT: Your analysis will be used to generate new data. If you miss a mapping, 
+the generated data will be WRONG. Be THOROUGH."""
     
-    def _get_column_types_summary(self, df: pd.DataFrame) -> str:
-        """Auto-detect column types"""
-        summary = []
+    def _get_detailed_column_analysis(self, df: pd.DataFrame) -> str:
+        """Get detailed column analysis for prompt"""
+        analysis = []
+        
         for col in df.columns:
             dtype = str(df[col].dtype)
             unique_count = df[col].nunique()
-            sample = df[col].dropna().iloc[0] if len(df[col].dropna()) > 0 else "N/A"
+            null_count = df[col].isnull().sum()
+            sample_values = df[col].dropna().unique()[:5].tolist()
             
-            if pd.api.types.is_numeric_dtype(df[col]):
-                col_type = "numeric"
-            elif 'date' in col.lower() or self._looks_like_date(str(sample)):
-                col_type = "date"
-            elif unique_count < 10:
-                col_type = "categorical"
-            else:
-                col_type = "text"
+            col_analysis = f"""
+[{col}]
+- Type: {dtype}
+- Unique values: {unique_count} ({unique_count/len(df)*100:.1f}% of rows)
+- Null values: {null_count}
+- Sample: {sample_values}
+"""
             
-            summary.append(f"- {col}: {col_type} ({dtype}), {unique_count} unique values")
+            # Add value distribution for categorical
+            if unique_count < 10 and unique_count > 0:
+                value_counts = df[col].value_counts().to_dict()
+                col_analysis += f"- Value distribution: {value_counts}\n"
+            
+            # Detect potential ID columns
+            if 'id' in col.lower() or unique_count == len(df):
+                col_analysis += "- LIKELY IDENTIFIER (should be unique)\n"
+            
+            # Detect potential categories
+            if unique_count < 20 and unique_count > 1:
+                col_analysis += "- LIKELY CATEGORICAL\n"
+            
+            analysis.append(col_analysis)
         
-        return "\n".join(summary)
+        return "\n".join(analysis)
     
-    def _looks_like_date(self, value: str) -> bool:
-        """Check if value looks like a date"""
-        date_patterns = [r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}', r'\d{4}[-/]\d{1,2}[-/]\d{1,2}']
-        for pattern in date_patterns:
-            if re.match(pattern, str(value)):
-                return True
-        return False
-    
-    def _structure_rules(self, raw_rules: Dict, df: pd.DataFrame) -> Dict[str, Any]:
-        """Structure and validate discovered rules"""
+    def _structure_and_enhance_rules(self, raw_rules: Dict, df: pd.DataFrame, stats: Dict) -> Dict[str, Any]:
+        """Structure rules and ENHANCE with statistical validation"""
         structured = {
             "value_mappings": [],
             "value_constraints": {},
             "logical_rules": [],
             "uniqueness_constraints": [],
             "dataset_summary": raw_rules.get("dataset_summary", ""),
-            "confidence": raw_rules.get("discovery_confidence", {})
+            "analysis_notes": raw_rules.get("analysis_notes", "")
         }
         
-        # Process value mappings
-        for mapping in raw_rules.get("value_mappings", []):
-            if all(k in mapping for k in ["from_column", "from_value", "to_column", "to_value"]):
-                if mapping["from_column"] in df.columns and mapping["to_column"] in df.columns:
-                    structured["value_mappings"].append(mapping)
+        # Process value mappings from LLM
+        llm_mappings = self._process_llm_mappings(raw_rules.get("value_mappings", []), df)
         
-        # Process value constraints
+        # ENHANCE with statistical mappings
+        statistical_mappings = self._extract_statistical_mappings(df, stats)
+        
+        # Combine and deduplicate
+        all_mappings = self._combine_and_validate_mappings(llm_mappings, statistical_mappings, df)
+        structured["value_mappings"] = all_mappings
+        
+        # Process constraints
         for col, constraints in raw_rules.get("value_constraints", {}).items():
             if col in df.columns:
                 structured["value_constraints"][col] = constraints
+        
+        # ENHANCE constraints with statistical data
+        self._enhance_constraints(structured, df)
         
         # Process logical rules
         for rule in raw_rules.get("logical_rules", []):
@@ -192,38 +290,166 @@ Be SPECIFIC and PRECISE. Only include rules you are confident about."""
             if col in df.columns:
                 structured["uniqueness_constraints"].append(col)
         
-        # Add statistical constraints for columns without LLM constraints
-        self._add_statistical_constraints(structured, df)
+        # Add auto-detected uniqueness (IDs, etc.)
+        self._add_auto_uniqueness(structured, df)
         
         return structured
     
-    def _add_statistical_constraints(self, rules: Dict, df: pd.DataFrame):
-        """Add statistical constraints for columns without LLM rules"""
+    def _process_llm_mappings(self, mappings: List, df: pd.DataFrame) -> List[Dict]:
+        """Process and validate LLM mappings"""
+        valid_mappings = []
+        
+        for mapping in mappings:
+            if not isinstance(mapping, dict):
+                continue
+            
+            # Check required fields
+            required = ["from_column", "from_value", "to_column", "to_value"]
+            if not all(k in mapping for k in required):
+                continue
+            
+            from_col = mapping["from_column"]
+            to_col = mapping["to_column"]
+            
+            # Validate columns exist
+            if from_col not in df.columns or to_col not in df.columns:
+                continue
+            
+            # Validate mapping exists in data
+            from_val = str(mapping["from_value"])
+            to_val = str(mapping["to_value"])
+            
+            # Check if this exact mapping exists in original data
+            matching_rows = df[
+                (df[from_col].astype(str) == from_val) & 
+                (df[to_col].astype(str) == to_val)
+            ]
+            
+            if len(matching_rows) > 0:
+                # Also check if there are any violations
+                violating_rows = df[
+                    (df[from_col].astype(str) == from_val) & 
+                    (df[to_col].astype(str) != to_val)
+                ]
+                
+                confidence = "exact" if len(violating_rows) == 0 else "partial"
+                
+                valid_mappings.append({
+                    "from_column": from_col,
+                    "from_value": from_val,
+                    "to_column": to_col,
+                    "to_value": to_val,
+                    "confidence": confidence,
+                    "support_count": len(matching_rows),
+                    "violation_count": len(violating_rows)
+                })
+        
+        return valid_mappings
+    
+    def _extract_statistical_mappings(self, df: pd.DataFrame, stats: Dict) -> List[Dict]:
+        """Extract mappings from statistical analysis"""
+        mappings = []
+        
+        # Look for exact mappings
+        for i, col1 in enumerate(df.columns):
+            for col2 in df.columns[i+1:]:
+                # Get unique value pairs
+                value_pairs = defaultdict(set)
+                
+                for _, row in df.iterrows():
+                    val1 = str(row[col1])
+                    val2 = str(row[col2])
+                    value_pairs[val1].add(val2)
+                
+                # Check for exact mappings (one-to-one)
+                for val1, val2_set in value_pairs.items():
+                    if len(val2_set) == 1:
+                        val2 = next(iter(val2_set))
+                        
+                        # Count occurrences
+                        count = len(df[
+                            (df[col1].astype(str) == val1) & 
+                            (df[col2].astype(str) == val2)
+                        ])
+                        
+                        mappings.append({
+                            "from_column": col1,
+                            "from_value": val1,
+                            "to_column": col2,
+                            "to_value": val2,
+                            "confidence": "exact",
+                            "support_count": count,
+                            "violation_count": 0
+                        })
+        
+        return mappings
+    
+    def _combine_and_validate_mappings(self, llm_mappings: List, stat_mappings: List, df: pd.DataFrame) -> List[Dict]:
+        """Combine and validate all mappings"""
+        all_mappings = []
+        seen = set()
+        
+        # Add statistical mappings first (more reliable)
+        for mapping in stat_mappings:
+            key = f"{mapping['from_column']}={mapping['from_value']}→{mapping['to_column']}"
+            if key not in seen:
+                all_mappings.append(mapping)
+                seen.add(key)
+        
+        # Add LLM mappings that don't conflict
+        for mapping in llm_mappings:
+            key = f"{mapping['from_column']}={mapping['from_value']}→{mapping['to_column']}"
+            
+            if key not in seen:
+                # Check if this conflicts with existing mapping
+                conflicting = False
+                for existing in all_mappings:
+                    if (existing["from_column"] == mapping["from_column"] and
+                        existing["from_value"] == mapping["from_value"] and
+                        existing["to_column"] == mapping["to_column"] and
+                        existing["to_value"] != mapping["to_value"]):
+                        conflicting = True
+                        break
+                
+                if not conflicting:
+                    all_mappings.append(mapping)
+                    seen.add(key)
+        
+        return all_mappings
+    
+    def _enhance_constraints(self, rules: Dict, df: pd.DataFrame):
+        """Enhance constraints with statistical data"""
         for col in df.columns:
             if col not in rules["value_constraints"]:
-                constraints = {"type": "unknown"}
-                
+                # Add auto-detected constraint
                 if pd.api.types.is_numeric_dtype(df[col]):
-                    constraints.update({
+                    rules["value_constraints"][col] = {
                         "type": "numeric",
                         "min": float(df[col].min()),
                         "max": float(df[col].max()),
-                        "mean": float(df[col].mean())
-                    })
-                elif df[col].nunique() < min(20, len(df) * 0.5):
-                    # Treat as categorical
-                    constraints.update({
+                        "mean": float(df[col].mean()),
+                        "std": float(df[col].std())
+                    }
+                elif df[col].nunique() < min(20, len(df) * 0.3):
+                    rules["value_constraints"][col] = {
                         "type": "categorical",
-                        "allowed_values": df[col].dropna().unique().tolist()
-                    })
-                else:
-                    constraints["type"] = "text"
-                
-                rules["value_constraints"][col] = constraints
+                        "allowed_values": df[col].dropna().unique().tolist(),
+                        "value_counts": df[col].value_counts().to_dict()
+                    }
     
-    def _discover_rules_statistically(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Fallback: Discover rules statistically"""
-        st.warning("Using statistical rule discovery (Groq unavailable)")
+    def _add_auto_uniqueness(self, rules: Dict, df: pd.DataFrame):
+        """Add auto-detected uniqueness constraints"""
+        for col in df.columns:
+            # Columns that look like IDs
+            if ('id' in col.lower() or 'code' in col.lower() or 
+                df[col].nunique() == len(df) or
+                df[col].nunique() > len(df) * 0.9):
+                if col not in rules["uniqueness_constraints"]:
+                    rules["uniqueness_constraints"].append(col)
+    
+    def _discover_rules_statistically_enhanced(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Enhanced statistical rule discovery"""
+        st.warning("Using enhanced statistical rule discovery")
         
         rules = {
             "value_mappings": [],
@@ -231,34 +457,53 @@ Be SPECIFIC and PRECISE. Only include rules you are confident about."""
             "logical_rules": [],
             "uniqueness_constraints": [],
             "dataset_summary": "Statistically analyzed dataset",
-            "confidence": {"mappings_confidence": "medium", "constraints_confidence": "high"}
+            "analysis_notes": "Rules discovered through statistical analysis"
         }
         
-        # Discover mappings by analyzing value pairs
+        # Find ALL exact mappings
         for i, col1 in enumerate(df.columns):
             for col2 in df.columns[i+1:]:
-                # Check for strong mappings
-                unique_pairs = df[[col1, col2]].drop_duplicates()
-                if len(unique_pairs) < len(df) * 0.3:  # Strong relationship
-                    for _, row in unique_pairs.iterrows():
+                # Find exact one-to-one mappings
+                value_pairs = defaultdict(set)
+                
+                for _, row in df.iterrows():
+                    val1 = str(row[col1])
+                    val2 = str(row[col2])
+                    value_pairs[val1].add(val2)
+                
+                # Add exact mappings
+                for val1, val2_set in value_pairs.items():
+                    if len(val2_set) == 1:
+                        val2 = next(iter(val2_set))
+                        count = len(df[
+                            (df[col1].astype(str) == val1) & 
+                            (df[col2].astype(str) == val2)
+                        ])
+                        
                         rules["value_mappings"].append({
                             "from_column": col1,
-                            "from_value": str(row[col1]),
+                            "from_value": val1,
                             "to_column": col2,
-                            "to_value": str(row[col2])
+                            "to_value": val2,
+                            "confidence": "exact",
+                            "support_count": count,
+                            "violation_count": 0
                         })
         
-        # Add statistical constraints
-        self._add_statistical_constraints(rules, df)
+        # Add constraints
+        self._enhance_constraints(rules, df)
+        
+        # Add uniqueness
+        self._add_auto_uniqueness(rules, df)
         
         return rules
 
 # =============================================================================
-# RULE APPLICATION ENGINE
+# ENHANCED RULE APPLICATION ENGINE
 # =============================================================================
 
-class RuleApplicationEngine:
-    """Applies discovered rules to generate synthetic data"""
+class EnhancedRuleApplicationEngine:
+    """Enhanced rule application with better mapping enforcement"""
     
     @staticmethod
     def generate_with_rules(
@@ -267,26 +512,34 @@ class RuleApplicationEngine:
         num_rows: int
     ) -> pd.DataFrame:
         """
-        Generate synthetic data by APPLYING discovered rules
+        Generate synthetic data with ENHANCED rule enforcement
         """
         synthetic_rows = []
         
-        # Track used values for uniqueness constraints
+        # Build mapping lookup for fast access
+        mapping_lookup = EnhancedRuleApplicationEngine._build_mapping_lookup(rules)
+        
+        # Track used values for uniqueness
         used_values = {col: set() for col in rules.get("uniqueness_constraints", [])}
         
         for i in range(num_rows):
-            # Start with a random original row as template
+            # Start with random template
             template_idx = random.randint(0, len(original_df) - 1)
             new_row = original_df.iloc[template_idx].copy()
             
-            # Apply rules to modify the row
-            new_row = RuleApplicationEngine._apply_rules_to_row(
-                new_row, rules, used_values, original_df, i
+            # Apply ALL mappings with priority
+            new_row = EnhancedRuleApplicationEngine._apply_all_mappings(
+                new_row, mapping_lookup, rules
             )
             
-            # Ensure uniqueness for constrained columns
-            new_row = RuleApplicationEngine._enforce_uniqueness(
-                new_row, rules.get("uniqueness_constraints", []), used_values
+            # Apply constraints
+            new_row = EnhancedRuleApplicationEngine._apply_constraints(
+                new_row, rules, original_df, i
+            )
+            
+            # Ensure uniqueness
+            new_row = EnhancedRuleApplicationEngine._enforce_uniqueness(
+                new_row, rules.get("uniqueness_constraints", []), used_values, i
             )
             
             synthetic_rows.append(new_row)
@@ -294,146 +547,179 @@ class RuleApplicationEngine:
         # Create DataFrame
         synthetic_df = pd.DataFrame(synthetic_rows)
         
-        # Ensure same data types
+        # Final pass: Ensure all mappings are satisfied
+        synthetic_df = EnhancedRuleApplicationEngine._final_validation_pass(
+            synthetic_df, mapping_lookup, rules
+        )
+        
+        # Ensure data types
         for col in original_df.columns:
             if col in synthetic_df.columns:
                 try:
                     synthetic_df[col] = synthetic_df[col].astype(original_df[col].dtype)
                 except:
-                    # If conversion fails, keep as object
                     pass
         
         return synthetic_df
     
     @staticmethod
-    def _apply_rules_to_row(
-        row: pd.Series, 
-        rules: Dict[str, Any], 
-        used_values: Dict[str, Set],
-        original_df: pd.DataFrame,
-        row_index: int
-    ) -> pd.Series:
-        """Apply all rules to a single row"""
-        modified_row = row.copy()
+    def _build_mapping_lookup(rules: Dict) -> Dict:
+        """Build fast lookup for mappings"""
+        lookup = {
+            "by_from_column": defaultdict(list),
+            "exact_mappings": set()
+        }
         
-        # Apply value mappings
         for mapping in rules.get("value_mappings", []):
             from_col = mapping["from_column"]
             to_col = mapping["to_column"]
+            from_val = mapping["from_value"]
+            to_val = mapping["to_value"]
+            confidence = mapping.get("confidence", "partial")
             
-            if from_col in modified_row and to_col in modified_row:
-                if str(modified_row[from_col]) == str(mapping["from_value"]):
-                    # Apply the mapping
-                    modified_row[to_col] = mapping["to_value"]
+            lookup["by_from_column"][from_col].append({
+                "from_value": from_val,
+                "to_column": to_col,
+                "to_value": to_val,
+                "confidence": confidence
+            })
+            
+            if confidence == "exact":
+                lookup["exact_mappings"].add(f"{from_col}={from_val}→{to_col}")
         
-        # Apply value constraints
+        return lookup
+    
+    @staticmethod
+    def _apply_all_mappings(row: pd.Series, lookup: Dict, rules: Dict) -> pd.Series:
+        """Apply ALL mappings to a row"""
+        modified_row = row.copy()
+        max_passes = 3  # Prevent infinite loops
+        
+        for _ in range(max_passes):
+            changes_made = False
+            
+            for from_col in lookup["by_from_column"]:
+                if from_col not in modified_row:
+                    continue
+                
+                from_val = str(modified_row[from_col])
+                
+                for mapping in lookup["by_from_column"][from_col]:
+                    if mapping["from_value"] == from_val:
+                        to_col = mapping["to_column"]
+                        to_val = mapping["to_value"]
+                        
+                        # Check if current value matches
+                        if to_col in modified_row and str(modified_row[to_col]) != to_val:
+                            # Apply mapping
+                            modified_row[to_col] = to_val
+                            changes_made = True
+            
+            if not changes_made:
+                break
+        
+        return modified_row
+    
+    @staticmethod
+    def _apply_constraints(row: pd.Series, rules: Dict, original_df: pd.DataFrame, row_index: int) -> pd.Series:
+        """Apply value constraints"""
+        modified_row = row.copy()
+        
         for col, constraints in rules.get("value_constraints", {}).items():
             if col in modified_row:
-                modified_row[col] = RuleApplicationEngine._apply_constraint(
-                    col, modified_row[col], constraints, original_df, row_index
-                )
-        
-        # Apply logical rules (simple IF-THEN)
-        for rule_text in rules.get("logical_rules", []):
-            modified_row = RuleApplicationEngine._apply_logical_rule(
-                modified_row, rule_text, original_df
-            )
-        
-        return modified_row
-    
-    @staticmethod
-    def _apply_constraint(
-        col: str, 
-        current_value: Any, 
-        constraints: Dict, 
-        original_df: pd.DataFrame,
-        row_index: int
-    ) -> Any:
-        """Apply value constraint to a cell"""
-        constraint_type = constraints.get("type", "unknown")
-        
-        if constraint_type == "categorical":
-            allowed = constraints.get("allowed_values", [])
-            if allowed and str(current_value) not in [str(v) for v in allowed]:
-                # Pick random allowed value
-                return random.choice(allowed)
-        
-        elif constraint_type == "numeric":
-            min_val = constraints.get("min")
-            max_val = constraints.get("max")
-            
-            if min_val is not None and max_val is not None:
-                try:
-                    num_val = float(current_value)
-                    if num_val < min_val or num_val > max_val:
-                        # Generate within range
-                        return random.uniform(min_val, max_val)
-                except:
-                    # Not a number, generate new
-                    return random.uniform(min_val, max_val)
-        
-        elif constraint_type == "date" and "pattern" in constraints:
-            # For dates, we might want to generate new ones
-            if row_index % 3 == 0:  # Modify some dates
-                base_date = pd.Timestamp("2024-01-01")
-                random_days = random.randint(-365, 365)
-                return (base_date + pd.Timedelta(days=random_days)).strftime("%Y-%m-%d")
-        
-        # For text with pattern
-        if "pattern" in constraints:
-            pattern = constraints["pattern"]
-            # Simple pattern implementation
-            if pattern == r"^\d{10}$" and not re.match(pattern, str(current_value)):
-                # Generate 10-digit phone
-                return f"{random.randint(1000000000, 9999999999)}"
-        
-        return current_value  # Keep original if no constraint applies
-    
-    @staticmethod
-    def _apply_logical_rule(row: pd.Series, rule_text: str, original_df: pd.DataFrame) -> pd.Series:
-        """Apply a logical rule (IF-THEN)"""
-        modified_row = row.copy()
-        rule_lower = rule_text.lower()
-        
-        # Simple IF-THEN pattern matching
-        if "if" in rule_lower and "then" in rule_lower:
-            # Try to parse IF column=value THEN column=value
-            match = re.search(r'if\s+(\w+)\s*=\s*["\']?([^"\'\s]+)["\']?\s+then\s+(\w+)\s*=\s*["\']?([^"\'\s]+)["\']?', rule_lower)
-            if match:
-                if_col, if_val, then_col, then_val = match.groups()
+                current_val = modified_row[col]
+                constraint_type = constraints.get("type", "unknown")
                 
-                if if_col in modified_row and then_col in modified_row:
-                    if str(modified_row[if_col]).lower() == if_val.lower():
-                        modified_row[then_col] = then_val
+                if constraint_type == "categorical":
+                    allowed = constraints.get("allowed_values", [])
+                    if allowed and str(current_val) not in [str(v) for v in allowed]:
+                        # Pick from allowed, prefer values that maintain mappings
+                        modified_row[col] = EnhancedRuleApplicationEngine._pick_smart_value(
+                            col, current_val, allowed, modified_row, rules
+                        )
+                
+                elif constraint_type == "numeric":
+                    min_val = constraints.get("min")
+                    max_val = constraints.get("max")
+                    
+                    if min_val is not None and max_val is not None:
+                        try:
+                            num_val = float(current_val)
+                            if num_val < min_val or num_val > max_val:
+                                # Generate within range
+                                modified_row[col] = random.uniform(min_val, max_val)
+                        except:
+                            modified_row[col] = random.uniform(min_val, max_val)
         
         return modified_row
     
     @staticmethod
-    def _enforce_uniqueness(
-        row: pd.Series, 
-        unique_cols: List[str], 
-        used_values: Dict[str, Set]
-    ) -> pd.Series:
-        """Ensure uniqueness for specified columns"""
+    def _pick_smart_value(col: str, current_val: Any, allowed: List, row: pd.Series, rules: Dict) -> Any:
+        """Pick a value that maintains mappings"""
+        # First, check if any mapping depends on this column
+        for mapping in rules.get("value_mappings", []):
+            if mapping["from_column"] == col and mapping["from_value"] == str(current_val):
+                # This value is part of a mapping - keep it if possible
+                if str(current_val) in [str(v) for v in allowed]:
+                    return current_val
+        
+        # Otherwise, pick random allowed value
+        return random.choice(allowed)
+    
+    @staticmethod
+    def _enforce_uniqueness(row: pd.Series, unique_cols: List[str], used_values: Dict[str, Set], row_index: int) -> pd.Series:
+        """Ensure uniqueness for columns"""
         modified_row = row.copy()
         
         for col in unique_cols:
             if col in modified_row:
                 current_val = str(modified_row[col])
                 
-                # If value already used, modify it
+                # Check if value already used
                 if current_val in used_values[col]:
-                    # Add suffix to make unique
-                    suffix = hashlib.md5(str(len(used_values[col])).encode()).hexdigest()[:4]
-                    modified_row[col] = f"{current_val}_{suffix}"
-                
-                # Add to used values
-                used_values[col].add(str(modified_row[col]))
+                    # Generate unique value
+                    base = current_val.split('_')[0] if '_' in current_val else current_val
+                    counter = 1
+                    
+                    while True:
+                        new_val = f"{base}_{counter}"
+                        if new_val not in used_values[col]:
+                            modified_row[col] = new_val
+                            used_values[col].add(new_val)
+                            break
+                        counter += 1
+                else:
+                    used_values[col].add(current_val)
         
         return modified_row
+    
+    @staticmethod
+    def _final_validation_pass(synthetic_df: pd.DataFrame, lookup: Dict, rules: Dict) -> pd.DataFrame:
+        """Final pass to fix any remaining violations"""
+        df = synthetic_df.copy()
+        
+        # Fix exact mapping violations
+        for mapping in rules.get("value_mappings", []):
+            if mapping.get("confidence") == "exact":
+                from_col = mapping["from_column"]
+                from_val = mapping["from_value"]
+                to_col = mapping["to_column"]
+                to_val = mapping["to_value"]
+                
+                if from_col in df.columns and to_col in df.columns:
+                    # Find violations
+                    mask = df[from_col].astype(str) == from_val
+                    violations = df.loc[mask & (df[to_col].astype(str) != to_val)]
+                    
+                    # Fix violations
+                    if len(violations) > 0:
+                        df.loc[mask, to_col] = to_val
+        
+        return df
 
+# [Keep the RuleValidationEngine and main function the same as before]
 # =============================================================================
-# RULE VALIDATION ENGINE
+# RULE VALIDATION ENGINE (same as before)
 # =============================================================================
 
 class RuleValidationEngine:
@@ -527,18 +813,18 @@ class RuleValidationEngine:
         return validation_report
 
 # =============================================================================
-# MAIN APPLICATION - SIMPLIFIED
+# MAIN APPLICATION
 # =============================================================================
 
 def main():
     st.set_page_config(
-        page_title="Universal Rule-Based Data Generator",
-        page_icon="⚡",
+        page_title="Enhanced Universal Data Generator",
+        page_icon="🚀",
         layout="wide"
     )
     
-    st.title("⚡ Universal Rule-Based Data Generator")
-    st.markdown("**LLM Discovers Rules → We Apply Rules Exactly → Perfect Synthetic Data**")
+    st.title("🚀 Enhanced Universal Data Generator")
+    st.markdown("**LLM + Statistical Analysis → Find EVERY Rule → Apply Perfectly**")
     
     # File upload
     uploaded_file = st.file_uploader("📤 Upload ANY CSV Dataset", type=['csv'])
@@ -555,7 +841,7 @@ def main():
         with st.expander("📋 Data Preview", expanded=True):
             st.dataframe(df.head(), use_container_width=True)
             
-            # Show column stats - FIXED THIS LINE
+            # Show column stats
             col_info_data = []
             for col in df.columns:
                 null_pct = (df[col].isnull().sum() / len(df) * 100).round(1) if len(df) > 0 else 0
@@ -593,28 +879,39 @@ def main():
             st.metric("Multiplier", f"{num_rows/len(df):.1f}x")
         
         # Generate button
-        if st.button("🚀 Generate with Rule-Based Method", type="primary", use_container_width=True):
+        if st.button("🚀 Generate with Enhanced Method", type="primary", use_container_width=True):
             if len(df) < 10:
                 st.warning("⚠️ Very small dataset - rules may be limited")
             
-            # Step 1: Discover Rules
-            with st.spinner("🔍 LLM discovering rules from your data..."):
+            # Step 1: Discover Rules (ENHANCED)
+            with st.spinner("🔍 LLM + Statistical analysis discovering ALL rules..."):
                 try:
-                    rule_discoverer = RuleDiscoveryEngine(st.secrets["GROQ_API_KEY"])
+                    rule_discoverer = EnhancedRuleDiscoveryEngine(st.secrets["GROQ_API_KEY"])
                     rules = rule_discoverer.discover_rules(df)
                 except Exception as e:
                     st.error(f"Failed to discover rules: {e}")
                     return
             
             # Display discovered rules
-            st.subheader("📋 Discovered Rules")
-            with st.expander("View All Rules", expanded=True):
+            st.subheader("📋 Discovered Rules (Enhanced)")
+            with st.expander("View Rules Summary", expanded=True):
+                # Show mapping summary
+                if rules.get("value_mappings"):
+                    st.write(f"**🔗 Found {len(rules['value_mappings'])} Value Mappings:**")
+                    exact_count = sum(1 for m in rules["value_mappings"] if m.get("confidence") == "exact")
+                    st.write(f"- Exact mappings: {exact_count}")
+                    st.write(f"- Partial mappings: {len(rules['value_mappings']) - exact_count}")
+                
+                # Show constraints summary
+                if rules.get("value_constraints"):
+                    st.write(f"**🎯 Found {len(rules['value_constraints'])} Value Constraints:**")
+                
                 st.json(rules, expanded=False)
             
-            # Step 2: Apply Rules
-            with st.spinner(f"⚡ Generating {num_rows} rows by applying rules..."):
+            # Step 2: Apply Rules (ENHANCED)
+            with st.spinner(f"⚡ Generating {num_rows} rows with ENHANCED rule enforcement..."):
                 try:
-                    synthetic_df = RuleApplicationEngine.generate_with_rules(df, rules, int(num_rows))
+                    synthetic_df = EnhancedRuleApplicationEngine.generate_with_rules(df, rules, int(num_rows))
                 except Exception as e:
                     st.error(f"Failed to generate data: {e}")
                     return
@@ -650,43 +947,31 @@ def main():
             score_color = "🟢" if score >= 95 else "🟡" if score >= 80 else "🔴"
             st.metric("Rule Compliance Score", f"{score_color} {score}%")
             
+            # Show exact mapping violations
+            if validation.get("value_mappings_validation"):
+                violations = [v for v in validation["value_mappings_validation"] if v.get("violations", 0) > 0]
+                if violations:
+                    st.warning(f"⚠️ {len(violations)} mapping violations detected")
+                    
+                    with st.expander("View Violations", expanded=True):
+                        for v in violations[:10]:  # Show first 10
+                            st.error(f"❌ {v['mapping']}: {v['violations']} violations ({v.get('violation_percentage', 0):.1f}%)")
+            
             # Tabs
             tab1, tab2, tab3, tab4 = st.tabs(["📊 Data", "🔍 Rules", "✅ Validation", "💾 Download"])
             
             with tab1:
                 st.dataframe(synthetic.head(20), use_container_width=True)
-                
-                # Quick comparison
-                st.write("**Quick Comparison**")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("Original (sample):")
-                    display_cols = list(original.columns)[:3]
-                    st.dataframe(original[display_cols].head(5) if len(display_cols) > 0 else original.head(5))
-                with col2:
-                    st.write("Synthetic (sample):")
-                    st.dataframe(synthetic[display_cols].head(5) if len(display_cols) > 0 else synthetic.head(5))
             
             with tab2:
                 st.write("**Applied Rules Summary**")
                 
-                # Value mappings
-                if rules.get("value_mappings"):
-                    st.write(f"🔗 **{len(rules['value_mappings'])} Value Mappings:**")
-                    for mapping in rules["value_mappings"][:5]:
+                # Show exact mappings that were enforced
+                exact_mappings = [m for m in rules.get("value_mappings", []) if m.get("confidence") == "exact"]
+                if exact_mappings:
+                    st.write(f"**🔗 {len(exact_mappings)} EXACT Mappings Enforced:**")
+                    for mapping in exact_mappings[:10]:
                         st.write(f"- {mapping['from_column']}={mapping['from_value']} → {mapping['to_column']}={mapping['to_value']}")
-                
-                # Value constraints
-                if rules.get("value_constraints"):
-                    st.write(f"🎯 **{len(rules['value_constraints'])} Value Constraints:**")
-                    for col, constraint in list(rules["value_constraints"].items())[:5]:
-                        st.write(f"- {col}: {constraint.get('type', 'unknown')}")
-                
-                # Logical rules
-                if rules.get("logical_rules"):
-                    st.write(f"⚡ **{len(rules['logical_rules'])} Logical Rules:**")
-                    for rule in rules["logical_rules"][:3]:
-                        st.write(f"- {rule}")
             
             with tab3:
                 st.write("**Validation Report**")
@@ -699,20 +984,6 @@ def main():
                 if summary.get('rules_checked', 0) > 0:
                     compliance_rate = 100 - summary.get('rules_violated', 0)/summary.get('rules_checked', 1)*100
                     st.write(f"- Compliance rate: {compliance_rate:.1f}%")
-                
-                # Detailed violations
-                if validation.get("constraints_validation"):
-                    st.write("**Constraint Violations:**")
-                    for col, report in validation["constraints_validation"].items():
-                        if report.get("violations", 0) > 0:
-                            st.error(f"❌ {col}: {report['violations']} violations ({report.get('violation_percentage', 0):.1f}%)")
-                
-                # Mapping violations
-                if validation.get("value_mappings_validation"):
-                    st.write("**Mapping Violations:**")
-                    for mapping_report in validation["value_mappings_validation"]:
-                        if mapping_report.get("violations", 0) > 0:
-                            st.error(f"❌ {mapping_report.get('mapping', 'unknown')}: {mapping_report['violations']} violations")
             
             with tab4:
                 try:
@@ -720,7 +991,7 @@ def main():
                     st.download_button(
                         "📥 Download Synthetic Data (CSV)",
                         csv,
-                        f"rule_based_synthetic_{len(synthetic)}_rows.csv",
+                        f"enhanced_synthetic_{len(synthetic)}_rows.csv",
                         "text/csv",
                         use_container_width=True
                     )
@@ -733,7 +1004,7 @@ def main():
                     st.download_button(
                         "📥 Download Rules (JSON)",
                         rules_json,
-                        f"data_rules.json",
+                        f"enhanced_data_rules.json",
                         "application/json",
                         use_container_width=True
                     )
@@ -748,34 +1019,8 @@ def main():
     else:
         # Welcome screen
         st.info("""
-        ## ⚡ Universal Rule-Based Data Generator
-        
-        ### **How It Works:**
-        1. **Upload ANY CSV** - Medical, Sales, HR, ANY data
-        2. **LLM analyzes** and discovers ALL rules automatically
-        3. **We apply EXACT same rules** to generate new data
-        4. **Validate** 100% rule compliance
-        
-        ### **✨ Key Advantages over SDV:**
-        ✅ **Understands semantics** - Knows chest pain → cardiology
-        ✅ **Preserves EXACT relationships** - Not just statistical
-        ✅ **Works with small data** - 60 rows is enough
-        ✅ **Universal** - No domain knowledge needed
-        ✅ **Transparent** - See all discovered rules
-        ✅ **Validated** - Check rule compliance
-        
-        ### **📊 Rule Discovery Examples:**
-        - **Medical:** "Chest pain → Cardiology", "Dr. Sharma → Cardiology"
-        - **Sales:** "Product A → Category Electronics", "Price > 0"
-        - **HR:** "Manager → Department", "Salary within range"
-        
-        ### **🚀 Get Started:**
-        1. Upload your CSV (any structure)
-        2. LLM will discover ALL rules automatically
-        3. Generate 2x, 3x, 5x more data
-        4. Download perfect synthetic data
-        
-        **Upload your CSV to experience rule-based generation!**
+        ## 🚀 Enhanced Universal Data Generator
+       
         """)
 
 if __name__ == "__main__":
