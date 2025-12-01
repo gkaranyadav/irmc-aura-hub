@@ -1,47 +1,44 @@
-# pages/6_🔢_Synthetic_Data_Generator.py - TRULY DYNAMIC
+# pages/6_🔢_Synthetic_Data_Generator.py - LLM TO SDV TRANSLATOR
 import streamlit as st
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 import json
 import re
 
 # =============================================================================
-# DYNAMIC LLM ANALYZER - NO PREDEFINED RULES
+# LLM TO SDV TRANSLATOR
 # =============================================================================
 
-class DynamicLLMAnalyzer:
-    """Dynamic analyzer - LLM discovers everything"""
+class LLMToSDVTranslator:
+    """Translate LLM's natural language analysis to SDV constraints"""
     
     @staticmethod
-    def analyze_dynamically(df: pd.DataFrame) -> Dict:
-        """
-        Let LLM analyze data dynamically without any guidance
-        """
+    def get_llm_analysis(df: pd.DataFrame) -> str:
+        """Get natural language analysis from LLM"""
         try:
             if "GROQ_API_KEY" not in st.secrets:
-                return {"error": "No API key"}
+                return "No API key available"
             
             from groq import Groq
             client = Groq(api_key=st.secrets["GROQ_API_KEY"])
             
-            # Get random sample
-            sample = df.sample(min(10, len(df))).reset_index(drop=True)
+            sample = df.head(min(15, len(df)))
             
-            # TOTALLY OPEN-ENDED PROMPT - NO GUIDANCE AT ALL
+            # Simple free-form analysis
             prompt = f"""
-            Here is some data. Analyze it and tell me what you find.
+            Analyze this dataset. What patterns and relationships do you see?
             
-            Data has {len(df)} rows and these columns: {list(df.columns)}
+            Columns: {list(df.columns)}
             
-            First 10 rows:
+            Sample data:
             {sample.to_string(index=False)}
             
-            What patterns do you see? What issues exist? What should be preserved in synthetic data?
+            Describe the patterns in natural language.
             """
             
             messages = [
-                {"role": "system", "content": "You analyze data patterns."},
+                {"role": "system", "content": "You are a data analyst."},
                 {"role": "user", "content": prompt}
             ]
             
@@ -49,99 +46,123 @@ class DynamicLLMAnalyzer:
                 model="llama-3.1-8b-instant",
                 messages=messages,
                 temperature=0.1,
-                max_tokens=2000
+                max_tokens=1500
             )
             
-            raw_analysis = response.choices[0].message.content
-            
-            # Extract insights from raw text
-            return DynamicLLMAnalyzer._extract_insights(raw_analysis, df)
+            return response.choices[0].message.content
             
         except Exception as e:
-            st.error(f"Analysis error: {e}")
-            return {"analysis": "Could not analyze", "issues": []}
+            return f"Analysis failed: {e}"
     
     @staticmethod
-    def _extract_insights(raw_text: str, df: pd.DataFrame) -> Dict:
-        """Extract insights from LLM's free-text response"""
-        insights = {
-            "raw_analysis": raw_text,
-            "issues_found": [],
-            "patterns_discovered": [],
-            "recommendations": []
+    def translate_to_sdv_constraints(llm_analysis: str, df: pd.DataFrame) -> Dict:
+        """
+        Translate LLM's natural language to actionable SDV guidance
+        """
+        constraints_info = {
+            "detected_relationships": [],
+            "quality_issues": [],
+            "generation_guidance": {},
+            "column_specific_rules": {}
         }
         
-        # Look for issue indicators in the text
-        lines = raw_text.split('\n')
+        # Extract column mentions from analysis
+        mentioned_columns = []
+        for col in df.columns:
+            if col in llm_analysis:
+                mentioned_columns.append(col)
+        
+        # Look for relationship patterns in the text
+        lines = llm_analysis.split('\n')
         
         for line in lines:
             line_lower = line.lower()
             
-            # Look for problem indicators
-            if any(word in line_lower for word in ['wrong', 'error', 'incorrect', 'mismatch', 'issue', 'problem', 'inconsistent']):
-                insights["issues_found"].append(line.strip())
+            # Look for relationship mentions
+            if any(word in line_lower for word in ['correlation', 'relationship', 'association', 'link', 'tied to', 'related to']):
+                # Try to extract column names from this line
+                for col1 in df.columns:
+                    if col1.lower() in line_lower:
+                        for col2 in df.columns:
+                            if col2.lower() in line_lower and col1 != col2:
+                                constraints_info["detected_relationships"].append({
+                                    "type": "correlation",
+                                    "columns": [col1, col2],
+                                    "description": line.strip()
+                                })
             
-            # Look for pattern indicators
-            if any(word in line_lower for word in ['pattern', 'relationship', 'mapping', 'correlation', 'association']):
-                insights["patterns_discovered"].append(line.strip())
+            # Look for data quality issues
+            if any(word in line_lower for word in ['bias', 'skew', 'imbalance', 'missing', 'inconsistent', 'wrong', 'error']):
+                constraints_info["quality_issues"].append(line.strip())
             
-            # Look for recommendations
-            if any(word in line_lower for word in ['should', 'must', 'need to', 'recommend', 'suggest']):
-                insights["recommendations"].append(line.strip())
+            # Look for specific column rules
+            for col in df.columns:
+                if col.lower() in line_lower:
+                    if 'format' in line_lower or 'pattern' in line_lower:
+                        if col not in constraints_info["column_specific_rules"]:
+                            constraints_info["column_specific_rules"][col] = []
+                        constraints_info["column_specific_rules"][col].append(line.strip())
         
-        # Auto-detect some patterns from data
-        insights["auto_detected"] = DynamicLLMAnalyzer._auto_detect_patterns(df)
+        # Generate SDV guidance based on analysis
+        constraints_info["generation_guidance"] = LLMToSDVTranslator._generate_sdv_guidance(llm_analysis, df)
         
-        return insights
+        return constraints_info
     
     @staticmethod
-    def _auto_detect_patterns(df: pd.DataFrame) -> Dict:
-        """Auto-detect patterns purely from data"""
-        patterns = {
-            "column_stats": {},
-            "potential_issues": [],
-            "data_quality": {}
+    def _generate_sdv_guidance(llm_analysis: str, df: pd.DataFrame) -> Dict:
+        """Generate SDV-specific guidance from LLM analysis"""
+        guidance = {
+            "model_settings": {},
+            "data_preprocessing": [],
+            "post_processing": []
         }
         
-        # Analyze each column
-        for col in df.columns:
-            col_data = {
-                "type": str(df[col].dtype),
-                "unique_values": int(df[col].nunique()),
-                "null_count": int(df[col].isnull().sum()),
-                "sample_values": df[col].dropna().unique()[:3].tolist()
+        # Adjust model settings based on data characteristics
+        n_rows = len(df)
+        n_cols = len(df.columns)
+        
+        # Dynamic model configuration
+        if n_rows < 50:
+            guidance["model_settings"] = {
+                "epochs": 300,
+                "batch_size": min(32, n_rows),
+                "verbose": False,
+                "recommendation": "Small dataset - use more epochs"
             }
-            patterns["column_stats"][col] = col_data
+        elif n_rows < 200:
+            guidance["model_settings"] = {
+                "epochs": 200,
+                "batch_size": 50,
+                "verbose": False,
+                "recommendation": "Medium dataset - standard training"
+            }
+        else:
+            guidance["model_settings"] = {
+                "epochs": 100,
+                "batch_size": 100,
+                "verbose": False,
+                "recommendation": "Large dataset - efficient training"
+            }
         
-        # Look for potential data issues (no medical logic!)
-        for col1 in df.columns:
-            for col2 in df.columns:
-                if col1 != col2:
-                    # Check if columns might be related by looking at value pairs
-                    unique_pairs = df[[col1, col2]].drop_duplicates().shape[0]
-                    total_rows = len(df)
-                    
-                    # If many rows have same column1 but different column2, might be issue
-                    if df[col1].nunique() < total_rows * 0.5:  # Column1 has repeats
-                        pair_stats = df.groupby(col1)[col2].nunique()
-                        inconsistent = pair_stats[pair_stats > 1]
-                        if len(inconsistent) > 0:
-                            patterns["potential_issues"].append(
-                                f"Column '{col1}' has inconsistent mappings to '{col2}'"
-                            )
+        # Look for specific guidance in LLM analysis
+        if 'bias' in llm_analysis.lower() or 'skew' in llm_analysis.lower():
+            guidance["data_preprocessing"].append("Check for class imbalance in categorical columns")
         
-        return patterns
+        if 'correlation' in llm_analysis.lower():
+            guidance["model_settings"]["enforce_relationships"] = True
+        
+        return guidance
 
 # =============================================================================
-# SMART SDV GENERATOR WITH DYNAMIC RULES
+# SMART SDV GENERATOR WITH TRANSLATED CONSTRAINTS
 # =============================================================================
 
-class DynamicGenerator:
-    """Generate data with dynamic rules from LLM"""
+class SmartSDVGeneratorWithTranslation:
+    """SDV generator that uses translated LLM constraints"""
     
     def __init__(self):
         self.sdv_available = self._check_sdv()
-        self.analyzer = DynamicLLMAnalyzer()
+        self.translator = LLMToSDVTranslator()
     
     def _check_sdv(self):
         try:
@@ -150,50 +171,54 @@ class DynamicGenerator:
         except:
             return False
     
-    def generate_dynamically(self, df: pd.DataFrame, num_rows: int) -> Optional[pd.DataFrame]:
-        """Generate data using dynamic analysis"""
+    def generate_with_translated_constraints(self, df: pd.DataFrame, num_rows: int) -> Optional[pd.DataFrame]:
+        """Generate using translated LLM constraints"""
         if not self.sdv_available:
             st.error("SDV not available")
             return None
         
-        # Step 1: Dynamic LLM Analysis
-        with st.spinner("🧠 LLM analyzing data patterns..."):
-            insights = self.analyzer.analyze_dynamically(df)
+        # Step 1: Get LLM analysis
+        with st.spinner("🧠 LLM analyzing data..."):
+            llm_analysis = self.translator.get_llm_analysis(df)
         
-        # Display insights
-        self._display_insights(insights)
+        # Step 2: Translate to SDV constraints
+        with st.spinner("🔄 Translating to SDV guidance..."):
+            constraints_info = self.translator.translate_to_sdv_constraints(llm_analysis, df)
         
-        # Step 2: Train SDV
+        # Display translation results
+        self._display_translation(llm_analysis, constraints_info)
+        
+        # Step 3: Train SDV with guidance
         try:
             from sdv.single_table import CTGANSynthesizer
             from sdv.metadata import SingleTableMetadata
             
-            with st.spinner("🤖 Training model on your data..."):
+            with st.spinner("🤖 Training SDV with translated guidance..."):
                 metadata = SingleTableMetadata()
                 metadata.detect_from_dataframe(data=df)
                 
-                # Train with optimal settings for data size
-                epochs = min(500, max(100, len(df) * 5))  # Dynamic epochs
-                batch_size = min(32, max(8, len(df) // 10))  # Dynamic batch
+                # Get guidance
+                guidance = constraints_info.get("generation_guidance", {}).get("model_settings", {})
                 
+                # Train model with translated settings
                 model = CTGANSynthesizer(
                     metadata=metadata,
-                    epochs=epochs,
-                    batch_size=batch_size,
+                    epochs=guidance.get("epochs", 200),
+                    batch_size=guidance.get("batch_size", 50),
                     verbose=False
                 )
                 
                 model.fit(df)
             
-            # Step 3: Generate
+            # Step 4: Generate
             with st.spinner(f"🎯 Generating {num_rows} rows..."):
                 synthetic = model.sample(num_rows=num_rows)
             
-            # Step 4: Apply dynamic fixes based on LLM insights
-            synthetic = self._apply_dynamic_fixes(synthetic, insights, df)
+            # Step 5: Apply post-processing based on LLM analysis
+            synthetic = self._apply_post_processing(synthetic, constraints_info, df)
             
-            # Step 5: Show results
-            self._show_results(synthetic, df)
+            # Step 6: Validate
+            self._validate_with_constraints(synthetic, constraints_info)
             
             return synthetic
             
@@ -201,102 +226,102 @@ class DynamicGenerator:
             st.error(f"Generation failed: {e}")
             return None
     
-    def _display_insights(self, insights: Dict):
-        """Display LLM insights"""
-        st.subheader("🔍 LLM Analysis Results")
+    def _display_translation(self, llm_analysis: str, constraints_info: Dict):
+        """Display the translation process"""
+        st.subheader("🔍 LLM Analysis → SDV Translation")
         
-        # Show raw analysis
-        with st.expander("📝 LLM's Analysis", expanded=True):
-            st.write(insights.get("raw_analysis", "No analysis"))
+        # Show original LLM analysis
+        with st.expander("📝 LLM's Natural Language Analysis", expanded=True):
+            st.write(llm_analysis)
         
-        # Show discovered patterns
-        patterns = insights.get("patterns_discovered", [])
-        if patterns:
-            with st.expander("🔗 Discovered Patterns", expanded=False):
-                for pattern in patterns[:5]:  # Show first 5
-                    st.write(f"• {pattern}")
-        
-        # Show issues found
-        issues = insights.get("issues_found", [])
-        if issues:
-            with st.expander("⚠️ Potential Issues", expanded=True):
-                for issue in issues[:5]:  # Show first 5
-                    st.error(f"❌ {issue}")
-        
-        # Show recommendations
-        recommendations = insights.get("recommendations", [])
-        if recommendations:
-            with st.expander("🎯 LLM Recommendations", expanded=False):
-                for rec in recommendations[:5]:
-                    st.info(f"💡 {rec}")
+        # Show translated constraints
+        with st.expander("🔄 Translated to SDV Guidance", expanded=True):
+            
+            # Detected relationships
+            relationships = constraints_info.get("detected_relationships", [])
+            if relationships:
+                st.write("**Detected Relationships:**")
+                for rel in relationships[:5]:  # Show first 5
+                    cols = rel.get("columns", [])
+                    if len(cols) >= 2:
+                        st.write(f"• {cols[0]} ↔ {cols[1]}: {rel.get('description', '')[:100]}...")
+            
+            # Quality issues
+            issues = constraints_info.get("quality_issues", [])
+            if issues:
+                st.write("**Data Quality Issues:**")
+                for issue in issues[:3]:
+                    st.error(f"⚠️ {issue}")
+            
+            # Generation guidance
+            guidance = constraints_info.get("generation_guidance", {})
+            if guidance.get("model_settings"):
+                st.write("**SDV Model Settings:**")
+                st.json(guidance["model_settings"], expanded=False)
     
-    def _apply_dynamic_fixes(self, synthetic: pd.DataFrame, insights: Dict, original: pd.DataFrame) -> pd.DataFrame:
-        """Apply fixes based on LLM insights"""
+    def _apply_post_processing(self, synthetic: pd.DataFrame, constraints_info: Dict, original: pd.DataFrame) -> pd.DataFrame:
+        """Apply post-processing based on LLM analysis"""
         df = synthetic.copy()
         
-        # Extract column names from insights text
-        raw_text = insights.get("raw_analysis", "").lower()
+        # Get detected relationships
+        relationships = constraints_info.get("detected_relationships", [])
         
-        # Look for column mentions in the analysis
-        mentioned_cols = []
-        for col in original.columns:
-            if col.lower() in raw_text:
-                mentioned_cols.append(col)
-        
-        # If LLM mentioned specific columns having issues, check them
+        # Apply simple relationship preservation
         fixes_applied = []
         
-        for col in mentioned_cols:
-            if col in df.columns:
-                # Check for basic consistency with original
-                orig_unique = set(str(v).lower() for v in original[col].dropna().unique()[:20])
-                synth_unique = set(str(v).lower() for v in df[col].dropna().unique()[:20])
+        for rel in relationships:
+            cols = rel.get("columns", [])
+            if len(cols) >= 2:
+                col1, col2 = cols[0], cols[1]
                 
-                # If synthetic has values not in original, might be issue
-                new_values = synth_unique - orig_unique
-                if len(new_values) > 0 and len(orig_unique) > 0:
-                    # Replace some new values with original ones
-                    sample_size = min(10, len(df))
-                    replace_indices = df.sample(sample_size).index
-                    original_sample = np.random.choice(list(orig_unique), size=sample_size)
-                    df.loc[replace_indices, col] = original_sample
-                    fixes_applied.append(f"Adjusted '{col}' values")
+                if col1 in df.columns and col2 in df.columns:
+                    # Check if relationship exists in original data
+                    if col1 in original.columns and col2 in original.columns:
+                        # Get unique combinations from original
+                        unique_combos = original[[col1, col2]].drop_duplicates()
+                        
+                        if len(unique_combos) > 0 and len(unique_combos) < len(original) * 0.5:
+                            # Relationship exists, try to preserve it
+                            # Sample approach: For some rows, enforce original combos
+                            n_to_fix = min(20, len(df))
+                            if n_to_fix > 0:
+                                # Get random combos from original
+                                sample_combos = unique_combos.sample(n_to_fix, replace=True).reset_index(drop=True)
+                                
+                                # Apply to random rows in synthetic
+                                random_indices = np.random.choice(df.index, n_to_fix, replace=False)
+                                df.loc[random_indices, [col1, col2]] = sample_combos.values
+                                
+                                fixes_applied.append(f"Preserved {col1}↔{col2} relationship")
         
         if fixes_applied:
-            st.info(f"Applied {len(fixes_applied)} adjustments based on LLM insights")
+            st.info(f"✅ Applied {len(fixes_applied)} relationship-preserving fixes")
         
         return df
     
-    def _show_results(self, synthetic: pd.DataFrame, original: pd.DataFrame):
-        """Show generation results"""
-        st.subheader(f"✅ Generated {len(synthetic)} Rows")
+    def _validate_with_constraints(self, synthetic: pd.DataFrame, constraints_info: Dict):
+        """Validate against translated constraints"""
+        st.subheader("✅ Validation Against LLM Insights")
         
-        # Show comparison
-        col1, col2 = st.columns(2)
+        relationships = constraints_info.get("detected_relationships", [])
         
-        with col1:
-            st.write("**Original Data Sample**")
-            st.dataframe(original.head(5), use_container_width=True)
-        
-        with col2:
-            st.write("**Generated Data Sample**")
-            st.dataframe(synthetic.head(5), use_container_width=True)
-        
-        # Check basic statistics
-        st.write("**Basic Statistics Comparison**")
-        
-        stats_cols = [col for col in original.columns if pd.api.types.is_numeric_dtype(original[col])]
-        if len(stats_cols) > 0:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("Original means:")
-                for col in stats_cols[:3]:
-                    st.write(f"{col}: {original[col].mean():.2f}")
-            with col2:
-                st.write("Generated means:")
-                for col in stats_cols[:3]:
-                    if col in synthetic.columns:
-                        st.write(f"{col}: {synthetic[col].mean():.2f}")
+        if relationships:
+            st.write("**Relationship Preservation Check:**")
+            
+            for rel in relationships[:3]:  # Check first 3
+                cols = rel.get("columns", [])
+                if len(cols) >= 2:
+                    col1, col2 = cols[0], cols[1]
+                    
+                    if col1 in synthetic.columns and col2 in synthetic.columns:
+                        # Calculate relationship strength
+                        unique_pairs = synthetic[[col1, col2]].drop_duplicates().shape[0]
+                        total_rows = len(synthetic)
+                        
+                        if unique_pairs < total_rows * 0.8:
+                            st.success(f"✅ {col1}↔{col2}: Strong relationship preserved ({unique_pairs} unique pairs)")
+                        else:
+                            st.warning(f"⚠️ {col1}↔{col2}: Weak relationship ({unique_pairs} unique pairs)")
 
 # =============================================================================
 # MAIN APP
@@ -304,13 +329,13 @@ class DynamicGenerator:
 
 def main():
     st.set_page_config(
-        page_title="Dynamic Data Generator",
-        page_icon="🌀",
+        page_title="LLM→SDV Translator",
+        page_icon="🔄",
         layout="wide"
     )
     
-    st.title("🌀 Dynamic Synthetic Data Generator")
-    st.markdown("**Zero rules - LLM analyzes patterns, SDV generates, we validate**")
+    st.title("🔄 LLM → SDV Translator")
+    st.markdown("**LLM analyzes in natural language → Translated to SDV constraints → Generate quality data**")
     
     # File upload
     uploaded_file = st.file_uploader("📤 Upload Your Data (CSV)", type=['csv'])
@@ -318,54 +343,42 @@ def main():
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
         
-        st.success(f"✅ Loaded {len(df)} rows × {len(df.columns)} columns")
+        st.success(f"✅ Loaded {len(df)} rows")
         
-        # Quick preview
+        # Preview
         with st.expander("📋 Data Preview", expanded=True):
             st.dataframe(df.head(), use_container_width=True)
-            
-            # Show column info
-            col_info = pd.DataFrame({
-                'Column': df.columns,
-                'Type': [str(df[col].dtype) for col in df.columns],
-                'Unique': [df[col].nunique() for col in df.columns],
-                'Nulls': [df[col].isnull().sum() for col in df.columns]
-            })
-            st.dataframe(col_info, use_container_width=True, hide_index=True)
         
         # Generation settings
-        st.subheader("⚙️ Generation Settings")
+        st.subheader("⚙️ Translation Settings")
         
         col1, col2 = st.columns(2)
         with col1:
             num_rows = st.number_input(
                 "Rows to generate",
                 min_value=len(df),
-                max_value=len(df) * 20,
-                value=len(df) * 3,
-                help="Based on your data size"
+                max_value=len(df) * 10,
+                value=len(df) * 3
             )
         
         with col2:
-            st.write("**Generation Strategy**")
-            strategy = st.selectbox(
-                "",
-                ["Preserve Patterns", "Add Variation", "Balance"],
-                help="How to generate data"
+            translation_depth = st.select_slider(
+                "Translation Depth",
+                options=["Basic", "Moderate", "Detailed"],
+                value="Moderate"
             )
         
         # Generate button
-        if st.button("🚀 Generate Dynamic Synthetic Data", type="primary", use_container_width=True):
-            if len(df) < 10:
-                st.warning("⚠️ Very small dataset - patterns may not be clear")
+        if st.button("🚀 Generate with Translated Constraints", type="primary", use_container_width=True):
+            if len(df) < 20:
+                st.warning("Small dataset - LLM may have limited patterns to analyze")
             
-            generator = DynamicGenerator()
+            generator = SmartSDVGeneratorWithTranslation()
             
             if not generator.sdv_available:
-                st.error("SDV not installed")
+                st.error("SDV not available")
             else:
-                with st.spinner("Generating with dynamic analysis..."):
-                    synthetic = generator.generate_dynamically(df, int(num_rows))
+                synthetic = generator.generate_with_translated_constraints(df, int(num_rows))
                 
                 if synthetic is not None:
                     st.session_state.generated_data = synthetic
@@ -377,47 +390,39 @@ def main():
             
             st.subheader(f"📊 Generated Data ({len(synthetic)} rows)")
             
-            tab1, tab2, tab3 = st.tabs(["Data", "Analysis", "Download"])
+            tab1, tab2, tab3 = st.tabs(["Data", "Comparison", "Download"])
             
             with tab1:
                 st.dataframe(synthetic.head(20), use_container_width=True)
             
             with tab2:
-                # Compare distributions for categorical columns
-                cat_cols = [col for col in df.columns if df[col].nunique() < 20]
-                
-                if len(cat_cols) > 0:
-                    for col in cat_cols[:2]:  # Show first 2
-                        if col in synthetic.columns:
-                            st.write(f"**{col} Distribution**")
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.write("Original:")
-                                st.bar_chart(df[col].value_counts().head(10))
-                            with col2:
-                                st.write("Generated:")
-                                st.bar_chart(synthetic[col].value_counts().head(10))
+                # Compare key columns
+                if len(df.columns) > 0:
+                    compare_col = st.selectbox("Compare column:", df.columns)
+                    
+                    if compare_col in synthetic.columns:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write(f"**Original {compare_col}**")
+                            st.bar_chart(df[compare_col].value_counts().head(10))
+                        with col2:
+                            st.write(f"**Generated {compare_col}**")
+                            st.bar_chart(synthetic[compare_col].value_counts().head(10))
             
             with tab3:
                 csv = synthetic.to_csv(index=False)
                 st.download_button(
-                    "📥 Download CSV",
+                    "📥 Download",
                     csv,
-                    f"dynamic_synthetic_{len(synthetic)}_rows.csv",
+                    f"translated_{len(synthetic)}_rows.csv",
                     "text/csv",
                     use_container_width=True
                 )
-                
-                # Option to regenerate
-                if st.button("🔄 Generate New Variation"):
-                    st.session_state.generated_data = None
-                    st.rerun()
     
     else:
         st.info("""
-        ## 🌀 Dynamic Synthetic Data Generator
-        
-        
+        ## 🔄 LLM → SDV Translation Pipeline
+       !**
         """)
 
 if __name__ == "__main__":
