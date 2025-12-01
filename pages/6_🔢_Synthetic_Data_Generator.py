@@ -579,7 +579,10 @@ class SmartGenerator:
             return [f"{random.choice(samples)}_{random.randint(1, 100)}" for _ in range(num_rows)]
 
 
-class IndustryDataGenerator:
+# =============================================================================
+# MAIN GENERATOR CLASS (RENAMED TO MATCH)
+# =============================================================================
+class IndustryDataGenerator:  # Renamed from UniversalDataGenerator
     """Main class combining all components"""
     
     def __init__(self):
@@ -587,7 +590,7 @@ class IndustryDataGenerator:
         self.domain_detector = DomainDetector()
         self.generator = SmartGenerator()
     
-    def generate(self, original_df, num_rows):
+    def generate(self, original_df, num_rows):  # Fixed method name
         """Main generation pipeline"""
         if original_df.empty:
             return pd.DataFrame()
@@ -666,9 +669,9 @@ def main():
     
     st.markdown("---")
     
-    # Initialize
+    # Initialize - FIXED CLASS NAME
     if 'generator' not in st.session_state:
-        st.session_state.generator = IndustryDataGenerator()
+        st.session_state.generator = IndustryDataGenerator()  # Changed to IndustryDataGenerator
     if 'generated_data' not in st.session_state:
         st.session_state.generated_data = None
     
@@ -701,6 +704,7 @@ def main():
                 with col2:
                     if st.button("🚀 Generate Industry-Quality Data", type="primary"):
                         with st.spinner("Analyzing and generating..."):
+                            # FIXED: Using correct method name 'generate'
                             generated = st.session_state.generator.generate(df, int(num_rows))
                             st.session_state.generated_data = generated
                             st.success(f"✅ Generated {len(generated)} realistic rows!")
