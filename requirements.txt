@@ -26,7 +26,6 @@ pillow==10.4.0
 faker
 openpyxl
 # Synthetic Data Generation
-sdv==1.10.0
-rdt==1.9.0
+sdv
+rdt
 mimesis
-openpyxl
