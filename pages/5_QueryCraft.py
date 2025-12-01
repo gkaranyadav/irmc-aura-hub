@@ -586,7 +586,7 @@ def main():
     col1, col2 = st.columns([4, 1])
     with col1:
         st.markdown('<div class="main-header">iRMC QueryCraft</div>', unsafe_allow_html=True)
-        st.markdown("### Chat with your CSV data using natural language")
+        st.markdown("")
     with col2:
         if st.button("🏠 Back to Home"):
             st.switch_page("app.py")
