@@ -175,7 +175,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch Chatbot", key="rag_btn", use_container_width=True):
-            st.switch_page("pages/2_📄_RAG_Chat.py")
+            st.switch_page("pages/2_Chatbot.py")
     
     with col2:
         st.markdown("""
