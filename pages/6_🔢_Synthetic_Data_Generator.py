@@ -12,7 +12,7 @@ from auth import check_session
 from typing import Dict, List, Any, Optional
 
 # =============================================================================
-# UNIVERSAL LLM DATA GENERATOR - FIXED VERSION
+# UNIVERSAL LLM DATA GENERATOR - FIXED WITH CHUNKED GENERATION
 # =============================================================================
 
 class UniversalDataGenerator:
@@ -22,6 +22,13 @@ class UniversalDataGenerator:
         try:
             self.client = Groq(api_key=st.secrets["GROQ_API_KEY"])
             self.available = True
+            # Available models - try different ones based on needs
+            self.models = {
+                "fast": "llama-3.1-8b-instant",  # Fast, good for small data
+                "balanced": "llama-3.3-70b-versatile",  # Balanced quality/speed
+                "large": "mixtral-8x7b-32768",  # Larger context window
+                "best": "llama-3-groq-70b-8192-tool-use-preview"  # Best quality
+            }
         except:
             self.available = False
             st.warning("LLM not available")
@@ -180,23 +187,208 @@ class UniversalDataGenerator:
         # Analyze the dataset first
         analysis = self.analyze_dataset(original_df)
         
-        # Get LLM to generate data
+        # For large datasets, use chunked generation
+        if num_rows > 50:
+            return self._chunked_generation(original_df, num_rows, analysis)
+        
+        # For small datasets, use single request
         with st.spinner(f"🤖 LLM is generating {num_rows} perfect synthetic rows..."):
             llm_data = self._get_llm_generated_data(original_df, num_rows, analysis)
         
-        if llm_data is not None and len(llm_data) >= num_rows * 0.8:  # At least 80% of requested rows
+        if llm_data is not None and len(llm_data) >= num_rows:
             return llm_data.head(num_rows)
         
-        # If LLM failed or didn't generate enough rows, use fallback
+        # If LLM failed, use enhanced fallback
         st.warning(f"LLM generated only {len(llm_data) if llm_data is not None else 0} rows. Using enhanced fallback...")
         return self._enhanced_fallback(original_df, num_rows, analysis)
     
-    def _get_llm_generated_data(self, df, num_rows, analysis):
-        """Get LLM to generate data for ANY dataset"""
+    def _chunked_generation(self, df, num_rows, analysis):
+        """Generate data in chunks to handle large row counts"""
+        chunks_needed = math.ceil(num_rows / 30)  # 30 rows per chunk (safe limit)
+        chunks = []
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for chunk_num in range(chunks_needed):
+            chunk_rows = min(30, num_rows - len(chunks) * 30)
+            status_text.text(f"Generating chunk {chunk_num + 1}/{chunks_needed} ({chunk_rows} rows)...")
+            
+            # Update start ID for each chunk
+            start_id = 1000 + (chunk_num * 30)
+            
+            # Generate chunk
+            chunk_data = self._get_llm_generated_chunk(df, chunk_rows, analysis, start_id, chunk_num)
+            
+            if chunk_data is not None and len(chunk_data) > 0:
+                chunks.append(chunk_data)
+            
+            # Update progress
+            progress_bar.progress((chunk_num + 1) / chunks_needed)
+        
+        status_text.text("Combining chunks...")
+        
+        if chunks:
+            # Combine all chunks
+            combined_df = pd.concat(chunks, ignore_index=True)
+            
+            # Ensure we have exactly the requested number of rows
+            if len(combined_df) < num_rows:
+                missing = num_rows - len(combined_df)
+                st.info(f"Generated {len(combined_df)} rows. Adding {missing} more...")
+                additional_df = self._generate_missing_rows(combined_df, missing, analysis)
+                combined_df = pd.concat([combined_df, additional_df], ignore_index=True)
+            
+            # Trim if too many
+            combined_df = combined_df.head(num_rows)
+            
+            status_text.text(f"✅ Successfully generated {len(combined_df)} rows!")
+            progress_bar.empty()
+            
+            return combined_df
+        
+        # If chunked generation failed, use enhanced fallback
+        progress_bar.empty()
+        status_text.text("Chunked generation failed, using fallback...")
+        return self._enhanced_fallback(df, num_rows, analysis)
+    
+    def _get_llm_generated_chunk(self, df, chunk_rows, analysis, start_id, chunk_num):
+        """Get LLM to generate a chunk of data"""
         
         # Prepare samples
         samples = []
-        for i, (idx, row) in enumerate(df.head(3).iterrows()):  # Use only 3 samples for clarity
+        for i, (idx, row) in enumerate(df.head(3).iterrows()):
+            sample = {}
+            for col in df.columns:
+                val = row[col]
+                if pd.isna(val):
+                    sample[col] = None
+                elif isinstance(val, (int, np.integer)):
+                    sample[col] = int(val)
+                elif isinstance(val, (float, np.floating)):
+                    sample[col] = float(val)
+                else:
+                    sample[col] = str(val)
+            samples.append(sample)
+        
+        # Build prompt for chunk
+        prompt = self._build_chunk_prompt(df, chunk_rows, samples, analysis, start_id, chunk_num)
+        
+        try:
+            # Use appropriate model based on chunk size
+            model_to_use = self.models["large"] if chunk_rows > 20 else self.models["balanced"]
+            
+            messages = [
+                {"role": "system", "content": """You are a data generation expert. Generate realistic synthetic data.
+                
+                IMPORTANT RULES:
+                1. Generate EXACTLY the requested number of rows
+                2. Follow the exact column order and names
+                3. Maintain data types and formats
+                4. Make all values realistic
+                5. Return ONLY JSON array, nothing else"""},
+                {"role": "user", "content": prompt}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=model_to_use,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=4000,  # Reasonable for chunk
+                response_format={"type": "json_object"}
+            )
+            
+            result = response.choices[0].message.content
+            
+            # Parse the response
+            return self._parse_llm_response(result, df.columns, chunk_rows, analysis, start_id)
+            
+        except Exception as e:
+            st.warning(f"Chunk generation failed: {str(e)}")
+            return None
+    
+    def _build_chunk_prompt(self, df, chunk_rows, samples, analysis, start_id, chunk_num):
+        """Build prompt for chunk generation"""
+        
+        column_info = []
+        for col in df.columns:
+            col_type = analysis["types"].get(col, "text")
+            samples_list = analysis["sample_data"].get(col, [])
+            
+            info = f"Column: '{col}' (Type: {col_type})"
+            if samples_list:
+                info += f" | Samples: {samples_list[:3]}"
+            
+            if col_type == "id" and "AP" in str(samples_list[0] if samples_list else ""):
+                info += " | Pattern: AP### (Appointment IDs starting with AP)"
+            elif col_type == "name":
+                info += " | Format: Indian names like 'Rahul Patel', 'Priya Sharma'"
+            elif col_type == "phone":
+                info += " | Format: 10-digit Indian mobile numbers"
+            elif col_type == "date":
+                info += " | Format: DD-MM-YYYY"
+            
+            column_info.append(info)
+        
+        prompt = f"""
+        Generate EXACTLY {chunk_rows} rows of synthetic data matching this dataset structure.
+        
+        DATASET STRUCTURE:
+        - Columns: {', '.join(df.columns.tolist())}
+        - Total columns: {len(df.columns)}
+        
+        COLUMN DETAILS:
+        {chr(10).join(f'{i+1}. {info}' for i, info in enumerate(column_info))}
+        
+        SAMPLE DATA (first 3 rows):
+        {json.dumps(samples, indent=2, default=str)}
+        
+        IMPORTANT INSTRUCTIONS for this chunk (Chunk #{chunk_num + 1}):
+        1. Generate EXACTLY {chunk_rows} rows, no less
+        2. Use the EXACT same column names and order
+        3. ID numbers should start from AP{start_id:03d} and continue sequentially
+        4. Follow these patterns:
+           - IDs: AP{start_id:03d}, AP{start_id+1:03d}, etc.
+           - Names: Real Indian names (First Last format)
+           - Ages: Realistic ages (18-70)
+           - Gender: M or F only
+           - Phone: 10-digit numbers (e.g., 9876543210)
+           - Department: Medical departments like Cardiology, Neurology, etc.
+           - Doctor: Indian doctor names (Dr. First Last)
+           - Date: DD-MM-YYYY format, recent dates
+           - Time: HH:MM AM/PM format
+           - Diagnosis: Real medical conditions
+           - Fee: Reasonable fees (500-1500)
+           - Status: 'Completed' or similar statuses
+        
+        OUTPUT FORMAT: Return ONLY a JSON object with key "data" containing the array:
+        {{
+            "data": [
+                {{
+                    "{df.columns[0]}": "AP{start_id:03d}",
+                    "{df.columns[1]}": "Amit Kumar",
+                    ...
+                }},
+                {{
+                    "{df.columns[0]}": "AP{start_id+1:03d}",
+                    "{df.columns[1]}": "Priya Sharma",
+                    ...
+                }},
+                ...
+            ]
+        }}
+        
+        Generate EXACTLY {chunk_rows} rows. DO NOT include any other text.
+        """
+        
+        return prompt
+    
+    def _get_llm_generated_data(self, df, num_rows, analysis):
+        """Get LLM to generate data for ANY dataset (single request)"""
+        
+        # Prepare samples
+        samples = []
+        for i, (idx, row) in enumerate(df.head(3).iterrows()):
             sample = {}
             for col in df.columns:
                 val = row[col]
@@ -211,9 +403,12 @@ class UniversalDataGenerator:
             samples.append(sample)
         
         # Build dynamic prompt
-        prompt = self._build_enhanced_prompt(df, num_rows, samples, analysis)
+        prompt = self._build_single_prompt(df, num_rows, samples, analysis)
         
         try:
+            # Choose model based on size
+            model_to_use = self.models["large"] if num_rows > 20 else self.models["balanced"]
+            
             messages = [
                 {"role": "system", "content": """You are a data generation expert. Generate realistic synthetic data.
                 
@@ -227,24 +422,24 @@ class UniversalDataGenerator:
             ]
             
             response = self.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=model_to_use,
                 messages=messages,
                 temperature=0.3,
-                max_tokens=12000,  # Increased tokens for more rows
-                response_format={"type": "json_object"}  # Force JSON output
+                max_tokens=8000,
+                response_format={"type": "json_object"}
             )
             
             result = response.choices[0].message.content
             
             # Parse the response
-            return self._parse_llm_response_enhanced(result, df.columns, num_rows, analysis)
+            return self._parse_llm_response(result, df.columns, num_rows, analysis)
             
         except Exception as e:
             st.error(f"LLM generation failed: {str(e)}")
             return None
     
-    def _build_enhanced_prompt(self, df, num_rows, samples, analysis):
-        """Build enhanced prompt with explicit instructions"""
+    def _build_single_prompt(self, df, num_rows, samples, analysis):
+        """Build prompt for single request generation"""
         
         column_info = []
         for col in df.columns:
@@ -316,8 +511,8 @@ class UniversalDataGenerator:
         
         return prompt
     
-    def _parse_llm_response_enhanced(self, response, expected_columns, num_rows, analysis):
-        """Enhanced parsing of LLM response"""
+    def _parse_llm_response(self, response, expected_columns, num_rows, analysis, start_id=1000):
+        """Parse LLM's response"""
         try:
             # First try to parse as JSON
             data = json.loads(response)
@@ -350,13 +545,8 @@ class UniversalDataGenerator:
                 # Apply validation
                 df = self._validate_data(df, analysis)
                 
-                # Ensure we have enough rows
-                if len(df) < num_rows:
-                    # Generate additional rows using fallback
-                    additional_needed = num_rows - len(df)
-                    st.info(f"LLM generated {len(df)} rows. Adding {additional_needed} more rows...")
-                    additional_df = self._generate_additional_rows(df, additional_needed, analysis)
-                    df = pd.concat([df, additional_df], ignore_index=True)
+                # Fix IDs if needed
+                df = self._fix_ids(df, analysis, start_id)
                 
                 return df.head(num_rows)  # Ensure exact number
             
@@ -373,6 +563,24 @@ class UniversalDataGenerator:
             # Clean column
             df[col] = df[col].apply(lambda x: self._clean_value(x, col_type, col))
         
+        return df
+    
+    def _fix_ids(self, df, analysis, start_id=1000):
+        """Fix ID sequences"""
+        for col in df.columns:
+            col_type = analysis["types"].get(col, "text")
+            if col_type == "id":
+                # Check if IDs need fixing
+                for idx in range(len(df)):
+                    current_id = str(df.at[idx, col])
+                    if 'AP' in current_id:
+                        # Extract and fix number
+                        num_match = re.search(r'\d+', current_id)
+                        if num_match:
+                            expected_num = start_id + idx
+                            df.at[idx, col] = f"AP{expected_num:03d}"
+                        else:
+                            df.at[idx, col] = f"AP{start_id + idx:03d}"
         return df
     
     def _clean_value(self, value, col_type, col_name):
@@ -459,7 +667,7 @@ class UniversalDataGenerator:
         
         return f"{random.choice(first_names)} {random.choice(last_names)}"
     
-    def _generate_additional_rows(self, existing_df, num_rows, analysis):
+    def _generate_missing_rows(self, existing_df, num_rows, analysis):
         """Generate additional rows when LLM doesn't provide enough"""
         generated = {}
         
@@ -688,8 +896,8 @@ def main():
                 with col2:
                     generation_mode = st.selectbox(
                         "Generation Mode",
-                        ["Smart LLM (Recommended)", "Enhanced Fallback", "Fast Basic"],
-                        help="LLM: Best quality but slower | Fallback: Good quality | Basic: Fastest"
+                        ["Smart LLM (Chunked)", "Enhanced Fallback", "Fast Basic"],
+                        help="LLM: Best quality (chunked for large datasets) | Fallback: Good quality | Basic: Fastest"
                     )
                 
                 with col3:
@@ -702,7 +910,7 @@ def main():
                                 st.session_state.data_analysis = generator.analyze_dataset(df)
                             
                             # Generate based on mode
-                            if generation_mode == "Smart LLM (Recommended)" and generator.available:
+                            if generation_mode == "Smart LLM (Chunked)" and generator.available:
                                 generated = generator.generate_perfect_data(df, int(num_rows))
                             elif generation_mode == "Enhanced Fallback":
                                 analysis = st.session_state.data_analysis
@@ -717,7 +925,7 @@ def main():
                                     st.warning(f"Generated only {len(generated)} rows. Generating more...")
                                     # Generate additional rows
                                     analysis = st.session_state.data_analysis
-                                    additional = generator._generate_additional_rows(
+                                    additional = generator._generate_missing_rows(
                                         generated, 
                                         num_rows - len(generated), 
                                         analysis
