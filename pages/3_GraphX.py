@@ -589,8 +589,8 @@ class KnowledgeGraphVisualizer:
 def main():
     # page configuration
     st.set_page_config(
-        page_title="irmc Aura",
-        page_icon="🌐",
+        page_title="GraphX",
+        page_icon="",
         layout="wide"
     )
     
@@ -650,8 +650,7 @@ def main():
     # add back to home button
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("irmc Aura")
-        st.markdown("### chat with your documents using Aura")
+        st.title("GraphX")
     with col2:
         if st.button("🏠 back to home"):
             st.switch_page("app.py")
