@@ -295,6 +295,14 @@ def main():
     # custom css for better chat display
     st.markdown("""
     <style>
+        .main-header {
+        font-size: 2.5rem;
+        background: linear-gradient(135deg, #175CFF, #00A3FF);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 800;
+        margin-bottom: 1rem;
+        }
         .chat-message {
             padding: 1rem;
             border-radius: 10px;
@@ -348,7 +356,7 @@ def main():
     # add back to home button
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("iRMC Chatbot")
+        st.markdown('<div class="main-header">iRMC Chatbot</div>', unsafe_allow_html=True)
     with col2:
         if st.button("🏠 back to home"):
             st.switch_page("app.py")
