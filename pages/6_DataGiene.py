@@ -822,8 +822,19 @@ def main():
         page_icon="🚀",
         layout="wide"
     )
-    
-    st.title("iRMC DataGiene")
+    st.markdown("""
+    <style>
+        .main-header {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #175CFF, #00A3FF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown('<div class="main-header">iRMC DataGiene</div>', unsafe_allow_html=True)
     # File upload
     uploaded_file = st.file_uploader("📤 Upload ANY CSV Dataset", type=['csv'])
     
