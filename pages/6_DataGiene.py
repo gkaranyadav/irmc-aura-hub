@@ -1,4 +1,4 @@
-# pages/6_🔢_Synthetic_Data_Generator.py - ENHANCED LOGIC VERSION
+# pages/6_🔢_Synthetic_Data_Generator.py - GENERIC VERSION
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,760 +12,557 @@ from datetime import datetime, timedelta
 import math
 
 # =============================================================================
-# ENHANCED LOGIC-BASED RULE ENGINE
+# GENERIC PROMPT ENGINE - NO ASSUMPTIONS
 # =============================================================================
 
-class LogicBasedRuleEngine:
-    """Advanced rule engine that combines LLM analysis with strong logic"""
+class GenericPromptEngine:
+    """Completely generic prompting - learns from ANY dataset"""
     
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key
+    @staticmethod
+    def create_analysis_prompt(df: pd.DataFrame, sample_df: pd.DataFrame) -> str:
+        """Create generic prompt that works for ANY dataset"""
+        
+        # Get column type analysis
+        column_analysis = GenericPromptEngine._analyze_columns(df)
+        
+        prompt = f"""
+# COMPREHENSIVE DATA PATTERN ANALYSIS
+
+## DATASET INFORMATION
+- Total Rows: {len(df)}
+- Total Columns: {len(df.columns)}
+- Column Names: {list(df.columns)}
+
+## COLUMN TYPE ANALYSIS
+{column_analysis}
+
+## SAMPLE DATA FOR ANALYSIS
+{sample_df.head(20).to_string(index=False)}
+
+## YOUR TASK: DISCOVER DATA PATTERNS
+
+Analyze this dataset COMPLETELY and find ALL relationships and patterns that exist in the data.
+
+### 1. VALUE RELATIONSHIPS BETWEEN COLUMNS
+For EVERY combination of columns, check if values in one column determine values in another:
+- When value X appears in column A, what value appears in column B?
+- Are these mappings consistent?
+- Are they one-to-one or one-to-many?
+
+**Search for:**
+- Exact mappings (100% consistent)
+- Strong correlations (>90% consistent)
+- Common value combinations
+
+### 2. COLUMN-SPECIFIC PATTERNS
+For EACH column individually, analyze:
+- What type of data does it contain?
+- What values are allowed?
+- Are there any patterns in the values?
+- What are the statistical properties?
+
+### 3. DATA INTEGRITY RULES
+Look for rules that maintain data quality:
+- Value ranges that must be respected
+- Format patterns that must be followed
+- Mandatory vs optional fields
+- Uniqueness requirements
+
+### 4. BUSINESS/DOMAIN LOGIC (IF ANY EXISTS IN DATA)
+Only identify rules that are ACTUALLY PRESENT in the data:
+- If the data shows certain value combinations always occur together
+- If there are dependencies between columns
+- If certain values imply others
+
+## ANALYSIS METHODOLOGY
+
+1. **Start column-by-column**: Understand each column individually
+2. **Check column pairs**: Look for relationships between every column pair
+3. **Validate across entire sample**: Ensure patterns hold consistently
+4. **Look for edge cases**: Find exceptions to patterns
+5. **Document everything**: Record ALL findings
+
+## IMPORTANT RULES
+
+1. **NO ASSUMPTIONS**: Only report what you actually see in the data
+2. **VALIDATE**: Every claim must be backed by examples from the sample
+3. **BE SPECIFIC**: Use exact column names and values from the data
+4. **COMPREHENSIVE**: Check every column and relationship
+
+## EXPECTED OUTPUT FORMAT
+
+Return a JSON object with:
+
+{{
+  "dataset_description": "Brief description of what the dataset contains",
+  "value_mappings": [
+    {{
+      "from_column": "exact_column_name_from_data",
+      "from_value": "exact_value_from_data",
+      "to_column": "exact_column_name_from_data", 
+      "to_value": "exact_value_from_data",
+      "confidence": "exact/strong/weak",
+      "evidence_count": number_of_times_observed
+    }}
+  ],
+  "column_constraints": {{
+    "column_name": {{
+      "data_type": "inferred_type",
+      "observed_values": ["list", "of", "all", "observed", "values"],
+      "value_range": {{"min": min_value, "max": max_value}},
+      "patterns_detected": ["any_patterns_found"],
+      "null_allowed": true/false
+    }}
+  }},
+  "data_quality_rules": [
+    "rules_like: 'phone_numbers_must_be_10_digits'",
+    "rules_like: 'appointment_date_must_be_future'"
+  ],
+  "unique_constraints": ["columns_that_appear_unique"],
+  "relationships_summary": "Overall description of column relationships"
+}}
+
+## CRITICAL: Your analysis will be used to generate NEW data that follows the SAME patterns.
+## If you miss a relationship, the generated data will be WRONG.
+## Be THOROUGH and ACCURATE.
+"""
+        return prompt
     
-    def discover_and_enhance_rules(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """
-        Discover rules with LLM AND enhance with strong logic
-        """
-        # Phase 1: Statistical rule discovery (ALWAYS RUNS)
-        statistical_rules = self._discover_statistical_rules(df)
+    @staticmethod
+    def _analyze_columns(df: pd.DataFrame) -> str:
+        """Analyze columns without assumptions"""
+        analysis = []
         
-        # Phase 2: Pattern-based rule discovery
-        pattern_rules = self._discover_pattern_based_rules(df)
+        for col in df.columns:
+            dtype = str(df[col].dtype)
+            unique_count = df[col].nunique()
+            null_count = df[col].isnull().sum()
+            null_percentage = (null_count / len(df)) * 100
+            
+            analysis.append(f"**{col}**:")
+            analysis.append(f"  - Data Type: {dtype}")
+            analysis.append(f"  - Unique Values: {unique_count} ({unique_count/len(df)*100:.1f}% of rows)")
+            analysis.append(f"  - Null Values: {null_count} ({null_percentage:.1f}%)")
+            
+            # Show sample values
+            if unique_count < 10:
+                analysis.append(f"  - All Values: {df[col].dropna().unique().tolist()}")
+            else:
+                sample_vals = df[col].dropna().sample(min(5, unique_count)).tolist()
+                analysis.append(f"  - Sample Values: {sample_vals}")
+            
+            # Detect potential patterns
+            if unique_count > 0:
+                sample_val = str(df[col].dropna().iloc[0])
+                patterns = GenericPromptEngine._detect_patterns(sample_val)
+                if patterns:
+                    analysis.append(f"  - Patterns Detected: {patterns}")
+            
+            analysis.append("")
         
-        # Phase 3: LLM discovery (if available)
-        llm_rules = {}
-        if self.api_key:
-            try:
-                llm_rules = self._discover_llm_rules(df)
-            except:
-                st.warning("LLM rule discovery failed - using enhanced statistical methods")
-        
-        # Phase 4: Merge and enhance all rules
-        merged_rules = self._merge_and_enhance_rules(
-            statistical_rules, pattern_rules, llm_rules, df
-        )
-        
-        # Phase 5: Validate rules against data
-        validated_rules = self._validate_rules_against_data(merged_rules, df)
-        
-        return validated_rules
+        return "\n".join(analysis)
     
-    def _discover_statistical_rules(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Discover rules using statistical analysis"""
-        st.info("🔍 Performing statistical rule discovery...")
+    @staticmethod
+    def _detect_patterns(value: str) -> List[str]:
+        """Detect common patterns in values"""
+        patterns = []
+        
+        # Convert to string for pattern matching
+        val_str = str(value)
+        
+        # ID patterns
+        if re.match(r'^[A-Z0-9]{8,10}$', val_str):
+            patterns.append("alphanumeric_id")
+        elif re.match(r'^\d{8,10}$', val_str):
+            patterns.append("numeric_id")
+        
+        # Phone patterns
+        if re.match(r'^\d{10}$', val_str):
+            patterns.append("10_digit_phone")
+        elif re.match(r'^\d{3}[-.\s]?\d{3}[-.\s]?\d{4}$', val_str):
+            patterns.append("formatted_phone")
+        
+        # Date patterns
+        date_patterns = [
+            r'\d{2}[-/]\d{2}[-/]\d{4}',
+            r'\d{4}[-/]\d{2}[-/]\d{2}',
+            r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}'
+        ]
+        if any(re.match(p, val_str) for p in date_patterns):
+            patterns.append("date_like")
+        
+        # Time patterns
+        if re.match(r'\d{1,2}[:]\d{2}\s*(?:AM|PM|am|pm)?', val_str, re.IGNORECASE):
+            patterns.append("time_like")
+        
+        # Name patterns
+        if re.match(r'^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*$', val_str):
+            patterns.append("name_like")
+        
+        return patterns
+
+# =============================================================================
+# ENHANCED STATISTICAL RULE DISCOVERY
+# =============================================================================
+
+class EnhancedStatisticalDiscovery:
+    """Discover rules using statistics only - no hardcoding"""
+    
+    @staticmethod
+    def discover_rules(df: pd.DataFrame) -> Dict[str, Any]:
+        """Discover all rules statistically"""
         
         rules = {
             "value_mappings": [],
-            "value_constraints": {},
-            "distribution_patterns": {},
-            "column_groups": [],
-            "hierarchies": [],
-            "uniqueness_constraints": [],
-            "statistical_summary": {}
+            "column_constraints": {},
+            "data_quality_rules": [],
+            "unique_constraints": [],
+            "statistical_patterns": {},
+            "generation_strategy": {}
         }
         
-        # 1. Discover EXACT value mappings
-        exact_mappings = self._find_exact_value_mappings(df)
-        rules["value_mappings"].extend(exact_mappings)
+        # 1. Discover exact value mappings
+        rules["value_mappings"] = EnhancedStatisticalDiscovery._find_all_mappings(df)
         
-        # 2. Discover PROBABILISTIC mappings
-        probabilistic_mappings = self._find_probabilistic_mappings(df)
-        rules["value_mappings"].extend(probabilistic_mappings)
+        # 2. Analyze each column's constraints
+        rules["column_constraints"] = EnhancedStatisticalDiscovery._analyze_column_constraints(df)
         
-        # 3. Discover value constraints
-        rules["value_constraints"] = self._discover_value_constraints(df)
+        # 3. Find unique columns
+        rules["unique_constraints"] = EnhancedStatisticalDiscovery._find_unique_columns(df)
         
-        # 4. Discover column groups (columns that always appear together)
-        rules["column_groups"] = self._discover_column_groups(df)
+        # 4. Discover statistical patterns
+        rules["statistical_patterns"] = EnhancedStatisticalDiscovery._find_statistical_patterns(df)
         
-        # 5. Discover value hierarchies
-        rules["hierarchies"] = self._discover_hierarchies(df)
-        
-        # 6. Discover uniqueness constraints
-        rules["uniqueness_constraints"] = self._discover_uniqueness_constraints(df)
-        
-        # 7. Discover distribution patterns
-        rules["distribution_patterns"] = self._discover_distribution_patterns(df)
-        
-        # 8. Statistical summary
-        rules["statistical_summary"] = self._create_statistical_summary(df)
+        # 5. Create generation strategy
+        rules["generation_strategy"] = EnhancedStatisticalDiscovery._create_generation_strategy(df, rules)
         
         return rules
     
-    def _find_exact_value_mappings(self, df: pd.DataFrame) -> List[Dict]:
-        """Find exact one-to-one value mappings between columns"""
+    @staticmethod
+    def _find_all_mappings(df: pd.DataFrame) -> List[Dict]:
+        """Find all value mappings between columns"""
         mappings = []
         
+        # Check every pair of columns
         for i, col1 in enumerate(df.columns):
             for col2 in df.columns[i+1:]:
-                # Check for exact mappings
-                value_map = defaultdict(set)
-                
-                for _, row in df.iterrows():
-                    val1 = str(row[col1]) if pd.notna(row[col1]) else "NaN"
-                    val2 = str(row[col2]) if pd.notna(row[col2]) else "NaN"
-                    value_map[val1].add(val2)
-                
-                # Find one-to-one mappings
-                for val1, val2_set in value_map.items():
-                    if len(val2_set) == 1:
-                        val2 = next(iter(val2_set))
-                        
-                        # Count occurrences
-                        matching_rows = df[
-                            (df[col1].astype(str) == val1) & 
-                            (df[col2].astype(str) == val2)
-                        ]
-                        
-                        # Check for violations
-                        violating_rows = df[
-                            (df[col1].astype(str) == val1) & 
-                            (df[col2].astype(str) != val2)
-                        ]
-                        
-                        if len(violating_rows) == 0:  # EXACT mapping
-                            mappings.append({
-                                "from_column": col1,
-                                "from_value": val1 if val1 != "NaN" else None,
-                                "to_column": col2,
-                                "to_value": val2 if val2 != "NaN" else None,
-                                "confidence": "exact",
-                                "support_count": len(matching_rows),
-                                "coverage": len(matching_rows) / len(df),
-                                "type": "value_mapping"
-                            })
+                col_mappings = EnhancedStatisticalDiscovery._analyze_column_pair(df, col1, col2)
+                mappings.extend(col_mappings)
         
         return mappings
     
-    def _find_probabilistic_mappings(self, df: pd.DataFrame) -> List[Dict]:
-        """Find probabilistic mappings with high confidence"""
+    @staticmethod
+    def _analyze_column_pair(df: pd.DataFrame, col1: str, col2: str) -> List[Dict]:
+        """Analyze relationship between two columns"""
         mappings = []
         
-        for i, col1 in enumerate(df.columns):
-            for col2 in df.columns[i+1:]:
-                # Calculate conditional probabilities
-                value_counts = defaultdict(Counter)
+        # Group by col1 values and see what col2 values they map to
+        grouped = df.groupby(col1)[col2].agg(['unique', 'count'])
+        
+        for val1, row in grouped.iterrows():
+            unique_vals = row['unique']
+            count = row['count']
+            
+            # If exactly one unique value, it's a mapping
+            if len(unique_vals) == 1:
+                val2 = unique_vals[0]
                 
-                for _, row in df.iterrows():
-                    val1 = str(row[col1]) if pd.notna(row[col1]) else "NaN"
-                    val2 = str(row[col2]) if pd.notna(row[col2]) else "NaN"
-                    value_counts[val1][val2] += 1
+                # Verify this is consistent
+                consistent = len(df[(df[col1] == val1) & (df[col2] == val2)]) == count
                 
-                # Find high-probability mappings (>80%)
-                for val1, counter in value_counts.items():
-                    total = sum(counter.values())
-                    for val2, count in counter.items():
-                        probability = count / total
-                        
-                        if probability >= 0.8 and total >= 3:  # High confidence
-                            mappings.append({
-                                "from_column": col1,
-                                "from_value": val1 if val1 != "NaN" else None,
-                                "to_column": col2,
-                                "to_value": val2 if val2 != "NaN" else None,
-                                "confidence": "probabilistic",
-                                "probability": round(probability, 2),
-                                "support_count": count,
-                                "coverage": count / len(df),
-                                "type": "probabilistic_mapping"
-                            })
+                if consistent:
+                    mappings.append({
+                        "from_column": col1,
+                        "from_value": val1,
+                        "to_column": col2,
+                        "to_value": val2,
+                        "confidence": "exact",
+                        "support": int(count),
+                        "coverage": count / len(df)
+                    })
+            
+            # If mostly one value (strong correlation)
+            elif len(unique_vals) > 1:
+                # Find most common value
+                value_counts = df[df[col1] == val1][col2].value_counts()
+                most_common_val = value_counts.index[0]
+                most_common_count = value_counts.iloc[0]
+                
+                # Check if strong correlation (>90%)
+                if most_common_count / count > 0.9:
+                    mappings.append({
+                        "from_column": col1,
+                        "from_value": val1,
+                        "to_column": col2,
+                        "to_value": most_common_val,
+                        "confidence": "strong",
+                        "support": int(most_common_count),
+                        "coverage": most_common_count / len(df),
+                        "probability": most_common_count / count
+                    })
+        
+        # Also check reverse mapping
+        grouped_reverse = df.groupby(col2)[col1].agg(['unique', 'count'])
+        
+        for val2, row in grouped_reverse.iterrows():
+            unique_vals = row['unique']
+            count = row['count']
+            
+            if len(unique_vals) == 1:
+                val1 = unique_vals[0]
+                
+                # Check if we already have this mapping
+                existing = any(
+                    m['from_column'] == col2 and m['from_value'] == val2 and 
+                    m['to_column'] == col1 and m['to_value'] == val1
+                    for m in mappings
+                )
+                
+                if not existing:
+                    consistent = len(df[(df[col2] == val2) & (df[col1] == val1)]) == count
+                    
+                    if consistent:
+                        mappings.append({
+                            "from_column": col2,
+                            "from_value": val2,
+                            "to_column": col1,
+                            "to_value": val1,
+                            "confidence": "exact",
+                            "support": int(count),
+                            "coverage": count / len(df)
+                        })
         
         return mappings
     
-    def _discover_value_constraints(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Discover value constraints for each column"""
+    @staticmethod
+    def _analyze_column_constraints(df: pd.DataFrame) -> Dict:
+        """Analyze constraints for each column"""
         constraints = {}
         
         for col in df.columns:
             col_constraints = {
-                "type": self._detect_column_type(df[col]),
-                "null_percentage": round(df[col].isnull().sum() / len(df) * 100, 1),
-                "unique_count": df[col].nunique()
+                "data_type": str(df[col].dtype),
+                "unique_count": int(df[col].nunique()),
+                "null_count": int(df[col].isnull().sum()),
+                "null_percentage": float(df[col].isnull().sum() / len(df)),
+                "observed_values": EnhancedStatisticalDiscovery._get_observed_values(df[col])
             }
             
-            # Detect specific constraints based on type
-            if col_constraints["type"] == "categorical":
-                col_constraints.update(self._analyze_categorical_constraints(df[col]))
-            elif col_constraints["type"] == "numeric":
-                col_constraints.update(self._analyze_numeric_constraints(df[col]))
-            elif col_constraints["type"] == "datetime":
-                col_constraints.update(self._analyze_datetime_constraints(df[col]))
-            elif col_constraints["type"] == "text":
-                col_constraints.update(self._analyze_text_constraints(df[col]))
-            elif col_constraints["type"] == "id":
-                col_constraints.update(self._analyze_id_constraints(df[col]))
+            # Add type-specific constraints
+            if pd.api.types.is_numeric_dtype(df[col]):
+                numeric_series = pd.to_numeric(df[col], errors='coerce')
+                col_constraints.update({
+                    "min": float(numeric_series.min()),
+                    "max": float(numeric_series.max()),
+                    "mean": float(numeric_series.mean()),
+                    "std": float(numeric_series.std()),
+                    "type": "numeric"
+                })
+            
+            elif pd.api.types.is_datetime64_any_dtype(df[col]):
+                col_constraints.update({
+                    "type": "datetime",
+                    "min_date": str(df[col].min()),
+                    "max_date": str(df[col].max())
+                })
+            
+            else:
+                # Text or categorical
+                sample_values = df[col].dropna().astype(str).tolist()
+                patterns = EnhancedStatisticalDiscovery._analyze_text_patterns(sample_values)
+                
+                col_constraints.update({
+                    "type": "text" if len(sample_values) > df[col].nunique() * 0.9 else "categorical",
+                    "patterns": patterns,
+                    "length_stats": {
+                        "min": min(len(str(v)) for v in sample_values) if sample_values else 0,
+                        "max": max(len(str(v)) for v in sample_values) if sample_values else 0,
+                        "mean": np.mean([len(str(v)) for v in sample_values]) if sample_values else 0
+                    }
+                })
             
             constraints[col] = col_constraints
         
         return constraints
     
-    def _detect_column_type(self, series: pd.Series) -> str:
-        """Detect the type of column"""
-        # Check for ID columns
-        if 'id' in series.name.lower() or 'code' in series.name.lower():
-            unique_ratio = series.nunique() / len(series)
-            if unique_ratio > 0.9:
-                return "id"
-        
-        # Check for datetime
-        if pd.api.types.is_datetime64_any_dtype(series):
-            return "datetime"
-        
-        # Check for numeric
-        if pd.api.types.is_numeric_dtype(series):
-            unique_ratio = series.nunique() / len(series)
-            if unique_ratio < 0.3 and series.nunique() < 20:
-                return "categorical"
-            return "numeric"
-        
-        # Check for categorical
-        unique_ratio = series.nunique() / len(series)
-        if unique_ratio < 0.3 and series.nunique() < 100:
-            return "categorical"
-        
-        # Check for text patterns
-        sample_values = series.dropna().head(10).astype(str)
-        text_patterns = any(
-            len(str(val)) > 50 or 
-            re.search(r'[a-zA-Z]{10,}', str(val)) 
-            for val in sample_values
-        )
-        
-        if text_patterns:
-            return "text"
-        
-        return "categorical"
-    
-    def _analyze_categorical_constraints(self, series: pd.Series) -> Dict:
-        """Analyze categorical column constraints"""
-        constraints = {
-            "allowed_values": series.dropna().unique().tolist(),
-            "value_distribution": series.value_counts().to_dict(),
-            "most_common": series.mode().iloc[0] if not series.mode().empty else None,
-            "most_common_percentage": round(series.value_counts(normalize=True).iloc[0] * 100, 1)
-        }
-        
-        # Detect if values follow a pattern
-        sample_values = [str(v) for v in series.dropna().unique()[:10]]
-        if all(len(v) == 1 for v in sample_values):  # Single character codes
-            constraints["pattern"] = "single_character"
-        elif all(v in ['M', 'F', 'Male', 'Female'] for v in sample_values):
-            constraints["pattern"] = "gender"
-        
-        return constraints
-    
-    def _analyze_numeric_constraints(self, series: pd.Series) -> Dict:
-        """Analyze numeric column constraints"""
-        numeric_series = pd.to_numeric(series, errors='coerce')
-        
-        constraints = {
-            "min": float(numeric_series.min()),
-            "max": float(numeric_series.max()),
-            "mean": float(numeric_series.mean()),
-            "median": float(numeric_series.median()),
-            "std": float(numeric_series.std()),
-            "iqr": float(numeric_series.quantile(0.75) - numeric_series.quantile(0.25))
-        }
-        
-        # Detect if values are integers
-        if all(pd.notna(v) and float(v).is_integer() for v in numeric_series.dropna().head(20)):
-            constraints["integer_only"] = True
-        
-        # Detect if values are percentages (0-100)
-        if constraints["min"] >= 0 and constraints["max"] <= 100:
-            constraints["likely_percentage"] = True
-        
-        # Detect if values are ages
-        if "age" in series.name.lower() and constraints["min"] >= 0 and constraints["max"] <= 120:
-            constraints["likely_age"] = True
-        
-        # Detect distribution shape
-        skew = float(numeric_series.skew())
-        if abs(skew) > 1:
-            constraints["distribution"] = "highly_skewed"
-        elif abs(skew) > 0.5:
-            constraints["distribution"] = "moderately_skewed"
+    @staticmethod
+    def _get_observed_values(series: pd.Series) -> List:
+        """Get observed values for a column"""
+        if series.nunique() <= 20:
+            return series.dropna().unique().tolist()
         else:
-            constraints["distribution"] = "approximately_normal"
-        
-        return constraints
+            return series.dropna().sample(min(20, len(series))).tolist()
     
-    def _analyze_datetime_constraints(self, series: pd.Series) -> Dict:
-        """Analyze datetime constraints"""
-        datetime_series = pd.to_datetime(series, errors='coerce')
+    @staticmethod
+    def _analyze_text_patterns(values: List[str]) -> List[str]:
+        """Analyze patterns in text values"""
+        if not values:
+            return []
         
-        constraints = {
-            "min_date": datetime_series.min().isoformat() if not pd.isna(datetime_series.min()) else None,
-            "max_date": datetime_series.max().isoformat() if not pd.isna(datetime_series.max()) else None,
-            "date_range_days": (datetime_series.max() - datetime_series.min()).days if len(datetime_series.dropna()) > 1 else 0
-        }
+        patterns = []
         
-        # Detect date patterns
-        if constraints["date_range_days"] > 0:
-            # Check if dates are business days
-            day_of_week_counts = datetime_series.dt.dayofweek.value_counts()
-            weekend_days = day_of_week_counts.get(5, 0) + day_of_week_counts.get(6, 0)
-            if weekend_days / len(datetime_series.dropna()) < 0.1:
-                constraints["likely_business_dates"] = True
+        # Check for ID patterns
+        sample_size = min(10, len(values))
+        sample = values[:sample_size]
         
-        return constraints
-    
-    def _analyze_text_constraints(self, series: pd.Series) -> Dict:
-        """Analyze text column constraints"""
-        text_values = series.dropna().astype(str)
+        # Check if all values match certain patterns
+        all_match_id = all(re.match(r'^[A-Z0-9]{8,10}$', str(v)) for v in sample)
+        if all_match_id:
+            patterns.append("alphanumeric_id_8_10_chars")
         
-        constraints = {
-            "min_length": int(text_values.str.len().min()) if len(text_values) > 0 else 0,
-            "max_length": int(text_values.str.len().max()) if len(text_values) > 0 else 0,
-            "avg_length": float(text_values.str.len().mean()) if len(text_values) > 0 else 0
-        }
+        all_match_phone = all(re.match(r'^\d{10}$', str(v)) for v in sample)
+        if all_match_phone:
+            patterns.append("10_digit_phone")
         
-        # Detect patterns in text
-        sample_texts = text_values.head(100)
-        
-        # Check for email patterns
-        email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        email_count = sum(bool(re.search(email_pattern, text)) for text in sample_texts)
-        if email_count / len(sample_texts) > 0.3:
-            constraints["likely_email"] = True
-        
-        # Check for phone patterns
-        phone_pattern = r'\b\d{10}\b|\b\d{3}[-.]\d{3}[-.]\d{4}\b'
-        phone_count = sum(bool(re.search(phone_pattern, text)) for text in sample_texts)
-        if phone_count / len(sample_texts) > 0.3:
-            constraints["likely_phone"] = True
-        
-        return constraints
-    
-    def _analyze_id_constraints(self, series: pd.Series) -> Dict:
-        """Analyze ID column constraints"""
-        id_values = series.dropna().astype(str)
-        
-        constraints = {
-            "unique": len(id_values) == id_values.nunique(),
-            "min_length": int(id_values.str.len().min()) if len(id_values) > 0 else 0,
-            "max_length": int(id_values.str.len().max()) if len(id_values) > 0 else 0,
-            "pattern_analysis": self._analyze_id_pattern(id_values)
-        }
-        
-        return constraints
-    
-    def _analyze_id_pattern(self, id_values: pd.Series) -> Dict:
-        """Analyze patterns in ID values"""
-        patterns = {
-            "has_prefix": False,
-            "has_suffix": False,
-            "is_numeric": False,
-            "is_alphanumeric": False,
-            "has_separators": False
-        }
-        
-        if len(id_values) == 0:
-            return patterns
-        
-        sample = id_values.head(100)
-        
-        # Check if all are numeric
-        if all(val.isdigit() for val in sample):
-            patterns["is_numeric"] = True
-        
-        # Check if all are alphanumeric
-        if all(re.match(r'^[A-Za-z0-9]+$', val) for val in sample):
-            patterns["is_alphanumeric"] = True
-        
-        # Check for common separators
-        if any(any(sep in val for sep in ['-', '_', '/', '.']) for val in sample):
-            patterns["has_separators"] = True
-        
-        # Check for consistent prefix/suffix
-        prefix_lengths = [3, 4, 5]
-        for length in prefix_lengths:
-            prefixes = [val[:length] for val in sample if len(val) >= length]
-            if len(set(prefixes)) == 1 and len(prefixes) > 0:
-                patterns["has_prefix"] = True
-                patterns["prefix"] = prefixes[0]
-                break
+        # Check for date patterns
+        date_patterns = [
+            r'\d{2}[-/]\d{2}[-/]\d{4}',
+            r'\d{4}[-/]\d{2}[-/]\d{2}'
+        ]
+        for pattern in date_patterns:
+            if all(re.search(pattern, str(v)) for v in sample if v):
+                patterns.append(f"date_pattern_{pattern}")
         
         return patterns
     
-    def _discover_column_groups(self, df: pd.DataFrame) -> List[List[str]]:
-        """Discover groups of columns that appear together"""
-        groups = []
-        
-        # Look for columns with similar null patterns
-        null_patterns = {}
-        for col in df.columns:
-            null_patterns[col] = tuple(df[col].isnull())
-        
-        # Group columns with identical null patterns
-        pattern_to_cols = defaultdict(list)
-        for col, pattern in null_patterns.items():
-            pattern_to_cols[pattern].append(col)
-        
-        # Add groups with more than 1 column
-        for cols in pattern_to_cols.values():
-            if len(cols) > 1:
-                groups.append(cols)
-        
-        return groups
-    
-    def _discover_hierarchies(self, df: pd.DataFrame) -> List[Dict]:
-        """Discover value hierarchies (e.g., State → City → Zip)"""
-        hierarchies = []
-        
-        # Look for columns where one column's values map to multiple values in another
-        for i, parent_col in enumerate(df.columns):
-            for child_col in df.columns[i+1:]:
-                # Calculate how many unique child values per parent value
-                grouping = df.groupby(parent_col)[child_col].nunique()
-                
-                # If each parent has multiple children, it might be a hierarchy
-                if len(grouping) > 0 and grouping.mean() > 1.5:
-                    hierarchy_strength = 1 - (len(grouping) / df[child_col].nunique())
-                    
-                    if hierarchy_strength > 0.3:
-                        hierarchies.append({
-                            "parent_column": parent_col,
-                            "child_column": child_col,
-                            "parent_values_count": df[parent_col].nunique(),
-                            "child_values_count": df[child_col].nunique(),
-                            "avg_children_per_parent": round(grouping.mean(), 2),
-                            "hierarchy_strength": round(hierarchy_strength, 2)
-                        })
-        
-        return hierarchies
-    
-    def _discover_uniqueness_constraints(self, df: pd.DataFrame) -> List[str]:
-        """Discover columns that should have unique values"""
+    @staticmethod
+    def _find_unique_columns(df: pd.DataFrame) -> List[str]:
+        """Find columns that should be unique"""
         unique_cols = []
         
         for col in df.columns:
             unique_ratio = df[col].nunique() / len(df)
             
-            # Columns that look like IDs
-            if ('id' in col.lower() or 
+            # High uniqueness ratio or ID-like column names
+            if (unique_ratio > 0.95 or 
+                'id' in col.lower() or 
                 'code' in col.lower() or 
-                col.lower().endswith('_id') or
-                unique_ratio > 0.95):
+                col.lower().endswith('_id')):
                 unique_cols.append(col)
         
         return unique_cols
     
-    def _discover_distribution_patterns(self, df: pd.DataFrame) -> Dict:
-        """Discover distribution patterns in the data"""
+    @staticmethod
+    def _find_statistical_patterns(df: pd.DataFrame) -> Dict:
+        """Find statistical patterns in the data"""
         patterns = {}
         
-        for col in df.columns:
-            if pd.api.types.is_numeric_dtype(df[col]):
-                # Check for normal distribution
-                series = pd.to_numeric(df[col], errors='coerce').dropna()
-                if len(series) > 10:
-                    skewness = series.skew()
-                    kurtosis = series.kurtosis()
-                    
-                    if abs(skewness) < 0.5 and abs(kurtosis) < 1:
-                        patterns[col] = {"distribution": "normal"}
-                    elif skewness > 1:
-                        patterns[col] = {"distribution": "right_skewed"}
-                    elif skewness < -1:
-                        patterns[col] = {"distribution": "left_skewed"}
+        # Distribution patterns for numeric columns
+        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        
+        for col in numeric_cols:
+            series = pd.to_numeric(df[col], errors='coerce').dropna()
+            
+            if len(series) > 10:
+                skewness = series.skew()
+                
+                patterns[col] = {
+                    "skewness": float(skewness),
+                    "distribution": "normal" if abs(skewness) < 0.5 else 
+                                   "right_skewed" if skewness > 0.5 else 
+                                   "left_skewed",
+                    "outlier_threshold": float(series.quantile(0.99))
+                }
+        
+        # Frequency patterns for categorical columns
+        categorical_cols = [col for col in df.columns if df[col].nunique() < 20]
+        
+        for col in categorical_cols:
+            value_counts = df[col].value_counts(normalize=True).to_dict()
+            patterns[col] = {
+                "value_distribution": value_counts,
+                "most_common": list(value_counts.keys())[0] if value_counts else None,
+                "most_common_percentage": list(value_counts.values())[0] if value_counts else 0
+            }
         
         return patterns
     
-    def _create_statistical_summary(self, df: pd.DataFrame) -> Dict:
-        """Create comprehensive statistical summary"""
-        return {
-            "total_rows": len(df),
-            "total_columns": len(df.columns),
-            "column_types": {col: str(df[col].dtype) for col in df.columns},
-            "missing_values_total": int(df.isnull().sum().sum()),
-            "missing_values_percentage": round(df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100, 1)
-        }
-    
-    def _discover_pattern_based_rules(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Discover rules based on patterns in the data"""
-        rules = {
-            "conditional_rules": [],
-            "temporal_rules": [],
-            "business_rules": []
-        }
+    @staticmethod
+    def _create_generation_strategy(df: pd.DataFrame, rules: Dict) -> Dict:
+        """Create strategy for generating synthetic data"""
         
-        # Look for conditional relationships
-        for i, col1 in enumerate(df.columns):
-            for col2 in df.columns[i+1:]:
-                # Check if col1 values predict col2 values
-                value_pairs = defaultdict(Counter)
-                
-                for _, row in df.iterrows():
-                    val1 = str(row[col1]) if pd.notna(row[col1]) else "NaN"
-                    val2 = str(row[col2]) if pd.notna(row[col2]) else "NaN"
-                    value_pairs[val1][val2] += 1
-                
-                # Find strong conditional relationships
-                for val1, counter in value_pairs.items():
-                    total = sum(counter.values())
-                    for val2, count in counter.items():
-                        if count / total > 0.9 and total > 5:  # Very strong relationship
-                            rules["conditional_rules"].append({
-                                "if": f"{col1} == '{val1}'",
-                                "then": f"{col2} == '{val2}'",
-                                "confidence": count / total,
-                                "support": count
-                            })
-        
-        # Look for temporal patterns in datetime columns
-        datetime_cols = [col for col in df.columns if pd.api.types.is_datetime64_any_dtype(df[col])]
-        if len(datetime_cols) >= 2:
-            # Check for ordering between datetime columns
-            for i, earlier_col in enumerate(datetime_cols):
-                for later_col in datetime_cols[i+1:]:
-                    # Check if earlier_col is always before later_col
-                    valid_pairs = 0
-                    total_pairs = 0
-                    
-                    for _, row in df.iterrows():
-                        if pd.notna(row[earlier_col]) and pd.notna(row[later_col]):
-                            total_pairs += 1
-                            if row[earlier_col] <= row[later_col]:
-                                valid_pairs += 1
-                    
-                    if total_pairs > 0 and valid_pairs / total_pairs > 0.95:
-                        rules["temporal_rules"].append({
-                            "earlier": earlier_col,
-                            "later": later_col,
-                            "rule": f"{earlier_col} <= {later_col}",
-                            "confidence": valid_pairs / total_pairs
-                        })
-        
-        return rules
-    
-    def _discover_llm_rules(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Discover rules using LLM (optional)"""
-        try:
-            from groq import Groq
-            client = Groq(api_key=self.api_key)
-            
-            # Prepare sample
-            sample_size = min(50, len(df))
-            sample_df = df.sample(sample_size, random_state=42) if len(df) > sample_size else df
-            
-            # Build prompt
-            prompt = self._build_llm_prompt(df, sample_df)
-            
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": "You are a data relationship expert. Analyze the dataset and find relationships between columns."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=2000
-            )
-            
-            # Parse response
-            content = response.choices[0].message.content
-            llm_rules = json.loads(content) if "{" in content else {"llm_analysis": content}
-            
-            return llm_rules
-            
-        except Exception as e:
-            st.warning(f"LLM analysis skipped: {e}")
-            return {}
-    
-    def _build_llm_prompt(self, df: pd.DataFrame, sample_df: pd.DataFrame) -> str:
-        """Build prompt for LLM analysis"""
-        return f"""Analyze this dataset and find relationships:
-
-Columns: {list(df.columns)}
-Sample data:
-{sample_df.to_string(index=False)}
-
-Find:
-1. Business rules between columns
-2. Value mappings (when X then Y)
-3. Constraints on values
-4. Any patterns you notice
-
-Return as JSON with keys: business_rules, value_mappings, constraints, patterns."""
-    
-    def _merge_and_enhance_rules(self, stat_rules: Dict, pattern_rules: Dict, llm_rules: Dict, df: pd.DataFrame) -> Dict:
-        """Merge all rules and enhance with additional logic"""
-        merged_rules = {
-            "value_mappings": stat_rules.get("value_mappings", []),
-            "value_constraints": stat_rules.get("value_constraints", {}),
-            "distribution_patterns": stat_rules.get("distribution_patterns", {}),
-            "column_groups": stat_rules.get("column_groups", []),
-            "hierarchies": stat_rules.get("hierarchies", []),
-            "uniqueness_constraints": stat_rules.get("uniqueness_constraints", []),
-            "statistical_summary": stat_rules.get("statistical_summary", {}),
-            "conditional_rules": pattern_rules.get("conditional_rules", []),
-            "temporal_rules": pattern_rules.get("temporal_rules", []),
-            "business_rules": [],
-            "generation_strategy": self._determine_generation_strategy(stat_rules, df)
-        }
-        
-        # Add LLM business rules if available
-        if llm_rules and "business_rules" in llm_rules:
-            merged_rules["business_rules"] = llm_rules["business_rules"]
-        
-        # Enhance with derived rules
-        merged_rules["derived_rules"] = self._derive_additional_rules(merged_rules, df)
-        
-        return merged_rules
-    
-    def _determine_generation_strategy(self, rules: Dict, df: pd.DataFrame) -> Dict:
-        """Determine the best strategy for generating synthetic data"""
+        # Classify columns by their role
         strategy = {
-            "primary_key_columns": [],
+            "id_columns": [],
             "categorical_columns": [],
-            "numerical_columns": [],
+            "numeric_columns": [],
             "datetime_columns": [],
             "text_columns": [],
-            "generation_order": [],
-            "sampling_method": "weighted"
+            "dependent_columns": [],  # Columns that depend on others
+            "independent_columns": [],  # Columns that can be generated independently
+            "generation_order": []
         }
         
-        # Classify columns
         for col in df.columns:
-            if col in rules.get("uniqueness_constraints", []):
-                strategy["primary_key_columns"].append(col)
-            elif "categorical" in rules.get("value_constraints", {}).get(col, {}).get("type", ""):
+            constraints = rules.get("column_constraints", {}).get(col, {})
+            col_type = constraints.get("type", "unknown")
+            
+            if col_type == "numeric":
+                strategy["numeric_columns"].append(col)
+            elif col_type == "categorical":
                 strategy["categorical_columns"].append(col)
-            elif "numeric" in rules.get("value_constraints", {}).get(col, {}).get("type", ""):
-                strategy["numerical_columns"].append(col)
-            elif "datetime" in rules.get("value_constraints", {}).get(col, {}).get("type", ""):
+            elif col_type == "datetime":
                 strategy["datetime_columns"].append(col)
-            elif "text" in rules.get("value_constraints", {}).get(col, {}).get("type", ""):
+            elif "id" in str(constraints.get("patterns", [])):
+                strategy["id_columns"].append(col)
+            else:
                 strategy["text_columns"].append(col)
         
-        # Determine generation order (start with key columns, then categorical, then others)
+        # Determine which columns are dependent on others
+        for mapping in rules.get("value_mappings", []):
+            to_col = mapping.get("to_column")
+            if to_col not in strategy["dependent_columns"]:
+                strategy["dependent_columns"].append(to_col)
+        
+        # Independent columns are those not dependent
+        strategy["independent_columns"] = [
+            col for col in df.columns 
+            if col not in strategy["dependent_columns"]
+        ]
+        
+        # Create generation order: independent first, then dependent
         strategy["generation_order"] = (
-            strategy["primary_key_columns"] +
-            strategy["categorical_columns"] +
-            strategy["datetime_columns"] +
-            strategy["numerical_columns"] +
-            strategy["text_columns"]
+            strategy["independent_columns"] + 
+            strategy["dependent_columns"]
         )
         
         return strategy
-    
-    def _derive_additional_rules(self, rules: Dict, df: pd.DataFrame) -> List[Dict]:
-        """Derive additional rules from existing ones"""
-        derived = []
-        
-        # Derive range rules for numeric columns
-        for col, constraints in rules.get("value_constraints", {}).items():
-            if constraints.get("type") == "numeric":
-                min_val = constraints.get("min")
-                max_val = constraints.get("max")
-                if min_val is not None and max_val is not None:
-                    derived.append({
-                        "type": "range_rule",
-                        "column": col,
-                        "rule": f"{min_val} <= {col} <= {max_val}",
-                        "min": min_val,
-                        "max": max_val
-                    })
-        
-        # Derive foreign key relationships
-        for mapping in rules.get("value_mappings", []):
-            if mapping.get("confidence") == "exact":
-                derived.append({
-                    "type": "foreign_key",
-                    "from_column": mapping["from_column"],
-                    "to_column": mapping["to_column"],
-                    "rule": f"{mapping['from_column']}.{mapping['from_value']} -> {mapping['to_column']}.{mapping['to_value']}"
-                })
-        
-        return derived
-    
-    def _validate_rules_against_data(self, rules: Dict, df: pd.DataFrame) -> Dict:
-        """Validate that all rules are consistent with the data"""
-        validated_rules = rules.copy()
-        
-        # Validate value mappings
-        valid_mappings = []
-        for mapping in rules.get("value_mappings", []):
-            if self._validate_mapping(mapping, df):
-                valid_mappings.append(mapping)
-        validated_rules["value_mappings"] = valid_mappings
-        
-        # Validate constraints
-        for col in list(validated_rules.get("value_constraints", {}).keys()):
-            if col not in df.columns:
-                del validated_rules["value_constraints"][col]
-        
-        return validated_rules
-    
-    def _validate_mapping(self, mapping: Dict, df: pd.DataFrame) -> bool:
-        """Validate a single mapping against the data"""
-        try:
-            from_col = mapping.get("from_column")
-            to_col = mapping.get("to_column")
-            from_val = mapping.get("from_value")
-            to_val = mapping.get("to_value")
-            
-            if from_col not in df.columns or to_col not in df.columns:
-                return False
-            
-            # Check if mapping exists
-            matching_rows = df[
-                (df[from_col].astype(str) == str(from_val)) & 
-                (df[to_col].astype(str) == str(to_val))
-            ]
-            
-            # Check for violations
-            violating_rows = df[
-                (df[from_col].astype(str) == str(from_val)) & 
-                (df[to_col].astype(str) != str(to_val))
-            ]
-            
-            # Accept if no violations or high confidence
-            return len(violating_rows) == 0 or mapping.get("confidence") == "probabilistic"
-            
-        except:
-            return False
 
 # =============================================================================
-# INTELLIGENT DATA GENERATOR
+# SMART DATA GENERATOR
 # =============================================================================
 
-class IntelligentDataGenerator:
-    """Intelligent synthetic data generator with strong logic"""
+class SmartDataGenerator:
+    """Generate synthetic data while preserving patterns"""
     
     def __init__(self):
         self.generated_values = defaultdict(set)
         self.sequence_counters = defaultdict(int)
+        self.value_pools = {}
     
-    def generate_synthetic_data(self, original_df: pd.DataFrame, rules: Dict[str, Any], num_rows: int) -> pd.DataFrame:
-        """
-        Generate synthetic data using intelligent strategies
-        """
-        st.info(f"🧠 Generating {num_rows} rows using intelligent strategies...")
+    def generate_data(self, original_df: pd.DataFrame, rules: Dict, num_rows: int) -> pd.DataFrame:
+        """Generate synthetic data"""
         
-        # Prepare generation strategy
+        synthetic_rows = []
         strategy = rules.get("generation_strategy", {})
         generation_order = strategy.get("generation_order", original_df.columns.tolist())
         
-        # Initialize empty DataFrame
-        synthetic_rows = []
+        # Prepare value pools for categorical columns
+        self._prepare_value_pools(original_df, rules)
         
-        # Generate rows
         for row_idx in range(num_rows):
-            if row_idx % 100 == 0 and row_idx > 0:
-                st.info(f"Generated {row_idx} of {num_rows} rows...")
-            
             new_row = {}
             
-            # Generate values in strategic order
+            # Generate values in order
             for col in generation_order:
-                new_row[col] = self._generate_column_value(
+                new_row[col] = self._generate_smart_value(
                     col, original_df, rules, new_row, row_idx
                 )
             
-            # Apply rule corrections
-            new_row = self._apply_rule_corrections(new_row, rules)
+            # Apply cross-column consistency
+            new_row = self._apply_cross_column_rules(new_row, rules)
             
-            # Ensure uniqueness
+            # Ensure uniqueness where required
             new_row = self._ensure_uniqueness(new_row, rules)
             
             synthetic_rows.append(new_row)
@@ -773,216 +570,167 @@ class IntelligentDataGenerator:
         # Create DataFrame
         synthetic_df = pd.DataFrame(synthetic_rows)
         
-        # Ensure data types match original
-        synthetic_df = self._preserve_data_types(synthetic_df, original_df)
-        
-        # Final validation and cleanup
-        synthetic_df = self._final_validation(synthetic_df, rules)
+        # Preserve data types
+        synthetic_df = self._preserve_types(synthetic_df, original_df)
         
         return synthetic_df
     
-    def _generate_column_value(self, col: str, original_df: pd.DataFrame, rules: Dict, 
-                             current_row: Dict, row_idx: int) -> Any:
-        """Generate a value for a specific column"""
-        
-        # Get column constraints
-        constraints = rules.get("value_constraints", {}).get(col, {})
-        col_type = constraints.get("type", "unknown")
+    def _prepare_value_pools(self, original_df: pd.DataFrame, rules: Dict):
+        """Prepare pools of values for each column"""
+        for col in original_df.columns:
+            constraints = rules.get("column_constraints", {}).get(col, {})
+            col_type = constraints.get("type", "unknown")
+            
+            if col_type in ["categorical", "text"]:
+                # Use observed values as pool
+                observed = constraints.get("observed_values", [])
+                if observed:
+                    self.value_pools[col] = observed
+                else:
+                    self.value_pools[col] = original_df[col].dropna().unique().tolist()
+    
+    def _generate_smart_value(self, col: str, original_df: pd.DataFrame, 
+                            rules: Dict, current_row: Dict, row_idx: int) -> Any:
+        """Generate a smart value for a column"""
         
         # Check if value is determined by mappings
         mapped_value = self._get_mapped_value(col, current_row, rules)
         if mapped_value is not None:
             return mapped_value
         
-        # Generate based on column type
+        constraints = rules.get("column_constraints", {}).get(col, {})
+        col_type = constraints.get("type", "unknown")
+        
         if col_type == "categorical":
-            return self._generate_categorical_value(col, original_df, constraints, current_row)
+            return self._generate_categorical(col, constraints)
         elif col_type == "numeric":
-            return self._generate_numeric_value(col, original_df, constraints, current_row, row_idx)
+            return self._generate_numeric(col, constraints, row_idx)
         elif col_type == "datetime":
-            return self._generate_datetime_value(col, original_df, constraints, current_row)
-        elif col_type == "id":
-            return self._generate_id_value(col, original_df, constraints, row_idx)
-        elif col_type == "text":
-            return self._generate_text_value(col, original_df, constraints, current_row)
+            return self._generate_datetime(col, constraints)
+        elif "id" in str(constraints.get("patterns", [])):
+            return self._generate_id(col, constraints, row_idx)
         else:
-            # Default: sample from original
-            return self._sample_from_original(col, original_df)
+            # Default: sample from pool or original
+            if col in self.value_pools:
+                return random.choice(self.value_pools[col])
+            else:
+                return self._sample_from_original(original_df[col])
     
     def _get_mapped_value(self, col: str, current_row: Dict, rules: Dict) -> Optional[Any]:
-        """Check if column value is determined by mappings"""
+        """Get value from mappings"""
         for mapping in rules.get("value_mappings", []):
             if mapping.get("to_column") == col:
                 from_col = mapping.get("from_column")
                 from_val = mapping.get("from_value")
-                to_val = mapping.get("to_value")
                 
                 if from_col in current_row and str(current_row[from_col]) == str(from_val):
-                    return to_val
+                    return mapping.get("to_value")
         
         return None
     
-    def _generate_categorical_value(self, col: str, original_df: pd.DataFrame, 
-                                  constraints: Dict, current_row: Dict) -> Any:
+    def _generate_categorical(self, col: str, constraints: Dict) -> Any:
         """Generate categorical value"""
-        
-        # Get allowed values
-        allowed_values = constraints.get("allowed_values", [])
-        if not allowed_values:
-            allowed_values = original_df[col].dropna().unique().tolist()
-        
-        # Get value distribution
-        value_dist = constraints.get("value_distribution", {})
-        
-        if value_dist:
-            # Weighted sampling based on original distribution
-            values = list(value_dist.keys())
-            weights = list(value_dist.values())
-            weights = [w/sum(weights) for w in weights]
-            return np.random.choice(values, p=weights)
+        if col in self.value_pools:
+            return random.choice(self.value_pools[col])
         else:
-            # Uniform sampling
-            return np.random.choice(allowed_values)
+            observed = constraints.get("observed_values", [])
+            if observed:
+                return random.choice(observed)
+            return "Unknown"
     
-    def _generate_numeric_value(self, col: str, original_df: pd.DataFrame, 
-                               constraints: Dict, current_row: Dict, row_idx: int) -> float:
+    def _generate_numeric(self, col: str, constraints: Dict, row_idx: int) -> float:
         """Generate numeric value"""
+        if "min" in constraints and "max" in constraints:
+            min_val = constraints["min"]
+            max_val = constraints["max"]
+            
+            # Add some variation
+            if row_idx % 3 == 0:
+                # Generate near mean
+                if "mean" in constraints:
+                    mean_val = constraints["mean"]
+                    std_val = constraints.get("std", (max_val - min_val) / 6)
+                    value = np.random.normal(mean_val, std_val)
+                    return np.clip(value, min_val, max_val)
+            
+            # Random uniform
+            return random.uniform(min_val, max_val)
         
-        min_val = constraints.get("min")
-        max_val = constraints.get("max")
-        mean_val = constraints.get("mean")
-        std_val = constraints.get("std")
-        distribution = constraints.get("distribution", "normal")
-        
-        if min_val is not None and max_val is not None:
-            if distribution == "normal" and mean_val is not None and std_val is not None:
-                # Generate from normal distribution
-                value = np.random.normal(mean_val, std_val)
-                # Clip to range
-                return np.clip(value, min_val, max_val)
-            else:
-                # Uniform distribution
-                return random.uniform(min_val, max_val)
-        else:
-            # Sample from original
-            return float(original_df[col].dropna().sample(1).iloc[0])
+        return random.randint(1, 100)  # Fallback
     
-    def _generate_datetime_value(self, col: str, original_df: pd.DataFrame, 
-                                constraints: Dict, current_row: Dict) -> Any:
+    def _generate_datetime(self, col: str, constraints: Dict) -> Any:
         """Generate datetime value"""
+        if "min_date" in constraints and "max_date" in constraints:
+            try:
+                min_date = pd.to_datetime(constraints["min_date"])
+                max_date = pd.to_datetime(constraints["max_date"])
+                
+                delta = max_date - min_date
+                random_days = random.randint(0, delta.days)
+                return min_date + timedelta(days=random_days)
+            except:
+                pass
         
-        min_date_str = constraints.get("min_date")
-        max_date_str = constraints.get("max_date")
-        
-        if min_date_str and max_date_str:
-            min_date = pd.to_datetime(min_date_str)
-            max_date = pd.to_datetime(max_date_str)
-            
-            # Generate random date within range
-            delta = max_date - min_date
-            random_days = random.randint(0, delta.days)
-            random_date = min_date + timedelta(days=random_days)
-            
-            return random_date
-        else:
-            # Sample from original
-            return original_df[col].dropna().sample(1).iloc[0]
+        # Return current date as fallback
+        return datetime.now()
     
-    def _generate_id_value(self, col: str, original_df: pd.DataFrame, 
-                          constraints: Dict, row_idx: int) -> str:
-        """Generate unique ID value"""
+    def _generate_id(self, col: str, constraints: Dict, row_idx: int) -> str:
+        """Generate ID value"""
+        patterns = constraints.get("patterns", [])
         
-        # Get pattern analysis
-        pattern_info = constraints.get("pattern_analysis", {})
-        original_sample = original_df[col].dropna().astype(str).iloc[0] if len(original_df[col].dropna()) > 0 else ""
-        
-        if pattern_info.get("is_numeric"):
-            # Generate sequential numeric ID
-            self.sequence_counters[col] += 1
-            prefix = pattern_info.get("prefix", "")
-            return f"{prefix}{self.sequence_counters[col]:06d}"
-        
-        elif pattern_info.get("is_alphanumeric"):
+        if "alphanumeric_id_8_10_chars" in patterns:
             # Generate alphanumeric ID
-            prefix = pattern_info.get("prefix", "")
-            if prefix and pattern_info.get("has_prefix"):
-                random_part = ''.join(random.choices('0123456789ABCDEF', k=6))
-                return f"{prefix}{random_part}"
-            else:
-                return f"ID{row_idx:06d}"
+            chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+            length = random.randint(8, 10)
+            return ''.join(random.choices(chars, k=length))
+        
+        elif "numeric_id" in str(patterns):
+            # Generate numeric ID
+            self.sequence_counters[col] += 1
+            return f"{self.sequence_counters[col]:08d}"
         
         else:
-            # Generic ID generation
+            # Generic ID
             return f"{col}_{row_idx:06d}"
     
-    def _generate_text_value(self, col: str, original_df: pd.DataFrame, 
-                            constraints: Dict, current_row: Dict) -> str:
-        """Generate text value"""
-        
-        min_len = constraints.get("min_length", 0)
-        max_len = constraints.get("max_length", 100)
-        avg_len = constraints.get("avg_length", 50)
-        
-        # Check for specific types
-        if constraints.get("likely_email"):
-            domains = ["gmail.com", "yahoo.com", "outlook.com", "company.com"]
-            name = f"user{random.randint(1000, 9999)}"
-            domain = random.choice(domains)
-            return f"{name}@{domain}"
-        
-        elif constraints.get("likely_phone"):
-            # Generate phone number
-            area_code = random.randint(100, 999)
-            prefix = random.randint(100, 999)
-            line = random.randint(1000, 9999)
-            return f"({area_code}) {prefix}-{line}"
-        
-        else:
-            # Generate random text
-            length = random.randint(min_len, max_len)
-            words = ["Lorem", "ipsum", "dolor", "sit", "amet", "consectetur", 
-                    "adipiscing", "elit", "sed", "do", "eiusmod", "tempor"]
-            num_words = max(1, length // 6)
-            return ' '.join(random.choices(words, k=num_words))[:length]
+    def _sample_from_original(self, series: pd.Series) -> Any:
+        """Sample from original series"""
+        non_null = series.dropna()
+        if len(non_null) > 0:
+            return non_null.sample(1).iloc[0]
+        return None
     
-    def _sample_from_original(self, col: str, original_df: pd.DataFrame) -> Any:
-        """Sample a value from the original column"""
-        non_null_series = original_df[col].dropna()
-        if len(non_null_series) > 0:
-            return non_null_series.sample(1).iloc[0]
-        else:
-            return None
-    
-    def _apply_rule_corrections(self, row: Dict, rules: Dict) -> Dict:
-        """Apply rule-based corrections to the row"""
+    def _apply_cross_column_rules(self, row: Dict, rules: Dict) -> Dict:
+        """Apply cross-column consistency rules"""
         corrected_row = row.copy()
         
-        # Apply conditional rules
-        for rule in rules.get("conditional_rules", []):
-            # Simple rule application (can be enhanced)
-            pass
-        
-        # Apply business rules
-        for rule in rules.get("business_rules", []):
-            # Parse and apply business rules
-            pass
+        # Apply exact mappings
+        for mapping in rules.get("value_mappings", []):
+            if mapping.get("confidence") == "exact":
+                from_col = mapping["from_column"]
+                from_val = mapping["from_value"]
+                to_col = mapping["to_column"]
+                to_val = mapping["to_value"]
+                
+                if from_col in corrected_row and str(corrected_row[from_col]) == str(from_val):
+                    corrected_row[to_col] = to_val
         
         return corrected_row
     
     def _ensure_uniqueness(self, row: Dict, rules: Dict) -> Dict:
-        """Ensure uniqueness for columns that require it"""
+        """Ensure uniqueness for required columns"""
         corrected_row = row.copy()
         
-        for col in rules.get("uniqueness_constraints", []):
+        for col in rules.get("unique_constraints", []):
             if col in corrected_row:
-                value = corrected_row[col]
+                value = str(corrected_row[col])
+                
                 if value in self.generated_values[col]:
-                    # Generate unique value
-                    base = str(value)
+                    # Make unique
                     counter = 1
-                    while f"{base}_{counter}" in self.generated_values[col]:
+                    while f"{value}_{counter}" in self.generated_values[col]:
                         counter += 1
-                    new_value = f"{base}_{counter}"
+                    new_value = f"{value}_{counter}"
                     corrected_row[col] = new_value
                     self.generated_values[col].add(new_value)
                 else:
@@ -990,298 +738,228 @@ class IntelligentDataGenerator:
         
         return corrected_row
     
-    def _preserve_data_types(self, synthetic_df: pd.DataFrame, original_df: pd.DataFrame) -> pd.DataFrame:
-        """Ensure synthetic data has same types as original"""
+    def _preserve_types(self, synthetic_df: pd.DataFrame, original_df: pd.DataFrame) -> pd.DataFrame:
+        """Preserve original data types"""
         result_df = synthetic_df.copy()
         
         for col in original_df.columns:
             if col in result_df.columns:
                 try:
-                    # Try to convert to original type
-                    original_dtype = original_df[col].dtype
-                    result_df[col] = result_df[col].astype(original_dtype)
+                    result_df[col] = result_df[col].astype(original_df[col].dtype)
                 except:
-                    # If conversion fails, try inferring type
-                    try:
-                        if pd.api.types.is_numeric_dtype(original_dtype):
-                            result_df[col] = pd.to_numeric(result_df[col], errors='coerce')
-                        elif pd.api.types.is_datetime64_any_dtype(original_dtype):
-                            result_df[col] = pd.to_datetime(result_df[col], errors='coerce')
-                    except:
-                        pass
+                    pass
         
         return result_df
-    
-    def _final_validation(self, synthetic_df: pd.DataFrame, rules: Dict) -> pd.DataFrame:
-        """Final validation and cleanup"""
-        df = synthetic_df.copy()
-        
-        # Remove any duplicate rows
-        df = df.drop_duplicates()
-        
-        # Fill any null values with appropriate defaults
-        for col in df.columns:
-            null_count = df[col].isnull().sum()
-            if null_count > 0:
-                constraints = rules.get("value_constraints", {}).get(col, {})
-                col_type = constraints.get("type", "unknown")
-                
-                if col_type == "categorical":
-                    # Fill with most common value
-                    if "most_common" in constraints:
-                        df[col].fillna(constraints["most_common"], inplace=True)
-                elif col_type == "numeric":
-                    # Fill with mean
-                    if "mean" in constraints:
-                        df[col].fillna(constraints["mean"], inplace=True)
-        
-        return df
 
 # =============================================================================
-# ENHANCED VALIDATION ENGINE
+# QUALITY VALIDATOR
 # =============================================================================
 
-class EnhancedValidationEngine:
-    """Comprehensive validation engine"""
+class QualityValidator:
+    """Validate quality of generated data"""
     
     @staticmethod
-    def validate_synthetic_data(original_df: pd.DataFrame, synthetic_df: pd.DataFrame, rules: Dict) -> Dict:
+    def validate(original_df: pd.DataFrame, synthetic_df: pd.DataFrame, rules: Dict) -> Dict:
         """Comprehensive validation"""
         
         validation = {
-            "statistical_validation": EnhancedValidationEngine._validate_statistics(original_df, synthetic_df),
-            "rule_validation": EnhancedValidationEngine._validate_rules(synthetic_df, rules),
-            "data_quality": EnhancedValidationEngine._validate_data_quality(synthetic_df),
-            "similarity_metrics": EnhancedValidationEngine._calculate_similarity(original_df, synthetic_df)
+            "basic_stats": QualityValidator._compare_basic_stats(original_df, synthetic_df),
+            "rule_compliance": QualityValidator._check_rule_compliance(synthetic_df, rules),
+            "data_quality": QualityValidator._check_data_quality(synthetic_df),
+            "distribution_similarity": QualityValidator._compare_distributions(original_df, synthetic_df),
+            "pattern_preservation": QualityValidator._check_patterns(synthetic_df, rules)
         }
         
         # Calculate overall score
-        validation["overall_score"] = EnhancedValidationEngine._calculate_overall_score(validation)
+        validation["overall_score"] = QualityValidator._calculate_overall_score(validation)
         
         return validation
     
     @staticmethod
-    def _validate_statistics(original_df: pd.DataFrame, synthetic_df: pd.DataFrame) -> Dict:
-        """Validate statistical properties"""
+    def _compare_basic_stats(original: pd.DataFrame, synthetic: pd.DataFrame) -> Dict:
+        """Compare basic statistics"""
+        stats = {}
         
-        stats = {
-            "column_stats": {},
-            "distribution_comparison": {}
-        }
-        
-        for col in original_df.columns:
-            if col in synthetic_df.columns:
-                orig_series = original_df[col].dropna()
-                synth_series = synthetic_df[col].dropna()
-                
-                if pd.api.types.is_numeric_dtype(orig_series):
-                    # Compare numeric statistics
-                    stats["column_stats"][col] = {
-                        "original_mean": float(orig_series.mean()),
-                        "synthetic_mean": float(synth_series.mean()),
-                        "mean_difference_pct": abs(float(orig_series.mean()) - float(synth_series.mean())) / max(1, abs(float(orig_series.mean()))) * 100,
-                        "original_std": float(orig_series.std()),
-                        "synthetic_std": float(synth_series.std()),
-                        "std_difference_pct": abs(float(orig_series.std()) - float(synth_series.std())) / max(1, abs(float(orig_series.std()))) * 100
-                    }
-                
-                elif orig_series.nunique() < 20:  # Categorical
-                    orig_counts = orig_series.value_counts(normalize=True)
-                    synth_counts = synth_series.value_counts(normalize=True)
-                    
-                    # Compare category distributions
-                    common_categories = set(orig_counts.index) & set(synth_counts.index)
-                    distribution_diff = 0
-                    for cat in common_categories:
-                        orig_pct = orig_counts.get(cat, 0)
-                        synth_pct = synth_counts.get(cat, 0)
-                        distribution_diff += abs(orig_pct - synth_pct)
-                    
-                    stats["column_stats"][col] = {
-                        "original_categories": len(orig_counts),
-                        "synthetic_categories": len(synth_counts),
-                        "distribution_difference": distribution_diff,
-                        "category_coverage": len(common_categories) / max(1, len(orig_counts)) * 100
-                    }
+        for col in original.columns:
+            if col in synthetic.columns:
+                stats[col] = {
+                    "original_rows": len(original),
+                    "synthetic_rows": len(synthetic),
+                    "original_nunique": original[col].nunique(),
+                    "synthetic_nunique": synthetic[col].nunique(),
+                    "original_null_pct": (original[col].isnull().sum() / len(original)) * 100,
+                    "synthetic_null_pct": (synthetic[col].isnull().sum() / len(synthetic)) * 100
+                }
         
         return stats
     
     @staticmethod
-    def _validate_rules(synthetic_df: pd.DataFrame, rules: Dict) -> Dict:
-        """Validate that rules are followed"""
-        
-        rule_validation = {
+    def _check_rule_compliance(synthetic_df: pd.DataFrame, rules: Dict) -> Dict:
+        """Check compliance with discovered rules"""
+        compliance = {
             "value_mappings": {},
-            "constraints": {},
-            "uniqueness": {}
+            "unique_constraints": {}
         }
         
-        # Validate value mappings
+        # Check value mappings
         for mapping in rules.get("value_mappings", []):
-            from_col = mapping.get("from_column")
-            to_col = mapping.get("to_column")
-            from_val = mapping.get("from_value")
-            to_val = mapping.get("to_value")
-            
-            if from_col in synthetic_df.columns and to_col in synthetic_df.columns:
-                # Find violations
-                matching_rows = synthetic_df[synthetic_df[from_col].astype(str) == str(from_val)]
-                violations = matching_rows[matching_rows[to_col].astype(str) != str(to_val)]
+            if mapping.get("confidence") == "exact":
+                from_col = mapping["from_column"]
+                to_col = mapping["to_column"]
+                from_val = mapping["from_value"]
+                to_val = mapping["to_value"]
                 
-                rule_validation["value_mappings"][f"{from_col}={from_val}→{to_col}"] = {
-                    "total_matches": len(matching_rows),
-                    "violations": len(violations),
-                    "compliance_rate": (len(matching_rows) - len(violations)) / max(1, len(matching_rows)) * 100
-                }
+                if from_col in synthetic_df.columns and to_col in synthetic_df.columns:
+                    matches = synthetic_df[synthetic_df[from_col] == from_val]
+                    violations = matches[matches[to_col] != to_val]
+                    
+                    compliance["value_mappings"][f"{from_col}={from_val}"] = {
+                        "expected": to_val,
+                        "matches": len(matches),
+                        "violations": len(violations),
+                        "compliance_rate": (len(matches) - len(violations)) / max(1, len(matches)) * 100
+                    }
         
-        # Validate constraints
-        for col, constraints in rules.get("value_constraints", {}).items():
-            if col in synthetic_df.columns:
-                violations = 0
-                total = len(synthetic_df[col])
-                
-                if constraints.get("type") == "categorical":
-                    allowed = set(str(v) for v in constraints.get("allowed_values", []))
-                    violations = sum(1 for v in synthetic_df[col] if str(v) not in allowed and pd.notna(v))
-                
-                elif constraints.get("type") == "numeric":
-                    min_val = constraints.get("min")
-                    max_val = constraints.get("max")
-                    if min_val is not None and max_val is not None:
-                        numeric_vals = pd.to_numeric(synthetic_df[col], errors='coerce')
-                        violations = ((numeric_vals < min_val) | (numeric_vals > max_val)).sum()
-                
-                rule_validation["constraints"][col] = {
-                    "total": total,
-                    "violations": int(violations),
-                    "compliance_rate": (total - violations) / max(1, total) * 100
-                }
-        
-        # Validate uniqueness
-        for col in rules.get("uniqueness_constraints", []):
+        # Check uniqueness
+        for col in rules.get("unique_constraints", []):
             if col in synthetic_df.columns:
                 unique_count = synthetic_df[col].nunique()
                 total = len(synthetic_df[col])
-                rule_validation["uniqueness"][col] = {
+                
+                compliance["unique_constraints"][col] = {
                     "unique_count": unique_count,
                     "total_count": total,
-                    "uniqueness_percentage": unique_count / max(1, total) * 100
+                    "uniqueness_percentage": (unique_count / total) * 100
                 }
         
-        return rule_validation
+        return compliance
     
     @staticmethod
-    def _validate_data_quality(synthetic_df: pd.DataFrame) -> Dict:
-        """Validate data quality metrics"""
-        
+    def _check_data_quality(synthetic_df: pd.DataFrame) -> Dict:
+        """Check data quality metrics"""
         quality = {
             "null_values": {},
-            "duplicates": {},
+            "duplicates": len(synthetic_df[synthetic_df.duplicated()]),
             "data_types": {}
         }
         
-        # Check for null values
         for col in synthetic_df.columns:
             null_count = synthetic_df[col].isnull().sum()
             quality["null_values"][col] = {
-                "null_count": int(null_count),
-                "null_percentage": null_count / len(synthetic_df) * 100
+                "count": int(null_count),
+                "percentage": (null_count / len(synthetic_df)) * 100
             }
-        
-        # Check for duplicate rows
-        duplicate_count = synthetic_df.duplicated().sum()
-        quality["duplicates"] = {
-            "duplicate_rows": int(duplicate_count),
-            "duplicate_percentage": duplicate_count / len(synthetic_df) * 100
-        }
-        
-        # Check data types
-        for col in synthetic_df.columns:
             quality["data_types"][col] = str(synthetic_df[col].dtype)
         
         return quality
     
     @staticmethod
-    def _calculate_similarity(original_df: pd.DataFrame, synthetic_df: pd.DataFrame) -> Dict:
-        """Calculate similarity metrics"""
+    def _compare_distributions(original: pd.DataFrame, synthetic: pd.DataFrame) -> Dict:
+        """Compare value distributions"""
+        comparisons = {}
         
-        similarity = {
-            "column_similarity": {},
-            "overall_similarity": 0
-        }
-        
-        similarities = []
-        
-        for col in original_df.columns:
-            if col in synthetic_df.columns:
-                orig_series = original_df[col].dropna()
-                synth_series = synthetic_df[col].dropna()
+        for col in original.columns:
+            if col in synthetic.columns:
+                if pd.api.types.is_numeric_dtype(original[col]):
+                    # Compare numeric distributions
+                    orig_mean = original[col].mean()
+                    synth_mean = synthetic[col].mean()
+                    mean_diff = abs(orig_mean - synth_mean) / max(1, abs(orig_mean)) * 100
+                    
+                    comparisons[col] = {
+                        "type": "numeric",
+                        "mean_difference_pct": mean_diff,
+                        "original_mean": orig_mean,
+                        "synthetic_mean": synth_mean
+                    }
                 
-                if len(orig_series) > 0 and len(synth_series) > 0:
-                    if pd.api.types.is_numeric_dtype(orig_series):
-                        # For numeric, compare distributions using KS test
-                        try:
-                            from scipy import stats
-                            ks_statistic, _ = stats.ks_2samp(orig_series, synth_series)
-                            similarity_score = 100 * (1 - ks_statistic)
-                        except:
-                            # Fallback: compare mean and std
-                            mean_diff = abs(orig_series.mean() - synth_series.mean()) / max(1, abs(orig_series.mean()))
-                            std_diff = abs(orig_series.std() - synth_series.std()) / max(1, abs(orig_series.std()))
-                            similarity_score = 100 * (1 - (mean_diff + std_diff) / 2)
+                elif original[col].nunique() < 20:
+                    # Compare categorical distributions
+                    orig_counts = original[col].value_counts(normalize=True)
+                    synth_counts = synthetic[col].value_counts(normalize=True)
                     
-                    else:
-                        # For categorical, compare value distributions
-                        orig_counts = orig_series.value_counts(normalize=True)
-                        synth_counts = synth_series.value_counts(normalize=True)
-                        
-                        common_categories = set(orig_counts.index) & set(synth_counts.index)
-                        total_diff = 0
-                        for cat in common_categories:
-                            total_diff += abs(orig_counts[cat] - synth_counts[cat])
-                        
-                        similarity_score = 100 * (1 - total_diff)
+                    # Calculate overlap
+                    common_cats = set(orig_counts.index) & set(synth_counts.index)
+                    total_diff = 0
+                    for cat in common_cats:
+                        total_diff += abs(orig_counts[cat] - synth_counts[cat])
                     
-                    similarity["column_similarity"][col] = round(similarity_score, 1)
-                    similarities.append(similarity_score)
+                    comparisons[col] = {
+                        "type": "categorical",
+                        "distribution_difference": total_diff,
+                        "common_categories": len(common_cats)
+                    }
         
-        if similarities:
-            similarity["overall_similarity"] = round(np.mean(similarities), 1)
+        return comparisons
+    
+    @staticmethod
+    def _check_patterns(synthetic_df: pd.DataFrame, rules: Dict) -> Dict:
+        """Check if patterns are preserved"""
+        patterns = {}
         
-        return similarity
+        for col, constraints in rules.get("column_constraints", {}).items():
+            if col in synthetic_df.columns:
+                col_patterns = constraints.get("patterns", [])
+                if col_patterns:
+                    patterns[col] = {
+                        "expected_patterns": col_patterns,
+                        "pattern_compliance": QualityValidator._check_pattern_compliance(
+                            synthetic_df[col], col_patterns
+                        )
+                    }
+        
+        return patterns
+    
+    @staticmethod
+    def _check_pattern_compliance(series: pd.Series, patterns: List[str]) -> Dict:
+        """Check compliance with patterns"""
+        compliance = {}
+        
+        for pattern in patterns:
+            if "phone" in pattern:
+                # Check phone pattern
+                phone_count = series.astype(str).str.match(r'^\d{10}$').sum()
+                compliance["10_digit_phone"] = {
+                    "count": int(phone_count),
+                    "percentage": (phone_count / len(series)) * 100
+                }
+            
+            elif "id" in pattern:
+                # Check ID pattern
+                id_count = series.astype(str).str.match(r'^[A-Z0-9]{8,10}$').sum()
+                compliance["alphanumeric_id"] = {
+                    "count": int(id_count),
+                    "percentage": (id_count / len(series)) * 100
+                }
+        
+        return compliance
     
     @staticmethod
     def _calculate_overall_score(validation: Dict) -> float:
-        """Calculate overall validation score"""
-        
+        """Calculate overall quality score"""
         scores = []
         
         # Rule compliance score
-        rule_validation = validation.get("rule_validation", {})
-        rule_scores = []
-        
-        for mapping_validation in rule_validation.get("value_mappings", {}).values():
-            rule_scores.append(mapping_validation.get("compliance_rate", 0))
-        
-        for constraint_validation in rule_validation.get("constraints", {}).values():
-            rule_scores.append(constraint_validation.get("compliance_rate", 0))
-        
-        if rule_scores:
-            scores.append(np.mean(rule_scores))
+        rule_compliance = validation.get("rule_compliance", {})
+        for mapping in rule_compliance.get("value_mappings", {}).values():
+            scores.append(mapping.get("compliance_rate", 0))
         
         # Data quality score
         quality = validation.get("data_quality", {})
-        if quality.get("duplicates", {}).get("duplicate_percentage", 100) < 5:
+        duplicate_pct = quality.get("duplicates", 0) / max(1, len(quality.get("null_values", {}))) * 100
+        if duplicate_pct < 5:
             scores.append(95)
         
-        # Similarity score
-        similarity = validation.get("similarity_metrics", {}).get("overall_similarity", 0)
-        scores.append(similarity)
+        # Distribution similarity score
+        distribution = validation.get("distribution_similarity", {})
+        for col_stats in distribution.values():
+            if col_stats.get("type") == "numeric":
+                mean_diff = col_stats.get("mean_difference_pct", 100)
+                scores.append(100 - min(mean_diff, 100))
         
         if scores:
             return round(np.mean(scores), 1)
-        else:
-            return 0.0
+        return 0.0
 
 # =============================================================================
 # MAIN APPLICATION
@@ -1289,291 +967,210 @@ class EnhancedValidationEngine:
 
 def main():
     st.set_page_config(
-        page_title="iRMC DataGiene - Logic Enhanced",
-        page_icon="🧠",
+        page_title="Smart Data Generator",
+        page_icon="🤖",
         layout="wide"
     )
     
-    st.markdown("""
-    <style>
-        .main-header {
-            font-size: 2.5rem;
-            background: linear-gradient(135deg, #FF6B6B, #4ECDC4);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-weight: 800;
-            margin-bottom: 1rem;
-        }
-        .score-good { color: #00C851; font-weight: bold; }
-        .score-ok { color: #FFBB33; font-weight: bold; }
-        .score-poor { color: #FF4444; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('<div class="main-header">🧠 iRMC DataGiene - Logic Enhanced</div>', unsafe_allow_html=True)
-    
-    st.markdown("""
-    ### Intelligent Synthetic Data Generation
-    
-    This enhanced version uses **strong logic-based analysis** combined with statistical methods 
-    to discover and enforce data relationships, producing higher quality synthetic data.
-    """)
+    st.title("🤖 Smart Synthetic Data Generator")
+    st.markdown("Generate high-quality synthetic data while preserving ALL patterns from your original data.")
     
     # File upload
-    uploaded_file = st.file_uploader("📤 Upload ANY CSV Dataset", type=['csv'])
+    uploaded_file = st.file_uploader("📤 Upload your CSV file", type=['csv'])
     
     if uploaded_file:
         try:
             df = pd.read_csv(uploaded_file)
-            st.success(f"✅ Loaded {len(df)} rows × {len(df.columns)} columns")
+            st.success(f"✅ Loaded {len(df)} rows with {len(df.columns)} columns")
         except Exception as e:
-            st.error(f"Error loading file: {e}")
+            st.error(f"Error: {e}")
             return
         
         # Preview
-        with st.expander("📋 Data Preview", expanded=True):
-            col1, col2 = st.columns([2, 1])
+        with st.expander("📋 Preview Data"):
+            st.dataframe(df.head(), use_container_width=True)
             
+            # Show quick stats
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.dataframe(df.head(), use_container_width=True)
-            
+                st.metric("Rows", len(df))
             with col2:
-                # Quick stats
-                st.metric("Total Rows", len(df))
-                st.metric("Total Columns", len(df.columns))
-                
-                # Column types
-                numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
-                categorical_cols = [col for col in df.columns if df[col].nunique() < 20 and df[col].nunique() > 0]
-                
-                st.write(f"**📈 Numeric Columns:** {len(numeric_cols)}")
-                st.write(f"**🏷️ Categorical Columns:** {len(categorical_cols)}")
+                st.metric("Columns", len(df.columns))
+            with col3:
+                numeric_cols = sum(1 for col in df.columns if pd.api.types.is_numeric_dtype(df[col]))
+                st.metric("Numeric Columns", numeric_cols)
         
         # Generation settings
-        st.subheader("🎯 Generation Settings")
+        st.subheader("⚙️ Generation Settings")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             num_rows = st.number_input(
-                "Rows to generate",
+                "Number of rows to generate",
                 min_value=len(df),
                 max_value=len(df) * 10,
-                value=min(len(df) * 2, 1000),
+                value=len(df) * 2,
                 step=50
             )
         
         with col2:
-            use_llm = st.checkbox("Use LLM Enhancement", value=True, 
-                                 help="Use LLM for additional rule discovery")
-        
-        with col3:
-            quality_preset = st.selectbox(
-                "Quality Preset",
-                ["Balanced", "High Fidelity", "Fast Generation"],
-                help="Trade-off between quality and speed"
+            use_llm = st.checkbox(
+                "Use LLM for enhanced analysis",
+                value=True,
+                help="Uses LLM to discover additional patterns (requires API key)"
             )
         
-        # Generate button
-        if st.button("🧠 Generate Intelligent Synthetic Data", type="primary", use_container_width=True):
+        if st.button("🚀 Generate Synthetic Data", type="primary", use_container_width=True):
             
-            # Step 1: Discover Rules (Logic Enhanced)
-            with st.spinner("🔍 Performing advanced rule discovery..."):
+            # Step 1: Discover Rules
+            with st.spinner("🔍 Analyzing data patterns..."):
                 try:
-                    # Initialize rule engine
-                    api_key = st.secrets.get("GROQ_API_KEY") if use_llm else None
-                    rule_engine = LogicBasedRuleEngine(api_key=api_key)
+                    # Always use statistical discovery
+                    stats_engine = EnhancedStatisticalDiscovery()
+                    rules = stats_engine.discover_rules(df)
                     
-                    # Discover rules
-                    rules = rule_engine.discover_and_enhance_rules(df)
-                    
-                    # Display discovered rules
-                    with st.expander("📊 Discovered Rules Summary", expanded=True):
-                        
-                        # Show key findings
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric("Value Mappings", len(rules.get("value_mappings", [])))
-                        
-                        with col2:
-                            st.metric("Column Constraints", len(rules.get("value_constraints", {})))
-                        
-                        with col3:
-                            st.metric("Unique Columns", len(rules.get("uniqueness_constraints", [])))
-                        
-                        # Show detailed breakdown
-                        st.subheader("Rule Details")
-                        
-                        tab1, tab2, tab3 = st.tabs(["🔗 Mappings", "🎯 Constraints", "📈 Patterns"])
-                        
-                        with tab1:
-                            mappings = rules.get("value_mappings", [])
-                            if mappings:
-                                exact_mappings = [m for m in mappings if m.get("confidence") == "exact"]
-                                prob_mappings = [m for m in mappings if m.get("confidence") == "probabilistic"]
-                                
-                                st.write(f"**Exact Mappings:** {len(exact_mappings)}")
-                                for mapping in exact_mappings[:5]:
-                                    st.write(f"- {mapping['from_column']}={mapping['from_value']} → {mapping['to_column']}={mapping['to_value']}")
-                                
-                                if len(exact_mappings) > 5:
-                                    st.write(f"... and {len(exact_mappings) - 5} more")
-                                
-                                st.write(f"**Probabilistic Mappings:** {len(prob_mappings)}")
-                        
-                        with tab2:
-                            for col, constraint in list(rules.get("value_constraints", {}).items())[:10]:
-                                st.write(f"**{col}** ({constraint.get('type', 'unknown')})")
-                                if constraint.get("type") == "categorical":
-                                    st.write(f"Values: {len(constraint.get('allowed_values', []))} categories")
-                                elif constraint.get("type") == "numeric":
-                                    st.write(f"Range: {constraint.get('min', '?')} to {constraint.get('max', '?')}")
-                        
-                        with tab3:
-                            if rules.get("column_groups"):
-                                st.write("**Column Groups:**")
-                                for group in rules.get("column_groups", []):
-                                    st.write(f"- {', '.join(group)}")
+                    # Optional LLM enhancement
+                    if use_llm and "GROQ_API_KEY" in st.secrets:
+                        st.info("Using LLM for enhanced pattern discovery...")
+                        try:
+                            from groq import Groq
+                            client = Groq(api_key=st.secrets["GROQ_API_KEY"])
                             
-                            if rules.get("hierarchies"):
-                                st.write("**Hierarchies:**")
-                                for hierarchy in rules.get("hierarchies", []):
-                                    st.write(f"- {hierarchy['parent_column']} → {hierarchy['child_column']}")
-                
+                            prompt_engine = GenericPromptEngine()
+                            prompt = prompt_engine.create_analysis_prompt(df, df.sample(min(30, len(df))))
+                            
+                            response = client.chat.completions.create(
+                                model="llama-3.1-8b-instant",
+                                messages=[
+                                    {"role": "system", "content": "You are a data pattern expert. Analyze the dataset thoroughly."},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                temperature=0.1,
+                                max_tokens=2000
+                            )
+                            
+                            llm_analysis = response.choices[0].message.content
+                            
+                            # Try to parse JSON if returned
+                            if "{" in llm_analysis:
+                                try:
+                                    llm_rules = json.loads(llm_analysis)
+                                    # Merge with statistical rules
+                                    rules["llm_insights"] = llm_rules
+                                except:
+                                    rules["llm_analysis"] = llm_analysis
+                            
+                        except Exception as e:
+                            st.warning(f"LLM analysis skipped: {e}")
+                    
                 except Exception as e:
-                    st.error(f"Failed to discover rules: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
+                    st.error(f"Rule discovery failed: {e}")
                     return
             
+            # Display discovered rules
+            with st.expander("📊 Discovered Patterns", expanded=True):
+                st.json(rules, expanded=False)
+                
+                # Show summary
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Value Mappings", len(rules.get("value_mappings", [])))
+                with col2:
+                    st.metric("Unique Columns", len(rules.get("unique_constraints", [])))
+                with col3:
+                    exact_mappings = sum(1 for m in rules.get("value_mappings", []) if m.get("confidence") == "exact")
+                    st.metric("Exact Mappings", exact_mappings)
+            
             # Step 2: Generate Data
-            with st.spinner(f"⚡ Generating {num_rows} rows with intelligent logic..."):
+            with st.spinner(f"⚡ Generating {num_rows} rows..."):
                 try:
-                    generator = IntelligentDataGenerator()
-                    synthetic_df = generator.generate_synthetic_data(df, rules, int(num_rows))
+                    generator = SmartDataGenerator()
+                    synthetic_df = generator.generate_data(df, rules, int(num_rows))
                 except Exception as e:
-                    st.error(f"Failed to generate data: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
+                    st.error(f"Generation failed: {e}")
                     return
             
             # Step 3: Validate
-            with st.spinner("✅ Validating generated data..."):
+            with st.spinner("✅ Validating quality..."):
                 try:
-                    validator = EnhancedValidationEngine()
-                    validation_report = validator.validate_synthetic_data(df, synthetic_df, rules)
+                    validator = QualityValidator()
+                    validation = validator.validate(df, synthetic_df, rules)
                 except Exception as e:
-                    st.error(f"Failed to validate: {e}")
-                    validation_report = {"overall_score": 0}
+                    st.error(f"Validation failed: {e}")
+                    validation = {"overall_score": 0}
             
             # Store results
             st.session_state.synthetic_data = synthetic_df
-            st.session_state.original_data = df
             st.session_state.rules = rules
-            st.session_state.validation = validation_report
+            st.session_state.validation = validation
             
             st.balloons()
         
-        # Display results if generated
-        if 'synthetic_data' in st.session_state and st.session_state.synthetic_data is not None:
+        # Display results if available
+        if 'synthetic_data' in st.session_state:
             synthetic = st.session_state.synthetic_data
-            original = st.session_state.original_data
-            rules = st.session_state.rules
             validation = st.session_state.validation
             
             st.subheader(f"✨ Generated {len(synthetic)} Rows")
             
-            # Overall score
-            overall_score = validation.get("overall_score", 0)
+            # Quality score
+            score = validation.get("overall_score", 0)
+            if score >= 90:
+                st.success(f"🏆 Overall Quality Score: {score}%")
+            elif score >= 70:
+                st.warning(f"📊 Overall Quality Score: {score}%")
+            else:
+                st.error(f"⚠️ Overall Quality Score: {score}%")
             
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if overall_score >= 90:
-                    st.success(f"🏆 Overall Score: {overall_score}%")
-                elif overall_score >= 70:
-                    st.warning(f"📊 Overall Score: {overall_score}%")
-                else:
-                    st.error(f"⚠️ Overall Score: {overall_score}%")
-            
-            with col2:
-                # Rule compliance
-                rule_validation = validation.get("rule_validation", {})
-                mapping_compliance = []
-                for val in rule_validation.get("value_mappings", {}).values():
-                    mapping_compliance.append(val.get("compliance_rate", 0))
-                
-                if mapping_compliance:
-                    avg_compliance = np.mean(mapping_compliance)
-                    st.metric("Rule Compliance", f"{avg_compliance:.1f}%")
-            
-            with col3:
-                # Similarity
-                similarity = validation.get("similarity_metrics", {}).get("overall_similarity", 0)
-                st.metric("Data Similarity", f"{similarity:.1f}%")
-            
-            # Tabs for detailed view
-            tab1, tab2, tab3, tab4 = st.tabs(["📊 Synthetic Data", "🔍 Validation Details", "📈 Statistics", "💾 Download"])
+            # Tabs
+            tab1, tab2, tab3, tab4 = st.tabs(["📊 Data", "📈 Validation", "🔍 Patterns", "💾 Download"])
             
             with tab1:
                 st.dataframe(synthetic.head(20), use_container_width=True)
                 
                 # Quick comparison
                 st.subheader("Quick Comparison")
-                compare_col = st.selectbox("Select column to compare", original.columns)
+                compare_col = st.selectbox("Select column to compare", df.columns)
                 
                 if compare_col in synthetic.columns:
                     col1, col2 = st.columns(2)
                     with col1:
                         st.write("**Original Distribution**")
-                        st.bar_chart(original[compare_col].value_counts().head(10))
-                    
+                        st.bar_chart(df[compare_col].value_counts().head(10))
                     with col2:
                         st.write("**Synthetic Distribution**")
                         st.bar_chart(synthetic[compare_col].value_counts().head(10))
             
             with tab2:
-                # Detailed validation
-                st.write("### 🔍 Detailed Validation Report")
+                # Validation details
+                st.write("### Validation Details")
                 
-                # Rule violations
-                rule_validation = validation.get("rule_validation", {})
-                if rule_validation.get("value_mappings"):
-                    st.write("**Value Mapping Compliance:**")
-                    for mapping, stats in list(rule_validation["value_mappings"].items())[:10]:
+                # Rule compliance
+                rule_compliance = validation.get("rule_compliance", {})
+                if rule_compliance.get("value_mappings"):
+                    st.write("**Rule Compliance:**")
+                    for rule, stats in list(rule_compliance["value_mappings"].items())[:5]:
                         compliance = stats.get("compliance_rate", 0)
-                        color = "🟢" if compliance >= 95 else "🟡" if compliance >= 80 else "🔴"
-                        st.write(f"{color} {mapping}: {compliance:.1f}%")
+                        st.write(f"- {rule}: {compliance:.1f}% compliant")
                 
                 # Data quality
                 quality = validation.get("data_quality", {})
-                if quality.get("duplicates"):
-                    dup_pct = quality["duplicates"].get("duplicate_percentage", 0)
-                    st.write(f"**Duplicate Rows:** {dup_pct:.1f}%")
+                st.write(f"**Duplicate Rows:** {quality.get('duplicates', 0)}")
                 
-                # Null values
-                if quality.get("null_values"):
-                    total_null = sum(v.get("null_count", 0) for v in quality["null_values"].values())
-                    null_pct = total_null / (len(synthetic) * len(synthetic.columns)) * 100
-                    st.write(f"**Null Values:** {null_pct:.1f}%")
+                # Distribution similarity
+                distribution = validation.get("distribution_similarity", {})
+                for col, stats in list(distribution.items())[:3]:
+                    if stats.get("type") == "numeric":
+                        st.write(f"**{col}** mean difference: {stats.get('mean_difference_pct', 0):.1f}%")
             
             with tab3:
-                # Statistical comparison
-                stats = validation.get("statistical_validation", {})
-                if stats.get("column_stats"):
-                    st.write("### 📊 Statistical Comparison")
-                    
-                    for col, col_stats in list(stats["column_stats"].items())[:10]:
-                        st.write(f"**{col}**")
-                        
-                        if "mean_difference_pct" in col_stats:
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Original Mean", f"{col_stats['original_mean']:.2f}")
-                            with col2:
-                                st.metric("Synthetic Mean", f"{col_stats['synthetic_mean']:.2f}")
-                            with col3:
-                                diff = col_stats['mean_difference_pct']
-                                st.metric("Difference", f"{diff:.1f}%")
+                # Show preserved patterns
+                patterns = validation.get("pattern_preservation", {})
+                if patterns:
+                    for col, pattern_info in patterns.items():
+                        st.write(f"**{col}** patterns preserved:")
+                        for pattern_name, stats in pattern_info.get("pattern_compliance", {}).items():
+                            st.write(f"- {pattern_name}: {stats.get('percentage', 0):.1f}%")
             
             with tab4:
                 # Download options
@@ -1582,82 +1179,48 @@ def main():
                     st.download_button(
                         "📥 Download Synthetic Data (CSV)",
                         csv,
-                        f"logic_enhanced_synthetic_{len(synthetic)}_rows.csv",
+                        f"synthetic_data_{len(synthetic)}_rows.csv",
                         "text/csv",
                         use_container_width=True
                     )
                 except:
-                    st.error("Could not create CSV download")
+                    st.error("Could not create CSV")
                 
                 # Download rules
                 try:
-                    rules_json = json.dumps(rules, indent=2)
+                    rules_json = json.dumps(st.session_state.rules, indent=2, default=str)
                     st.download_button(
                         "📥 Download Rules (JSON)",
                         rules_json,
-                        f"enhanced_data_rules.json",
+                        f"data_rules.json",
                         "application/json",
                         use_container_width=True
                     )
                 except:
                     st.error("Could not create rules download")
                 
-                # Download validation report
-                try:
-                    validation_json = json.dumps(validation, indent=2, default=str)
-                    st.download_button(
-                        "📥 Download Validation Report",
-                        validation_json,
-                        f"validation_report.json",
-                        "application/json",
-                        use_container_width=True
-                    )
-                except:
-                    st.error("Could not create validation report")
-                
-                # Regenerate option
-                if st.button("🔄 Generate New Variation", use_container_width=True):
+                # Regenerate
+                if st.button("🔄 Generate New Variation"):
                     del st.session_state.synthetic_data
                     st.rerun()
     
     else:
-        # Welcome screen
+        # Welcome message
         st.info("""
-        ### 🚀 How to Use:
+        ### 🎯 How it works:
         
-        1. **Upload** any CSV dataset
-        2. **Configure** generation settings
-        3. **Generate** synthetic data with intelligent logic
-        4. **Download** the results
+        1. **Upload** any CSV file
+        2. **Analyze** patterns automatically
+        3. **Generate** synthetic data
+        4. **Download** high-quality results
         
-        ### 🧠 Key Features:
+        ### ✨ Key Features:
         
-        - **Logic-based rule discovery**: Statistical analysis finds relationships
-        - **Intelligent generation**: Maintains data distributions and relationships
-        - **Comprehensive validation**: Detailed quality checks
-        - **LLM enhancement**: Optional AI-powered rule discovery
+        - **Pattern Preservation**: Maintains all relationships from original data
+        - **No Hardcoding**: Works with ANY dataset structure
+        - **Quality Validation**: Comprehensive quality checks
+        - **Smart Generation**: Intelligent value generation
         """)
-        
-        # Example datasets
-        with st.expander("📚 Example Use Cases"):
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.write("**🏥 Healthcare Data**")
-                st.write("- Patient records with medical codes")
-                st.write("- Appointment scheduling")
-                st.write("- Treatment outcomes")
-            
-            with col2:
-                st.write("**🏢 Business Data**")
-                st.write("- Customer transaction history")
-                st.write("- Employee records")
-                st.write("- Sales data with relationships")
-            
-            with col3:
-                st.write("**🎓 Education Data**")
-                st.write("- Student performance records")
-                st.write("- Course enrollment data")
-                st.write("- Grade distributions")
 
 if __name__ == "__main__":
     main()
