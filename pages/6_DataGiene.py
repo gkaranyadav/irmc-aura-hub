@@ -6,176 +6,181 @@ from typing import Dict, List, Any
 import json
 from datetime import datetime
 import hashlib
+import random
 
 # =============================================================================
-# CREW AI AGENTS
+# CREW AI AGENTS - FIXED FOR ANY DATASET
 # =============================================================================
 
-from crewai import Agent, Task, Crew, Process
+from crewai import Agent, Task, Crew, Process, LLM
 from langchain_groq import ChatGroq
 import os
 
 class SyntheticDataCrew:
-    """Crew AI powered synthetic data generation"""
+    """Crew AI powered synthetic data generation - WORKS WITH ANY DATASET"""
     
     def __init__(self, groq_api_key: str):
         self.groq_api_key = groq_api_key
-        self.llm = ChatGroq(
-            temperature=0.1,
+        
+        # CRITICAL: Use LLM directly to force Groq
+        self.llm = LLM(
             model="llama-3.1-70b-versatile",
-            api_key=groq_api_key
+            temperature=0.1,
+            api_key=groq_api_key,
+            provider="groq"  # Force Groq provider
         )
         self.setup_crew()
     
     def setup_crew(self):
-        """Setup all specialized agents"""
+        """Setup all specialized agents - GENERIC FOR ANY DATA"""
         
-        # 🕵️ Agent 1: Data Detective
+        # 🕵️ Agent 1: Data Detective (GENERIC)
         self.data_detective = Agent(
-            role="Data Domain Detective",
-            goal="Identify the domain and context of the dataset",
-            backstory="""You are a domain expert who can look at any dataset and immediately understand
-            what industry it's from, what business processes it represents, and what the columns mean.
-            You've worked with thousands of datasets across healthcare, finance, e-commerce, and more.""",
+            role="Universal Data Detective",
+            goal="Identify patterns and context in ANY dataset",
+            backstory="""You are an expert at understanding ANY type of data. 
+            You can analyze datasets from any domain - business, science, social, technical.
+            You look for column meanings, data types, and overall context without assumptions.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.llm,
-            tools=[]
+            llm=self.llm
         )
         
-        # 📊 Agent 2: Statistical Analyst
+        # 📊 Agent 2: Statistical Analyst (GENERIC)
         self.statistical_analyst = Agent(
             role="Statistical Pattern Analyst",
-            goal="Find statistical patterns, distributions, and correlations",
-            backstory="""You are a PhD statistician who can find hidden patterns in data.
-            You excel at detecting distributions, correlations, outliers, and statistical relationships
-            that others miss. You think in probabilities and confidence intervals.""",
+            goal="Find statistical patterns in ANY data",
+            backstory="""You are a statistician who finds patterns in any dataset.
+            You analyze distributions, correlations, outliers - regardless of domain.
+            You think in probabilities and data relationships.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.llm,
-            tools=[]
+            llm=self.llm
         )
         
-        # 🎯 Agent 3: Business Rule Miner
-        self.business_rule_miner = Agent(
-            role="Business Logic Miner",
-            goal="Extract business rules and constraints from data",
-            backstory="""You are a business analyst who understands how data reflects real-world processes.
-            You can look at data and infer business rules like "if status=cancelled then refund_amount>0"
-            or "senior employees have higher salaries". You think in terms of business logic.""",
+        # 🎯 Agent 3: Rule Miner (GENERIC)
+        self.rule_miner = Agent(
+            role="Data Relationship Miner",
+            goal="Extract relationships and rules from data",
+            backstory="""You find relationships between columns in any dataset.
+            You look for: if column A has value X, then column B often has value Y.
+            You find constraints and dependencies without domain bias.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.llm,
-            tools=[]
+            llm=self.llm
         )
         
-        # 🛠️ Agent 4: Constraint Engineer
+        # 🛠️ Agent 4: Constraint Engineer (GENERIC)
         self.constraint_engineer = Agent(
             role="Data Constraint Engineer",
-            goal="Build data generation constraints and rules",
-            backstory="""You are a data engineer who specializes in data quality and constraints.
-            You take discovered patterns and turn them into precise generation rules.
-            You ensure synthetic data follows all discovered constraints.""",
+            goal="Build generation constraints for ANY data",
+            backstory="""You create rules for generating synthetic data.
+            You work with any data type: numbers, text, dates, categories.
+            You ensure synthetic data follows discovered patterns.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.llm,
-            tools=[]
+            llm=self.llm
         )
         
-        # 🎨 Agent 5: Synthetic Artist
+        # 🎨 Agent 5: Synthetic Artist (GENERIC)
         self.synthetic_artist = Agent(
-            role="Synthetic Data Artist",
-            goal="Generate high-quality synthetic data",
-            backstory="""You are a creative data scientist who generates realistic synthetic data.
-            You use statistical models, ML algorithms, and creativity to create data that looks real
-            but maintains privacy. You balance realism with novelty.""",
+            role="Universal Synthetic Data Artist",
+            goal="Generate synthetic data for ANY dataset",
+            backstory="""You create realistic synthetic data for any domain.
+            You maintain statistical properties while creating new combinations.
+            You work with all data types and structures.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.llm,
-            tools=[]
+            llm=self.llm
         )
         
-        # 🧪 Agent 6: Quality Auditor
+        # 🧪 Agent 6: Quality Auditor (GENERIC)
         self.quality_auditor = Agent(
-            role="Data Quality Auditor",
-            goal="Validate synthetic data quality and realism",
-            backstory="""You are a meticulous data quality expert who finds flaws others miss.
-            You compare synthetic data with original, check statistical properties, validate rules,
-            and ensure the data is both realistic and useful for its intended purpose.""",
+            role="Universal Data Quality Auditor",
+            goal="Validate synthetic data quality for ANY dataset",
+            backstory="""You validate synthetic data against original patterns.
+            You check statistical similarity, rule compliance, and data quality.
+            You work with any data type and structure.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.llm,
-            tools=[]
+            llm=self.llm
         )
     
     def analyze_dataset(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Full crew analysis of the dataset"""
+        """Full crew analysis of ANY dataset"""
         
-        # Task 1: Domain Detection
+        # Sample data for analysis
+        sample_data = df.head(10).to_string()
+        
+        # Task 1: Understand the Data (GENERIC)
         task1 = Task(
-            description=f"""Analyze this dataset and determine:
-            1. What industry/domain is this data from?
-            2. What business process does it represent?
-            3. What does each column likely mean?
+            description=f"""Analyze this dataset WITHOUT domain assumptions:
             
-            Dataset columns: {list(df.columns)}
-            Sample data (first 5 rows):
-            {df.head().to_string()}
+            Columns: {list(df.columns)}
             
-            Return JSON with: domain, business_context, column_interpretations""",
+            First 10 rows:
+            {sample_data}
+            
+            Analyze:
+            1. What type of data is this? (business, scientific, transactional, etc.)
+            2. What does each column likely represent?
+            3. What are the data types? (numeric, text, date, categorical)
+            4. Any obvious patterns or structures?
+            
+            Return JSON with: data_type, column_analysis, data_types""",
             agent=self.data_detective,
-            expected_output="JSON with domain analysis"
+            expected_output="JSON analysis"
         )
         
-        # Task 2: Statistical Analysis
+        # Task 2: Statistical Analysis (GENERIC)
         task2 = Task(
-            description=f"""Perform statistical analysis on this dataset:
-            1. Column types (numeric, categorical, datetime, text)
-            2. Distributions (normal, uniform, skewed)
-            3. Correlations between columns
-            4. Missing value patterns
-            5. Outliers and edge cases
+            description=f"""Perform statistical analysis:
             
             Dataset shape: {df.shape}
-            Numeric columns summary:
-            {df.describe().to_string() if len(df.describe()) > 0 else 'No numeric columns'}
+            Columns: {list(df.columns)}
             
-            Return JSON with statistical findings""",
+            Analyze:
+            1. Basic statistics for numeric columns
+            2. Value distributions for categorical columns
+            3. Missing value patterns
+            4. Any correlations between columns
+            5. Outliers or unusual values
+            
+            Return JSON with: statistics, distributions, correlations, missing_data""",
             agent=self.statistical_analyst,
-            expected_output="JSON with statistical analysis",
+            expected_output="JSON statistical analysis",
             context=[task1]
         )
         
-        # Task 3: Business Rule Mining
+        # Task 3: Relationship Mining (GENERIC)
         task3 = Task(
-            description=f"""Find business rules in this data:
-            1. If-then rules (when X happens, Y follows)
-            2. Business constraints (age > 18, price > 0)
-            3. Process flows (order -> payment -> shipment)
-            4. Domain-specific rules (medical, financial, etc.)
+            description=f"""Find relationships in the data:
             
-            Use context from domain analysis and statistical findings.
+            Based on data understanding and statistics, find:
+            1. If-then relationships between columns
+            2. Value constraints (e.g., age > 0, dates chronological)
+            3. Column dependencies
+            4. Unique value patterns
             
-            Return JSON with business rules""",
-            agent=self.business_rule_miner,
-            expected_output="JSON with business rules",
+            Return JSON with: relationships, constraints, dependencies""",
+            agent=self.rule_miner,
+            expected_output="JSON relationships",
             context=[task1, task2]
         )
         
-        # Task 4: Constraint Engineering
+        # Task 4: Constraint Building (GENERIC)
         task4 = Task(
-            description=f"""Create data generation constraints:
+            description=f"""Create generation constraints:
+            
+            Based on all previous analysis, create:
             1. Value ranges for numeric columns
             2. Allowed values for categorical columns
-            3. Relationship constraints between columns
-            4. Uniqueness requirements
-            5. Temporal constraints for dates
+            3. Relationship rules to maintain
+            4. Data type constraints
             
-            Based on domain, stats, and business rules.
-            
-            Return JSON with generation constraints""",
+            Return JSON with: constraints, rules, generation_guidelines""",
             agent=self.constraint_engineer,
-            expected_output="JSON with generation constraints",
+            expected_output="JSON constraints",
             context=[task1, task2, task3]
         )
         
@@ -184,16 +189,15 @@ class SyntheticDataCrew:
             agents=[
                 self.data_detective,
                 self.statistical_analyst,
-                self.business_rule_miner,
+                self.rule_miner,
                 self.constraint_engineer
             ],
             tasks=[task1, task2, task3, task4],
-            verbose=True,
+            verbose=False,
             process=Process.sequential
         )
         
         # Execute analysis
-        st.info("🧠 Crew AI analyzing dataset...")
         analysis_result = analysis_crew.kickoff()
         
         # Parse results
@@ -202,7 +206,7 @@ class SyntheticDataCrew:
     def _parse_crew_output(self, crew_output: str) -> Dict[str, Any]:
         """Parse crew output into structured rules"""
         try:
-            # Extract JSON from crew output
+            # Try to extract JSON
             import re
             json_match = re.search(r'\{.*\}', crew_output, re.DOTALL)
             if json_match:
@@ -210,43 +214,47 @@ class SyntheticDataCrew:
         except:
             pass
         
-        # Fallback structure
+        # Fallback: Basic statistical rules
         return {
-            "domain": "unknown",
-            "statistical_rules": {},
-            "business_rules": [],
-            "constraints": {}
+            "data_type": "tabular",
+            "constraints": {},
+            "relationships": []
         }
     
     def generate_synthetic_data(self, df: pd.DataFrame, rules: Dict, num_rows: int) -> pd.DataFrame:
-        """Generate synthetic data using crew coordination"""
+        """Generate synthetic data for ANY dataset"""
         
-        # Task 5: Synthetic Data Generation
+        # Task 5: Data Generation (GENERIC)
         task5 = Task(
-            description=f"""Generate {num_rows} synthetic rows that:
-            1. Match the statistical patterns of original data
-            2. Follow all business rules
-            3. Adhere to all constraints
-            4. Look realistic but are completely synthetic
+            description=f"""Generate {num_rows} synthetic rows:
             
-            Original data shape: {df.shape}
-            Rules to follow: {json.dumps(rules, indent=2)[:1000]}...
+            Original data: {df.shape[0]} rows × {df.shape[1]} columns
             
-            Return a JSON array of synthetic rows""",
+            Requirements:
+            1. Create NEW data that follows original patterns
+            2. Maintain statistical properties
+            3. Follow discovered constraints
+            4. Ensure realistic value combinations
+            
+            Rules to follow: {json.dumps(rules, indent=2)[:1500]}...
+            
+            Return JSON array of synthetic rows with same columns.""",
             agent=self.synthetic_artist,
             expected_output="JSON array of synthetic data",
             context=[]
         )
         
-        # Task 6: Quality Validation
+        # Task 6: Quality Validation (GENERIC)
         task6 = Task(
-            description=f"""Validate the synthetic data quality:
-            1. Compare statistical properties with original
-            2. Check rule compliance
-            3. Validate data types and formats
-            4. Ensure realism and usefulness
+            description=f"""Validate synthetic data:
             
-            Return JSON with validation scores and issues found""",
+            Check if synthetic data:
+            1. Maintains statistical similarity
+            2. Follows constraints and rules
+            3. Has realistic value combinations
+            4. Maintains data types
+            
+            Return JSON with: validation_score, issues, similarity_metrics""",
             agent=self.quality_auditor,
             expected_output="JSON validation report",
             context=[task5]
@@ -256,12 +264,11 @@ class SyntheticDataCrew:
         generation_crew = Crew(
             agents=[self.synthetic_artist, self.quality_auditor],
             tasks=[task5, task6],
-            verbose=True,
+            verbose=False,
             process=Process.sequential
         )
         
         # Generate data
-        st.info(f"🎨 Crew AI generating {num_rows} synthetic rows...")
         generation_result = generation_crew.kickoff()
         
         # Extract synthetic data
@@ -272,43 +279,60 @@ class SyntheticDataCrew:
     def _extract_synthetic_data(self, crew_output: str, original_df: pd.DataFrame) -> pd.DataFrame:
         """Extract synthetic data from crew output"""
         try:
+            # Try to get JSON array from output
             import re
             json_match = re.search(r'\[.*\]', crew_output, re.DOTALL)
             if json_match:
                 data = json.loads(json_match.group())
-                return pd.DataFrame(data)
+                if data and isinstance(data, list):
+                    return pd.DataFrame(data)
         except:
             pass
         
-        # Fallback: Use SDV if crew fails
-        from sdv.tabular import GaussianCopula
-        model = GaussianCopula()
-        model.fit(original_df)
-        return model.sample(len(original_df) * 2)
+        # Fallback: Use SDV for generation
+        try:
+            from sdv.tabular import GaussianCopula
+            model = GaussianCopula()
+            model.fit(original_df)
+            return model.sample(len(original_df) * 2)
+        except:
+            # Last fallback: Simple sampling with variation
+            synthetic_rows = []
+            for _ in range(min(1000, len(original_df) * 3)):
+                row = {}
+                for col in original_df.columns:
+                    if original_df[col].dtype in ['int64', 'float64']:
+                        # Add some variation to numeric columns
+                        mean = original_df[col].mean()
+                        std = original_df[col].std()
+                        row[col] = np.random.normal(mean, std)
+                    else:
+                        # Sample from categorical/text
+                        row[col] = original_df[col].sample(1).iloc[0]
+                synthetic_rows.append(row)
+            return pd.DataFrame(synthetic_rows)
 
 # =============================================================================
-# ENHANCED GENERATION WITH CREW AI
+# GENERIC GENERATOR (WORKS WITH ANY DATASET)
 # =============================================================================
 
 class EnhancedCrewAIGenerator:
-    """Enhanced generator with Crew AI intelligence"""
+    """Enhanced generator that works with ANY dataset"""
     
     def __init__(self, groq_api_key: str):
         self.crew = SyntheticDataCrew(groq_api_key)
-        self.rules_cache = {}
     
     def generate_enhanced(self, df: pd.DataFrame, num_rows: int) -> Dict[str, Any]:
-        """Enhanced generation with crew AI"""
+        """Enhanced generation for ANY dataset"""
         
-        # Step 1: Crew Analysis
+        # Step 1: Crew Analysis (GENERIC)
         rules = self.crew.analyze_dataset(df)
-        self.rules_cache[hash(str(df.columns))] = rules
         
-        # Step 2: Generate with Crew
+        # Step 2: Generate with Crew (GENERIC)
         synthetic_df = self.crew.generate_synthetic_data(df, rules, num_rows)
         
-        # Step 3: Enhanced Validation
-        validation = self._validate_enhanced(df, synthetic_df, rules)
+        # Step 3: Validation (GENERIC)
+        validation = self._validate_any_data(df, synthetic_df, rules)
         
         return {
             "synthetic_data": synthetic_df,
@@ -316,209 +340,146 @@ class EnhancedCrewAIGenerator:
             "validation": validation
         }
     
-    def _validate_enhanced(self, original: pd.DataFrame, synthetic: pd.DataFrame, rules: Dict) -> Dict:
-        """Enhanced validation with domain awareness"""
+    def _validate_any_data(self, original: pd.DataFrame, synthetic: pd.DataFrame, rules: Dict) -> Dict:
+        """Generic validation for ANY dataset"""
         
         validation = {
-            "domain_consistency": self._check_domain_consistency(synthetic, rules),
-            "rule_compliance": self._check_rule_compliance(synthetic, rules),
-            "statistical_fidelity": self._check_statistical_fidelity(original, synthetic),
-            "realism_score": self._calculate_realism_score(original, synthetic, rules)
+            "basic_checks": self._basic_data_checks(synthetic),
+            "statistical_similarity": self._statistical_comparison(original, synthetic),
+            "data_quality": self._data_quality_metrics(synthetic)
         }
         
-        # Overall score
-        scores = [
-            validation["domain_consistency"].get("score", 0),
-            validation["rule_compliance"].get("compliance_rate", 0),
-            validation["statistical_fidelity"].get("similarity_score", 0),
-            validation["realism_score"]
-        ]
-        validation["overall_score"] = np.mean(scores)
+        # Calculate overall score
+        scores = []
+        if validation["basic_checks"].get("score"):
+            scores.append(validation["basic_checks"]["score"])
+        if validation["statistical_similarity"].get("score"):
+            scores.append(validation["statistical_similarity"]["score"])
+        if validation["data_quality"].get("quality_score"):
+            scores.append(validation["data_quality"]["quality_score"])
+        
+        validation["overall_score"] = np.mean(scores) if scores else 0
         
         return validation
     
-    def _check_domain_consistency(self, df: pd.DataFrame, rules: Dict) -> Dict:
-        """Check if data matches domain expectations"""
-        domain = rules.get("domain", "unknown")
-        
+    def _basic_data_checks(self, df: pd.DataFrame) -> Dict:
+        """Basic checks for ANY data"""
         checks = {
-            "domain": domain,
-            "checks_passed": 0,
-            "total_checks": 0,
+            "has_data": len(df) > 0,
+            "has_columns": len(df.columns) > 0,
+            "no_empty_df": not df.empty,
+            "columns_match_types": {},
             "issues": []
         }
         
-        # Domain-specific checks
-        if "healthcare" in domain.lower():
-            checks["total_checks"] += 2
-            # Check for valid age range
-            if "age" in df.columns:
-                if df["age"].min() >= 0 and df["age"].max() <= 120:
-                    checks["checks_passed"] += 1
-                else:
-                    checks["issues"].append("Age values outside realistic range (0-120)")
+        # Check each column
+        for col in df.columns:
+            null_percent = df[col].isnull().sum() / len(df) * 100
+            if null_percent > 50:
+                checks["issues"].append(f"High null values in {col}: {null_percent:.1f}%")
             
-            # Check for valid dates
-            date_cols = [col for col in df.columns if "date" in col.lower()]
-            for col in date_cols:
-                if pd.api.types.is_datetime64_any_dtype(df[col]):
-                    checks["checks_passed"] += 1
-                    break
-        
-        elif "finance" in domain.lower():
-            checks["total_checks"] += 2
-            # Check for positive amounts
-            amount_cols = [col for col in df.columns if any(word in col.lower() 
-                          for word in ["amount", "price", "value", "balance"])]
-            for col in amount_cols:
+            # Check data type consistency
+            try:
                 if pd.api.types.is_numeric_dtype(df[col]):
-                    if (df[col] >= 0).all():
-                        checks["checks_passed"] += 1
-                        break
+                    checks["columns_match_types"][col] = "numeric"
+                elif pd.api.types.is_datetime64_any_dtype(df[col]):
+                    checks["columns_match_types"][col] = "datetime"
+                else:
+                    checks["columns_match_types"][col] = "categorical/text"
+            except:
+                checks["columns_match_types"][col] = "unknown"
         
         # Calculate score
-        if checks["total_checks"] > 0:
-            checks["score"] = (checks["checks_passed"] / checks["total_checks"]) * 100
-        else:
-            checks["score"] = 100  # Default if no domain-specific checks
+        issue_count = len(checks["issues"])
+        checks["score"] = max(0, 100 - (issue_count * 10))
         
         return checks
     
-    def _check_rule_compliance(self, df: pd.DataFrame, rules: Dict) -> Dict:
-        """Check compliance with discovered rules"""
+    def _statistical_comparison(self, original: pd.DataFrame, synthetic: pd.DataFrame) -> Dict:
+        """Compare statistical properties"""
         
-        business_rules = rules.get("business_rules", [])
-        constraints = rules.get("constraints", {})
-        
-        compliance = {
-            "business_rules_checked": len(business_rules),
-            "business_rules_passed": 0,
-            "constraints_checked": len(constraints),
-            "constraints_passed": 0,
-            "rule_violations": []
+        comparison = {
+            "column_comparisons": {},
+            "similarity_scores": []
         }
-        
-        # Check business rules (simplified)
-        for rule in business_rules[:10]:  # Limit checking for speed
-            # Simple rule checking logic
-            compliance["business_rules_checked"] += 1
-            compliance["business_rules_passed"] += 1  # Assume pass for now
-        
-        # Check constraints
-        for col, constraint in constraints.items():
-            if col in df.columns:
-                compliance["constraints_checked"] += 1
-                
-                if constraint.get("type") == "categorical":
-                    allowed = set(constraint.get("allowed_values", []))
-                    invalid = set(df[col].dropna().unique()) - allowed
-                    if len(invalid) == 0:
-                        compliance["constraints_passed"] += 1
-                    else:
-                        compliance["rule_violations"].append(f"Invalid values in {col}: {invalid}")
-                
-                elif constraint.get("type") == "numeric":
-                    min_val = constraint.get("min")
-                    max_val = constraint.get("max")
-                    if min_val is not None and max_val is not None:
-                        numeric_vals = pd.to_numeric(df[col], errors='coerce')
-                        violations = ((numeric_vals < min_val) | (numeric_vals > max_val)).sum()
-                        if violations == 0:
-                            compliance["constraints_passed"] += 1
-                        else:
-                            compliance["rule_violations"].append(f"Range violations in {col}: {violations} rows")
-        
-        # Calculate compliance rate
-        total_checked = compliance["business_rules_checked"] + compliance["constraints_checked"]
-        total_passed = compliance["business_rules_passed"] + compliance["constraints_passed"]
-        
-        if total_checked > 0:
-            compliance["compliance_rate"] = (total_passed / total_checked) * 100
-        else:
-            compliance["compliance_rate"] = 100
-        
-        return compliance
-    
-    def _check_statistical_fidelity(self, original: pd.DataFrame, synthetic: pd.DataFrame) -> Dict:
-        """Check statistical similarity"""
-        
-        fidelity = {
-            "column_similarities": {},
-            "similarity_score": 0
-        }
-        
-        similarities = []
         
         for col in original.columns:
             if col in synthetic.columns:
                 orig_series = original[col].dropna()
                 synth_series = synthetic[col].dropna()
                 
-                if len(orig_series) > 10 and len(synth_series) > 10:
+                if len(orig_series) > 0 and len(synth_series) > 0:
                     if pd.api.types.is_numeric_dtype(orig_series):
-                        # Compare means
+                        # Compare numeric stats
                         mean_diff = abs(orig_series.mean() - synth_series.mean()) / max(1, abs(orig_series.mean()))
                         std_diff = abs(orig_series.std() - synth_series.std()) / max(1, abs(orig_series.std()))
                         similarity = 100 * (1 - (mean_diff + std_diff) / 2)
+                        
+                        comparison["column_comparisons"][col] = {
+                            "type": "numeric",
+                            "original_mean": float(orig_series.mean()),
+                            "synthetic_mean": float(synth_series.mean()),
+                            "similarity": similarity
+                        }
                     
                     else:
-                        # Compare value distributions
+                        # Compare categorical/text distributions
                         orig_counts = orig_series.value_counts(normalize=True)
                         synth_counts = synth_series.value_counts(normalize=True)
                         
                         common = set(orig_counts.index) & set(synth_counts.index)
                         if len(common) > 0:
-                            total_diff = sum(abs(orig_counts.get(cat, 0) - synth_counts.get(cat, 0)) 
-                                           for cat in common)
+                            total_diff = sum(abs(orig_counts.get(c, 0) - synth_counts.get(c, 0)) for c in common)
                             similarity = 100 * (1 - total_diff)
                         else:
                             similarity = 0
+                        
+                        comparison["column_comparisons"][col] = {
+                            "type": "categorical",
+                            "original_unique": len(orig_counts),
+                            "synthetic_unique": len(synth_counts),
+                            "similarity": similarity
+                        }
                     
-                    fidelity["column_similarities"][col] = similarity
-                    similarities.append(similarity)
+                    comparison["similarity_scores"].append(similarity)
         
-        if similarities:
-            fidelity["similarity_score"] = np.mean(similarities)
+        if comparison["similarity_scores"]:
+            comparison["score"] = np.mean(comparison["similarity_scores"])
+        else:
+            comparison["score"] = 0
         
-        return fidelity
+        return comparison
     
-    def _calculate_realism_score(self, original: pd.DataFrame, synthetic: pd.DataFrame, rules: Dict) -> float:
-        """Calculate overall realism score"""
+    def _data_quality_metrics(self, df: pd.DataFrame) -> Dict:
+        """Calculate data quality metrics"""
         
-        scores = []
+        quality = {
+            "total_rows": len(df),
+            "total_columns": len(df.columns),
+            "null_percentage": df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100,
+            "duplicate_rows": df.duplicated().sum(),
+            "duplicate_percentage": df.duplicated().sum() / len(df) * 100
+        }
         
-        # 1. Statistical similarity
-        stats = self._check_statistical_fidelity(original, synthetic)
-        scores.append(stats.get("similarity_score", 0))
+        # Quality score (higher is better)
+        quality["quality_score"] = max(0, 100 - quality["null_percentage"] - quality["duplicate_percentage"])
         
-        # 2. Rule compliance
-        compliance = self._check_rule_compliance(synthetic, rules)
-        scores.append(compliance.get("compliance_rate", 0))
-        
-        # 3. Domain consistency
-        domain_check = self._check_domain_consistency(synthetic, rules)
-        scores.append(domain_check.get("score", 0))
-        
-        # 4. Data quality
-        quality_score = 100 - (synthetic.isnull().sum().sum() / (len(synthetic) * len(synthetic.columns)) * 100)
-        scores.append(quality_score)
-        
-        return np.mean(scores)
+        return quality
 
 # =============================================================================
-# STREAMLIT APP WITH CREW AI
+# STREAMLIT APP - GENERIC FOR ANY DATASET
 # =============================================================================
 
 def main():
     st.set_page_config(
-        page_title="Crew AI Synthetic Data Generator",
-        page_icon="🤖",
+        page_title="Universal Synthetic Data Generator",
+        page_icon="🌍",
         layout="wide"
     )
     
     st.markdown("""
     <style>
-        .crew-header {
+        .universal-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -536,12 +497,12 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    st.markdown('<div class="crew-header">🤖 Crew AI Synthetic Data Generator</div>', unsafe_allow_html=True)
+    st.markdown('<div class="universal-header">🌍 Universal Synthetic Data Generator</div>', unsafe_allow_html=True)
     
     st.markdown("""
-    ### Specialized AI Agents Working Together
+    ### Works with **ANY** Dataset - No Domain Restrictions!
     
-    **🕵️ Data Detective** → **📊 Statistical Analyst** → **🎯 Business Rule Miner**  
+    **🕵️ Data Detective** → **📊 Statistical Analyst** → **🎯 Rule Miner**  
     **🛠️ Constraint Engineer** → **🎨 Synthetic Artist** → **🧪 Quality Auditor**
     """)
     
@@ -554,7 +515,7 @@ def main():
         return
     
     # File upload
-    uploaded_file = st.file_uploader("📤 Upload CSV Dataset", type=['csv'])
+    uploaded_file = st.file_uploader("📤 Upload ANY CSV Dataset", type=['csv'])
     
     if uploaded_file:
         try:
@@ -585,24 +546,24 @@ def main():
             num_rows = st.number_input(
                 "Rows to generate",
                 min_value=len(df),
-                max_value=5000,
+                max_value=10000,
                 value=min(len(df) * 3, 1000),
                 step=100
             )
         
         with col2:
-            quality_mode = st.selectbox(
-                "Quality Mode",
-                ["Balanced", "High Fidelity", "Fast"]
+            generation_mode = st.selectbox(
+                "Generation Mode",
+                ["Smart (Crew AI)", "Statistical (SDV)", "Simple (Sampling)"]
             )
         
         # Agent visualization
-        st.subheader("👥 AI Agents Ready")
+        st.subheader("👥 AI Agents Ready for ANY Data")
         
         agents = [
-            {"emoji": "🕵️", "name": "Data Detective", "role": "Understands data domain"},
+            {"emoji": "🕵️", "name": "Data Detective", "role": "Understands any data"},
             {"emoji": "📊", "name": "Statistical Analyst", "role": "Finds patterns"},
-            {"emoji": "🎯", "name": "Business Rule Miner", "role": "Extracts logic"},
+            {"emoji": "🎯", "name": "Rule Miner", "role": "Extracts relationships"},
             {"emoji": "🛠️", "name": "Constraint Engineer", "role": "Builds rules"},
             {"emoji": "🎨", "name": "Synthetic Artist", "role": "Generates data"},
             {"emoji": "🧪", "name": "Quality Auditor", "role": "Validates quality"},
@@ -619,15 +580,39 @@ def main():
                 """, unsafe_allow_html=True)
         
         # Generate button
-        if st.button("🚀 Generate with Crew AI", type="primary", use_container_width=True):
+        if st.button("🚀 Generate Synthetic Data", type="primary", use_container_width=True):
             
             try:
-                # Initialize Crew AI generator
+                # Initialize generator
                 generator = EnhancedCrewAIGenerator(groq_api_key)
                 
-                # Generate
-                with st.spinner("🤖 Crew AI agents working together..."):
-                    result = generator.generate_enhanced(df, num_rows)
+                # Generate based on mode
+                with st.spinner("🤖 AI agents analyzing your data..."):
+                    if generation_mode == "Smart (Crew AI)":
+                        result = generator.generate_enhanced(df, num_rows)
+                    elif generation_mode == "Statistical (SDV)":
+                        # Use SDV directly
+                        from sdv.tabular import GaussianCopula
+                        model = GaussianCopula()
+                        model.fit(df)
+                        synthetic_df = model.sample(num_rows)
+                        result = {
+                            "synthetic_data": synthetic_df,
+                            "rules": {"method": "SDV GaussianCopula"},
+                            "validation": generator._validate_any_data(df, synthetic_df, {})
+                        }
+                    else:  # Simple sampling
+                        synthetic_rows = []
+                        for _ in range(num_rows):
+                            row = {}
+                            for col in df.columns:
+                                row[col] = df[col].sample(1).iloc[0]
+                            synthetic_df = pd.DataFrame(synthetic_rows)
+                        result = {
+                            "synthetic_data": synthetic_df,
+                            "rules": {"method": "Simple Sampling"},
+                            "validation": generator._validate_any_data(df, synthetic_df, {})
+                        }
                 
                 # Store results
                 st.session_state.synthetic_data = result["synthetic_data"]
@@ -637,7 +622,7 @@ def main():
                 st.balloons()
                 
             except Exception as e:
-                st.error(f"Crew AI generation failed: {e}")
+                st.error(f"Generation failed: {e}")
                 import traceback
                 st.code(traceback.format_exc())
                 return
@@ -659,91 +644,94 @@ def main():
                 st.metric("Overall Score", f"{overall_score:.1f}%")
             
             with col2:
-                fidelity = validation.get("statistical_fidelity", {}).get("similarity_score", 0)
-                st.metric("Statistical Fidelity", f"{fidelity:.1f}%")
+                stats = validation.get("statistical_similarity", {}).get("score", 0)
+                st.metric("Statistical Similarity", f"{stats:.1f}%")
             
             with col3:
-                compliance = validation.get("rule_compliance", {}).get("compliance_rate", 0)
-                st.metric("Rule Compliance", f"{compliance:.1f}%")
+                quality = validation.get("data_quality", {}).get("quality_score", 0)
+                st.metric("Data Quality", f"{quality:.1f}%")
             
             with col4:
-                domain = validation.get("domain_consistency", {}).get("score", 0)
-                st.metric("Domain Consistency", f"{domain:.1f}%")
+                null_pct = validation.get("data_quality", {}).get("null_percentage", 0)
+                st.metric("Null Values", f"{null_pct:.1f}%")
             
             # Tabs
-            tab1, tab2, tab3, tab4 = st.tabs(["📊 Data", "🧠 Analysis", "✅ Validation", "💾 Download"])
+            tab1, tab2, tab3, tab4 = st.tabs(["📊 Synthetic Data", "🧠 AI Analysis", "✅ Validation", "💾 Download"])
             
             with tab1:
                 st.dataframe(synthetic.head(20), use_container_width=True)
                 
-                # Compare distributions
-                compare_col = st.selectbox("Compare column", df.columns, key="compare")
-                if compare_col in synthetic.columns:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**Original**")
-                        st.bar_chart(df[compare_col].value_counts().head(10))
-                    with col2:
-                        st.write("**Synthetic**")
-                        st.bar_chart(synthetic[compare_col].value_counts().head(10))
+                # Quick comparison
+                if len(df.columns) > 0:
+                    compare_col = st.selectbox("Compare column", df.columns, key="compare")
+                    if compare_col in synthetic.columns:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write("**Original Distribution**")
+                            try:
+                                st.bar_chart(df[compare_col].value_counts().head(10))
+                            except:
+                                st.write("Cannot display chart for this column type")
+                        with col2:
+                            st.write("**Synthetic Distribution**")
+                            try:
+                                st.bar_chart(synthetic[compare_col].value_counts().head(10))
+                            except:
+                                st.write("Cannot display chart for this column type")
             
             with tab2:
-                # Show crew analysis
-                st.write("### 🧠 Crew AI Analysis")
+                # Show analysis
+                st.write("### 🧠 AI Analysis Results")
                 
-                # Domain
-                domain_info = rules.get("domain", "Unknown")
-                st.write(f"**Domain:** {domain_info}")
+                # Data type
+                data_type = rules.get("data_type", "Unknown")
+                st.write(f"**Data Type Detected:** {data_type}")
                 
-                # Business rules
-                business_rules = rules.get("business_rules", [])
-                if business_rules:
-                    st.write("**Business Rules Found:**")
-                    for rule in business_rules[:5]:
-                        st.write(f"- {rule}")
-                
-                # Constraints
-                constraints = rules.get("constraints", {})
-                if constraints:
-                    st.write("**Constraints:**")
-                    for col, constraint in list(constraints.items())[:5]:
-                        st.write(f"- **{col}:** {constraint.get('type', 'unknown')}")
+                # Basic stats
+                if "constraints" in rules:
+                    st.write("**Constraints Found:**")
+                    for key, value in list(rules["constraints"].items())[:5]:
+                        st.write(f"- {key}: {value}")
             
             with tab3:
                 # Detailed validation
-                st.write("### ✅ Detailed Validation")
+                st.write("### ✅ Validation Report")
                 
-                # Domain consistency
-                domain_check = validation.get("domain_consistency", {})
-                if domain_check.get("issues"):
-                    st.write("**Domain Issues:**")
-                    for issue in domain_check["issues"]:
+                # Basic checks
+                basic = validation.get("basic_checks", {})
+                if basic.get("issues"):
+                    st.write("**Issues Found:**")
+                    for issue in basic["issues"][:5]:
                         st.write(f"- ⚠️ {issue}")
                 
-                # Rule violations
-                rule_check = validation.get("rule_compliance", {})
-                if rule_check.get("rule_violations"):
-                    st.write("**Rule Violations:**")
-                    for violation in rule_check["rule_violations"][:5]:
-                        st.write(f"- ❌ {violation}")
-                
                 # Statistical comparison
-                stats = validation.get("statistical_fidelity", {})
-                if stats.get("column_similarities"):
-                    st.write("**Column Similarities:**")
-                    for col, score in list(stats["column_similarities"].items())[:10]:
-                        st.write(f"- {col}: {score:.1f}%")
+                stats = validation.get("statistical_similarity", {})
+                if stats.get("column_comparisons"):
+                    st.write("**Column Comparisons (Top 10):**")
+                    for col, comp in list(stats["column_comparisons"].items())[:10]:
+                        similarity = comp.get("similarity", 0)
+                        st.write(f"- {col}: {similarity:.1f}% similarity")
             
             with tab4:
                 # Download
                 csv = synthetic.to_csv(index=False)
                 st.download_button(
-                    "📥 Download Synthetic Data",
+                    "📥 Download Synthetic Data (CSV)",
                     csv,
-                    f"crewai_synthetic_{len(synthetic)}_rows.csv",
+                    f"synthetic_data_{len(synthetic)}_rows.csv",
                     "text/csv",
                     use_container_width=True
                 )
+                
+                # Download analysis
+                if st.button("📥 Download AI Analysis (JSON)", use_container_width=True):
+                    analysis_json = json.dumps(rules, indent=2)
+                    st.download_button(
+                        "Download",
+                        analysis_json,
+                        "ai_analysis.json",
+                        "application/json"
+                    )
                 
                 # Regenerate
                 if st.button("🔄 Generate New Variation", use_container_width=True):
@@ -753,33 +741,33 @@ def main():
     else:
         # Welcome
         st.info("""
-        ### 🎯 How Crew AI Works:
+        ### 🎯 Works with ANY Dataset:
         
-        1. **🕵️ Data Detective** - Understands what your data is about
-        2. **📊 Statistical Analyst** - Finds patterns and distributions  
-        3. **🎯 Business Rule Miner** - Extracts business logic
-        4. **🛠️ Constraint Engineer** - Builds generation rules
-        5. **🎨 Synthetic Artist** - Creates realistic synthetic data
-        6. **🧪 Quality Auditor** - Validates and scores quality
+        - **Business data** (sales, customers, transactions)
+        - **Scientific data** (experiments, measurements)
+        - **Social data** (surveys, demographics)
+        - **Technical data** (logs, metrics, IoT)
+        - **Healthcare, Finance, Education, etc.**
         
-        **Result:** Higher quality synthetic data with domain awareness!
+        **No domain restrictions!** The AI adapts to your data.
         """)
         
-        # Example
-        st.subheader("📚 Example: Healthcare Data")
-        example_df = pd.DataFrame({
-            "patient_id": range(1, 6),
-            "age": [25, 47, 32, 68, 19],
-            "diagnosis": ["Flu", "Diabetes", "Hypertension", "Arthritis", "Migraine"],
-            "treatment": ["Rest", "Insulin", "Medication", "Therapy", "Painkillers"],
-            "cost": [150, 500, 300, 450, 200]
-        })
-        
-        st.write("Original data would be analyzed by Crew AI to discover:")
-        st.write("- **Domain:** Healthcare patient records")
-        st.write("- **Rule:** Age correlates with certain diagnoses")
-        st.write("- **Constraint:** Cost > 0, Age between 0-120")
-        st.write("- **Pattern:** Certain treatments for specific diagnoses")
+        # Example datasets
+        with st.expander("📚 Try These Examples"):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("**Example 1: Customer Data**")
+                st.code("""customer_id,age,city,purchase_amount,date
+001,25,NYC,150.50,2024-01-15
+002,32,LA,89.99,2024-01-16
+003,41,CHI,200.00,2024-01-17""")
+            
+            with col2:
+                st.write("**Example 2: Sensor Data**")
+                st.code("""timestamp,temperature,humidity,pressure
+2024-01-01 10:00,22.5,65,1013
+2024-01-01 11:00,23.1,63,1012
+2024-01-01 12:00,24.0,60,1011""")
 
 if __name__ == "__main__":
     main()
