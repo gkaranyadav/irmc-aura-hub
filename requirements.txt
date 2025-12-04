@@ -26,3 +26,6 @@ sdv
 rdt
 copulas
 requests
+crewai
+langchain
+langchain-groq
