@@ -1411,8 +1411,7 @@ def main():
         """)
         
         # Example
-        with st.expander("📚 Example Intelligence Process"):
-            st.write(""" datagiene""")
+        with st.expander("📚 Example Intelligence Process"
             
 
 if __name__ == "__main__":
