@@ -214,7 +214,7 @@ def home_page():
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch QueryCraft", key="csv_btn", use_container_width=True):
-            st.switch_page("pages/5_QueryCraft")
+            st.switch_page("pages/5_QueryCraft.py")
     
     # Row 3 - NEW APP
     col1, col2 = st.columns(2)
