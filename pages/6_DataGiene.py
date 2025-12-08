@@ -1091,9 +1091,8 @@ def main():
     st.markdown('<div class="intelligent-header">🧠 Intelligent Synthetic Data Generator</div>', unsafe_allow_html=True)
     
     st.markdown("""
-    ### Works with **ANY** Dataset • Uses **Groq Intelligence** • No Hardcoded Rules
+    Groq Intelligence
     
-    **🤔 Semantic Pattern Detector → 🔍 Smart Groq Queries → 🛠️ Intelligent Constraints → 🎨 Smart Generator → ✅ Quality Validator**
     """)
     
     # Check API key
@@ -1408,38 +1407,13 @@ def main():
     else:
         # Welcome
         st.info("""
-        ### 🎯 **How It Works (Intelligently):**
-        
-        1. **🤔 Semantic Pattern Detection** - AI analyzes column semantics to find relationships
-        2. **🔍 Smart Groq Queries** - Asks intelligent, context-aware questions to Groq
-        3. **🛠️ Intelligent Constraints** - Builds smart generation rules from insights
-        4. **🎨 Smart Generation** - Generates data that respects semantic relationships
-        5. **✅ Quality Validation** - Ensures realism and quality
-        
-        ### 🌟 **Key Intelligence Features:**
-        - **Universal patterns** - Works with ANY dataset type
-        - **Semantic understanding** - Understands column meanings
-        - **Smart Groq queries** - Asks intelligent questions
-        - **No hardcoding** - Zero domain-specific rules
-        - **Real-world constraints** - Maintains realistic relationships
-        - **Transparent reasoning** - Shows you how it thinks
+        ### data Giene
         """)
         
         # Example
         with st.expander("📚 Example Intelligence Process"):
             st.write("""
-            **Example Dataset:** Hospital records
             
-            **1. AI Detects:** "PatientName" and "Gender" columns → name_gender pattern (high confidence)
-            
-            **2. AI Asks Groq:** "For PatientName and Gender columns with sample values, what relationships exist?"
-            
-            **3. Groq Responds:** "Names often suggest gender. Respect typical name-gender associations."
-            
-            **4. AI Creates Rule:** "When generating, maintain realistic name-gender combinations"
-            
-            **5. Result:** No more "Meera" with "Male" gender!
-            """)
 
 if __name__ == "__main__":
     main()
