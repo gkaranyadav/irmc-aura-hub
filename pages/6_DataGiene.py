@@ -1412,6 +1412,7 @@ def main():
         
         # Example
         with st.expander("📚 Example Intelligence Process"):
+            st.write(""" datagiene""")
             
 
 if __name__ == "__main__":
